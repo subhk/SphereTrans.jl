@@ -1,6 +1,8 @@
 module SHTnsKit
 
-export placeholder_function
+export SHTnsConfig, create_config, set_grid, sh_to_spat, spat_to_sh, free_config
+
+include("api.jl")
 
 include("utils.jl")
 
