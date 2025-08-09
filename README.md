@@ -1,6 +1,6 @@
 # SHTnsKit.jl
 
-Tools for Spherical Harmonics transformation based on the SHTns C library.
+Tools for Spherical Harmonics transformations based on the SHTns C library.
 
 ## Wrappers
 
