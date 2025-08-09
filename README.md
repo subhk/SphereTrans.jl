@@ -1,2 +1,2 @@
-# SphHarm.jl.
+# SphereTrans.jl.
 Tools for Spherical Harmonics transformation based on SHTns C library.
