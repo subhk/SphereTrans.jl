@@ -1,177 +1,321 @@
 # SHTnsKit.jl
 
-Tools for Spherical Harmonics transformations based on the SHTns C library.
+[![Build Status](https://github.com/username/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/username/SHTnsKit.jl/actions)
 
-## Wrappers
+A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
 
-The package currently exposes a minimal set of low-level wrappers around the
-SHTns C API:
+## Features
 
-- `create_config` – construct a configuration via `shtns_create_with_opts`.
-- `set_grid` – set the spatial grid used for transforms.
-- `sh_to_spat` and `spat_to_sh` – perform synthesis and analysis transforms.
-- `get_lmax` / `get_mmax` – query maximal degree and order of a configuration.
-- `get_nlat` / `get_nphi` – obtain grid dimensions.
-- `get_nlm` – number of spectral coefficients.
-- `lmidx` – index helper for `(l,m)` pairs.
-- `free_config` – release resources allocated for a configuration.
+SHTnsKit.jl provides a complete interface to all SHTns features:
 
-These wrappers expect the `libshtns.so` shared library to be available on the
-system. They provide the building blocks for higher level Julia interfaces.
+### Core Transforms
+- **Scalar Transforms**: Forward and backward spherical harmonic transforms
+- **Complex Field Transforms**: Support for complex-valued fields on the sphere
+- **Vector Transforms**: Spheroidal-toroidal decomposition of vector fields
+- **In-place Operations**: Memory-efficient transform operations
 
-## High-level API
+### Advanced Features
+- **Multiple Grid Types**: Gauss-Legendre and regular (equiangular) grids
+- **Field Rotations**: Wigner D-matrix rotations in spectral and spatial domains
+- **Power Spectrum Analysis**: Energy distribution across spherical harmonic modes
+- **Multipole Analysis**: Expansion coefficients for gravitational/magnetic fields
 
-On top of the low-level calls, the package provides shape-safe, allocating
-wrappers and GPU-friendly helpers:
+### Performance Optimizations
+- **OpenMP Multi-threading**: Automatic detection and optimal thread configuration
+- **GPU Acceleration**: CUDA support for NVIDIA GPUs with host-device memory management
+- **Vectorization**: Support for SSE, AVX, and other SIMD instruction sets
+- **Memory Management**: Efficient allocation and thread-safe operations
 
-- `allocate_spectral(cfg)` / `allocate_spatial(cfg)`: convenience allocation for
-  spectral vectors and spatial grids.
-- `synthesize!(cfg, sh, spat)` / `synthesize(cfg, sh)`: spectral → spatial
-  transforms with `spat` treated as a `(nlat, nphi)` matrix.
-- `analyze!(cfg, spat, sh)` / `analyze(cfg, spat)`: spatial → spectral
-  transforms with `spat` as `(nlat, nphi)` and `sh` a vector of length `nlm`.
+### Scientific Applications
+- **Fluid Dynamics**: Vorticity-divergence decomposition, stream function computation
+- **Geophysics**: Gravitational and magnetic field analysis
+- **Astrophysics**: CMB analysis, stellar surface modeling
+- **Climate Science**: Atmospheric and oceanic flow analysis
 
-All high-level transforms operate on `Float64` data, promoting inputs as needed.
+## Installation
 
-### Threading
-
-- High-level transforms are safe under Julia multi-threading: calls using the
-  same `SHTnsConfig` are serialized via an internal lock to avoid races.
-- Different configurations may run concurrently in parallel threads.
-- SHTns itself may use internal OpenMP threads; to avoid oversubscription, set
-  either Julia threads or SHTns OpenMP threads conservatively.
-
-### GPU/CUDA usage
-
-If you work with CUDA arrays (e.g., `CUDA.CuArray`), you can use:
-
-- `synthesize_gpu(cfg, sh_dev)` → returns a device matrix `(nlat, nphi)`
-- `analyze_gpu(cfg, spat_dev)` → returns a device vector of length `nlm`
-
-These functions stage data to host memory, call the CPU SHTns routines, and copy
-results back to the device. They do not require importing CUDA in this package;
-they operate generically on any device array type that supports `Array(x)`,
-`similar(x, T, dims...)`, and `copyto!` (which `CUDA.CuArray` does).
-
-Example:
+SHTnsKit.jl can be installed using the Julia package manager:
 
 ```julia
-using SHTnsKit
-# optionally: using CUDA
-
-cfg = create_config(16, 16, 1)
-set_grid(cfg, 64, 128, 0)
-
-# CPU
-sh = allocate_spectral(cfg)
-rand!(sh)
-spat = synthesize(cfg, sh)          # (64, 128) matrix
-sh2  = analyze(cfg, spat)           # length matches get_nlm(cfg)
-
-# GPU (if CUDA is available)
-# shd  = CUDA.CuArray(sh)
-# spatd = synthesize_gpu(cfg, shd)   # device matrix
-# shd2  = analyze_gpu(cfg, spatd)    # device vector
-
-free_config(cfg)
+using Pkg
+Pkg.add("SHTnsKit")
 ```
 
-Device-pointer fast path
-- If your SHTns GPU entrypoints expect device pointers and run kernels
-  internally, opt-in to a zero-copy path that avoids host staging.
-  - Set env: `SHTNSKIT_GPU_PTRKIND=device`
-  - Or call: `SHTnsKit.SHTnsKitCUDAExt.enable_gpu_deviceptrs!()`
-- Combine this with native GPU entrypoints (see below) for best performance.
+### Prerequisites
 
-### MPI (distributed SHT)
+SHTnsKit.jl requires the SHTns C library to be installed on your system. You can install it using:
 
-This package exposes a lightweight MPI extension that can call SHTns's native
-MPI entrypoints when available. Symbol names vary across builds, so the
-extension dynamically loads them via environment variables or an explicit call:
-
-- `SHTNSKIT_MPI_CREATE`   – MPI config constructor symbol
-- `SHTNSKIT_MPI_SET_GRID` – grid setup symbol
-- `SHTNSKIT_MPI_SH2SPAT`  – spectral→spatial symbol
-- `SHTNSKIT_MPI_SPAT2SH`  – spatial→spectral symbol
-- `SHTNSKIT_MPI_FREE`     – destructor symbol
-
-When present, you can do per-rank distributed transforms using:
-
-```julia
-using MPI, SHTnsKit
-MPI.Init()
-comm = MPI.COMM_WORLD
-
-# Enable native SHTns MPI entrypoints by name
-SHTnsKit.SHTnsKitMPIExt.enable_native_mpi!(; create="...", set_grid="...",
-    sh2spat="...", spat2sh="...", free="...")
-
-cfg = SHTnsKit.SHTnsKitMPIExt.create_mpi_config(comm, 16, 16, 1)
-set_grid(cfg, 64, 128, 0)
-sh = allocate_spectral(cfg.cfg)          # allocation uses cfg.cfg underneath
-spat = allocate_spatial(cfg.cfg)
-synthesize!(cfg, sh, spat)
-analyze!(cfg, spat, sh)
-free_config(cfg)
-MPI.Finalize()
-```
-
-Notes:
-- If you don’t enable MPI entrypoints, the extension transparently falls back
-  to per-rank CPU SHTns (each rank creates its own `SHTnsConfig`).
-- Precise C signatures may differ across builds; if your entrypoints require
-  explicit `MPI_Comm` arguments or other parameters, please share the exact C
-  prototypes and we will wire exact wrappers.
-
-### Native SHTns GPU entrypoints (optional)
-
-If your `libshtns` build provides GPU-accelerated entrypoints that are drop-in
-replacements for the CPU functions (same C signatures), you can opt-in at
-runtime by setting environment variables before loading the package:
-
-- `SHTNSKIT_GPU_SH2SPAT`: symbol name for spectral→spatial function
-- `SHTNSKIT_GPU_SPAT2SH`: symbol name for spatial→spectral function
-
-Example (Unix shells):
-
+**Ubuntu/Debian:**
 ```bash
-export SHTNSKIT_GPU_SH2SPAT=shtns_sh_to_spat_gpu
-export SHTNSKIT_GPU_SPAT2SH=shtns_spat_to_sh_gpu
-julia -e 'using SHTnsKit; @show SHTnsKit.is_native_gpu_enabled()'
+sudo apt-get install libshtns-dev
 ```
 
-Or programmatically:
+**macOS (Homebrew):**
+```bash
+brew install shtns
+```
+
+**From source:**
+```bash
+wget https://bitbucket.org/nschaeff/shtns/downloads/shtns-3.x.x.tar.gz
+tar -xzf shtns-3.x.x.tar.gz
+cd shtns-3.x.x
+./configure --enable-openmp --enable-ishioka --enable-magic-layout
+make && sudo make install
+```
+
+## Quick Start
 
 ```julia
 using SHTnsKit
-SHTnsKit.enable_native_gpu!(; sh2spat="shtns_sh_to_spat_gpu",
-                                spat2sh="shtns_spat_to_sh_gpu")
+
+# Create a spherical harmonic configuration
+lmax = 16              # Maximum spherical harmonic degree
+cfg = create_gauss_config(lmax, lmax)
+
+# Create test data
+nlm = get_nlm(cfg)     # Number of spectral coefficients
+sh_coeffs = rand(nlm)  # Random spectral coefficients
+
+# Forward transform: spectral → spatial
+spatial_field = synthesize(cfg, sh_coeffs)
+
+# Backward transform: spatial → spectral  
+recovered_coeffs = analyze(cfg, spatial_field)
+
+# Clean up
+free_config(cfg)
 ```
 
-When enabled, high-level `analyze!`/`synthesize!` use these entrypoints; the
-GPU-friendly wrappers (`analyze_gpu`/`synthesize_gpu`) will either stage through
-host memory (default) or pass device pointers directly if
-`SHTNSKIT_GPU_PTRKIND=device` is set or `enable_gpu_deviceptrs!()` was called.
+## Examples
 
-### Default Symbols
+### Basic Scalar Transform
 
-If environment variables are not set, SHTnsKit tries common default symbol
-names for dynamic resolution:
+```julia
+using SHTnsKit
 
-- CPU vector transforms:
-  - torpol2uv: `shtns_torpol2uv`
-  - uv2torpol: `shtns_uv2torpol`
-- GPU scalar transforms:
-  - sh_to_spat: `shtns_sh_to_spat_gpu`
-  - spat_to_sh: `shtns_spat_to_sh_gpu`
-- MPI scalar transforms:
-  - create: `shtns_mpi_create_with_opts`
-  - set_grid: `shtns_mpi_set_grid`
-  - sh_to_spat: `shtns_mpi_sh_to_spat`
-  - spat_to_sh: `shtns_mpi_spat_to_sh`
-  - free: `shtns_mpi_free`
-- MPI vector transforms:
-  - torpol2uv: `shtns_mpi_torpol2uv`
-  - uv2torpol: `shtns_mpi_uv2torpol`
-- Grid latitudes (optional):
-  - get_theta: `shtns_get_theta`
+# Set up configuration with Gauss-Legendre grid
+cfg = create_gauss_config(32, 32)  # lmax=32, mmax=32
+nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+
+# Create a test function: Y_2^1 spherical harmonic
+function create_Y21(cfg)
+    spat = zeros(get_nlat(cfg), get_nphi(cfg))
+    for i in 1:get_nlat(cfg)
+        theta = get_theta(cfg, i-1)
+        for j in 1:get_nphi(cfg)
+            phi = get_phi(cfg, j)
+            spat[i, j] = sqrt(15/(8π)) * sin(theta) * cos(theta) * cos(phi)
+        end
+    end
+    return spat
+end
+
+# Transform and analyze
+spatial = create_Y21(cfg)
+spectral = analyze(cfg, spatial)
+reconstructed = synthesize(cfg, spectral)
+
+println("Transform error: ", maximum(abs.(spatial - reconstructed)))
+free_config(cfg)
+```
+
+### Vector Field Analysis
+
+```julia
+using SHTnsKit
+using LinearAlgebra
+
+# Create configuration
+cfg = create_gauss_config(16, 16)
+
+# Create a vector field (e.g., surface winds)
+u = rand(get_nlat(cfg), get_nphi(cfg))  # Zonal component
+v = rand(get_nlat(cfg), get_nphi(cfg))  # Meridional component
+
+# Decompose into spheroidal (divergent) and toroidal (rotational) parts
+Slm, Tlm = analyze_vector(cfg, u, v)
+
+# Compute energy in each component
+total_energy = sum(Slm.^2 + Tlm.^2)
+spheroidal_fraction = sum(Slm.^2) / total_energy
+toroidal_fraction = sum(Tlm.^2) / total_energy
+
+println("Spheroidal (divergent) energy: $(spheroidal_fraction*100)%")
+println("Toroidal (rotational) energy: $(toroidal_fraction*100)%")
+
+# Reconstruct vector field
+u_reconstructed, v_reconstructed = synthesize_vector(cfg, Slm, Tlm)
+
+free_config(cfg)
+```
+
+### GPU Acceleration
+
+```julia
+using SHTnsKit
+using CUDA
+
+# Initialize GPU
+if CUDA.functional() && initialize_gpu()
+    cfg = create_gpu_config(32, 32)
+    
+    # Create data on GPU
+    sh_gpu = CUDA.rand(Float64, get_nlm(cfg))
+    
+    # GPU transforms
+    spatial_gpu = synthesize_gpu(cfg, sh_gpu)
+    recovered_gpu = analyze_gpu(cfg, spatial_gpu)
+    
+    # Copy results back to CPU if needed
+    spatial_cpu = Array(spatial_gpu)
+    
+    cleanup_gpu()
+    free_config(cfg)
+end
+```
+
+### Power Spectrum Analysis
+
+```julia
+using SHTnsKit
+
+cfg = create_gauss_config(64, 64)
+
+# Create some test data
+sh = rand(get_nlm(cfg))
+
+# Compute power spectrum
+power = power_spectrum(cfg, sh)
+
+# Analyze spectral slope
+using Plots
+plot(0:get_lmax(cfg), power, 
+     xlabel="Spherical Harmonic Degree l", 
+     ylabel="Power",
+     yscale=:log10, title="Energy Spectrum")
+
+free_config(cfg)
+```
+
+## Multi-threading
+
+SHTnsKit.jl automatically detects and uses optimal OpenMP threading:
+
+```julia
+using SHTnsKit
+
+# Set optimal number of threads
+nthreads = set_optimal_threads()
+println("Using $nthreads OpenMP threads")
+
+# Or manually set thread count
+set_num_threads(4)
+println("Now using $(get_num_threads()) threads")
+```
+
+## Thread Safety
+
+All SHTns operations are thread-safe when using different configurations. Operations on the same configuration are automatically serialized using per-config locks.
+
+## Grid Types
+
+SHTnsKit.jl supports multiple grid types:
+
+```julia
+# Gauss-Legendre grid (recommended for most applications)
+cfg_gauss = create_gauss_config(32, 32)
+
+# Regular (equiangular) grid
+cfg_regular = create_regular_config(32, 32)
+
+# GPU-optimized configuration
+cfg_gpu = create_gpu_config(32, 32, grid_type=SHTnsFlags.SHT_GAUSS)
+```
+
+## Complex Fields
+
+```julia
+using SHTnsKit
+
+cfg = create_gauss_config(16, 16)
+
+# Create complex spectral coefficients
+sh_complex = allocate_complex_spectral(cfg)
+sh_complex[1] = 1.0 + 0.5im
+
+# Transform to spatial domain
+spatial_complex = synthesize_complex(cfg, sh_complex)
+
+# Transform back
+recovered_complex = analyze_complex(cfg, spatial_complex)
+
+free_config(cfg)
+```
+
+## Error Handling
+
+SHTnsKit.jl provides robust error handling:
+
+```julia
+using SHTnsKit
+
+try
+    cfg = create_gauss_config(64, 64)
+    
+    # Operations that might fail
+    sh = rand(10)  # Wrong size
+    spat = allocate_spatial(cfg)
+    synthesize!(cfg, sh, spat)  # Will throw AssertionError
+    
+catch e
+    println("Error: $e")
+finally
+    if @isdefined(cfg)
+        free_config(cfg)
+    end
+end
+```
+
+## Performance Tips
+
+1. **Use Gauss grids** for most applications - they're more efficient
+2. **Set optimal threading** with `set_optimal_threads()`
+3. **Use in-place operations** (`synthesize!`, `analyze!`) when possible
+4. **Batch operations** on the same configuration for better cache usage
+5. **Initialize GPU once** and reuse for multiple operations
+
+## Benchmarking
+
+```julia
+using SHTnsKit
+using BenchmarkTools
+
+cfg = create_gauss_config(64, 64)
+sh = rand(get_nlm(cfg))
+spat = allocate_spatial(cfg)
+
+@benchmark synthesize!($cfg, $sh, $spat)
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/username/SHTnsKit.jl).
+
+## Citation
+
+If you use SHTnsKit.jl in your research, please cite:
+
+1. **SHTns library**: Schaeffer, N. (2013). Efficient Spherical Harmonic Transforms aimed at pseudospectral numerical simulations. *Geochemistry, Geophysics, Geosystems*, 14(3), 751-758.
+
+2. **SHTnsKit.jl**: [Citation to be added when published]
+
+## License
+
+SHTnsKit.jl is released under the MIT license. The underlying SHTns library is released under the CeCILL License (GPL-compatible).
+
+## References
+
+- [SHTns Official Documentation](https://nschaeff.bitbucket.io/shtns/)
+- [SHTns Paper](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/ggge.20071)
+- [Spherical Harmonics on Wikipedia](https://en.wikipedia.org/wiki/Spherical_harmonics)

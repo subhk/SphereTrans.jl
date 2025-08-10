@@ -97,4 +97,167 @@ function SHTnsKit.analyze_gpu(cfg::SHTnsKit.SHTnsConfig,
     return sh_dev
 end
 
+# === ENHANCED GPU FUNCTIONALITY ===
+
+"""Enhanced GPU initialization with CUDA device management."""
+function SHTnsKit.initialize_gpu(device_id::Integer = 0; verbose::Bool = false)
+    try
+        # Set CUDA device
+        CUDA.device!(device_id)
+        
+        # Initialize SHTns GPU
+        result = SHTnsKit.gpu_init(device_id)
+        if result == 0
+            verbose && @info "GPU initialized successfully on CUDA device $device_id"
+            # Try to enable device pointer mode
+            if get(ENV, "SHTNSKIT_AUTO_DEVICEPTRS", "true") == "true"
+                enable_gpu_deviceptrs!()
+                verbose && @info "Enabled device pointer mode for GPU transforms"
+            end
+            return true
+        else
+            verbose && @warn "SHTns GPU initialization failed with code $result"
+            return false
+        end
+    catch e
+        verbose && @warn "GPU initialization error: $e"
+        return false
+    end
+end
+
+"""GPU-based complex field synthesis."""
+function SHTnsKit.synthesize_complex_gpu(cfg::SHTnsKit.SHTnsConfig, 
+                                        sh_dev::CUDA.CuArray{<:Complex,1})
+    # Convert to host, synthesize, copy back
+    sh_host = Array(sh_dev)
+    sh64 = sh_host isa Vector{ComplexF64} ? sh_host : ComplexF64.(sh_host)
+    spat_host = SHTnsKit.synthesize_complex(cfg, sh64)
+    
+    nlat, nphi = SHTnsKit.get_nlat(cfg), SHTnsKit.get_nphi(cfg)
+    spat_dev = similar(sh_dev, ComplexF64, nlat, nphi)
+    copyto!(spat_dev, spat_host)
+    return spat_dev
+end
+
+"""GPU-based complex field analysis."""
+function SHTnsKit.analyze_complex_gpu(cfg::SHTnsKit.SHTnsConfig,
+                                     spat_dev::CUDA.CuArray{<:Complex,2})
+    # Convert to host, analyze, copy back
+    spat_host = Array(spat_dev)
+    spat64 = spat_host isa Matrix{ComplexF64} ? spat_host : ComplexF64.(spat_host)
+    sh_host = SHTnsKit.analyze_complex(cfg, spat64)
+    
+    nlm = SHTnsKit.get_nlm(cfg)
+    sh_dev = similar(spat_dev, ComplexF64, nlm)
+    copyto!(sh_dev, sh_host)
+    return sh_dev
+end
+
+"""GPU-based vector field synthesis."""
+function SHTnsKit.synthesize_vector_gpu(cfg::SHTnsKit.SHTnsConfig,
+                                       Slm_dev::CUDA.CuArray{<:Real,1}, 
+                                       Tlm_dev::CUDA.CuArray{<:Real,1})
+    # Convert to host
+    Slm_host = Array(Slm_dev)
+    Tlm_host = Array(Tlm_dev)
+    
+    # Synthesize on host
+    Vt_host, Vp_host = SHTnsKit.synthesize_vector(cfg, Slm_host, Tlm_host)
+    
+    # Copy back to device
+    nlat, nphi = SHTnsKit.get_nlat(cfg), SHTnsKit.get_nphi(cfg)
+    Vt_dev = similar(Slm_dev, Float64, nlat, nphi)
+    Vp_dev = similar(Slm_dev, Float64, nlat, nphi)
+    copyto!(Vt_dev, Vt_host)
+    copyto!(Vp_dev, Vp_host)
+    
+    return Vt_dev, Vp_dev
+end
+
+"""GPU-based vector field analysis."""
+function SHTnsKit.analyze_vector_gpu(cfg::SHTnsKit.SHTnsConfig,
+                                    Vt_dev::CUDA.CuArray{<:Real,2},
+                                    Vp_dev::CUDA.CuArray{<:Real,2})
+    # Convert to host
+    Vt_host = Array(Vt_dev)
+    Vp_host = Array(Vp_dev)
+    
+    # Analyze on host
+    Slm_host, Tlm_host = SHTnsKit.analyze_vector(cfg, Vt_host, Vp_host)
+    
+    # Copy back to device
+    nlm = SHTnsKit.get_nlm(cfg)
+    Slm_dev = similar(Vt_dev, Float64, nlm)
+    Tlm_dev = similar(Vt_dev, Float64, nlm)
+    copyto!(Slm_dev, Slm_host)
+    copyto!(Tlm_dev, Tlm_host)
+    
+    return Slm_dev, Tlm_dev
+end
+
+"""GPU-based field rotation."""
+function SHTnsKit.rotate_field_gpu(cfg::SHTnsKit.SHTnsConfig, 
+                                  sh_dev::CUDA.CuArray{<:Real,1},
+                                  alpha::Real, beta::Real, gamma::Real)
+    # Convert to host, rotate, copy back
+    sh_host = Array(sh_dev)
+    sh_rotated_host = SHTnsKit.rotate_field(cfg, sh_host, alpha, beta, gamma)
+    
+    sh_rotated_dev = similar(sh_dev, Float64)
+    copyto!(sh_rotated_dev, sh_rotated_host)
+    return sh_rotated_dev
+end
+
+"""GPU-based spatial field rotation."""
+function SHTnsKit.rotate_spatial_field_gpu(cfg::SHTnsKit.SHTnsConfig,
+                                          spat_dev::CUDA.CuArray{<:Real,2},
+                                          alpha::Real, beta::Real, gamma::Real)
+    # Convert to host, rotate, copy back
+    spat_host = Array(spat_dev)
+    spat_rotated_host = SHTnsKit.rotate_spatial_field(cfg, spat_host, alpha, beta, gamma)
+    
+    spat_rotated_dev = similar(spat_dev, Float64)
+    copyto!(spat_rotated_dev, spat_rotated_host)
+    return spat_rotated_dev
+end
+
+"""GPU power spectrum computation."""
+function SHTnsKit.power_spectrum_gpu(cfg::SHTnsKit.SHTnsConfig, 
+                                    sh_dev::CUDA.CuArray{<:Real,1})
+    sh_host = Array(sh_dev)
+    power_host = SHTnsKit.power_spectrum(cfg, sh_host)
+    power_dev = CUDA.CuArray(power_host)
+    return power_dev
+end
+
+"""GPU gradient computation."""
+function SHTnsKit.compute_gradient_gpu(cfg::SHTnsKit.SHTnsConfig, 
+                                      Slm_dev::CUDA.CuArray{<:Real,1})
+    Slm_host = Array(Slm_dev)
+    Vt_host, Vp_host = SHTnsKit.compute_gradient(cfg, Slm_host)
+    
+    nlat, nphi = SHTnsKit.get_nlat(cfg), SHTnsKit.get_nphi(cfg)
+    Vt_dev = similar(Slm_dev, Float64, nlat, nphi)
+    Vp_dev = similar(Slm_dev, Float64, nlat, nphi)
+    copyto!(Vt_dev, Vt_host)
+    copyto!(Vp_dev, Vp_host)
+    
+    return Vt_dev, Vp_dev
+end
+
+"""GPU curl computation."""
+function SHTnsKit.compute_curl_gpu(cfg::SHTnsKit.SHTnsConfig,
+                                  Tlm_dev::CUDA.CuArray{<:Real,1})
+    Tlm_host = Array(Tlm_dev)
+    Vt_host, Vp_host = SHTnsKit.compute_curl(cfg, Tlm_host)
+    
+    nlat, nphi = SHTnsKit.get_nlat(cfg), SHTnsKit.get_nphi(cfg)
+    Vt_dev = similar(Tlm_dev, Float64, nlat, nphi)
+    Vp_dev = similar(Tlm_dev, Float64, nlat, nphi)
+    copyto!(Vt_dev, Vt_host)
+    copyto!(Vp_dev, Vp_host)
+    
+    return Vt_dev, Vp_dev
+end
+
 end # module

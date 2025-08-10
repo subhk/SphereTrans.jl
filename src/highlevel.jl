@@ -346,3 +346,182 @@ function analyze_gpu(cfg::SHTnsConfig, spat_dev::AbstractMatrix{<:Real})
     copyto!(sh_dev, sh_host)
     return sh_dev
 end
+
+# === HIGH-LEVEL COMPLEX TRANSFORMS ===
+
+"""Allocate complex spectral coefficient vector."""
+function allocate_complex_spectral(cfg::SHTnsConfig; T::Type{<:Complex}=ComplexF64)
+    return Vector{T}(undef, get_nlm(cfg))
+end
+
+"""Allocate complex spatial grid matrix."""
+function allocate_complex_spatial(cfg::SHTnsConfig; T::Type{<:Complex}=ComplexF64)
+    return Matrix{T}(undef, get_nlat(cfg), get_nphi(cfg))
+end
+
+"""Complex spectral-to-spatial transform with allocation."""
+function synthesize_complex(cfg::SHTnsConfig, sh::AbstractVector{<:Complex})
+    sh64 = sh isa Vector{ComplexF64} ? sh : ComplexF64.(sh)
+    spat = allocate_complex_spatial(cfg)
+    cplx_sh_to_spat(cfg, sh64, reshape(spat, :))
+    return spat
+end
+
+"""Complex spatial-to-spectral transform with allocation."""
+function analyze_complex(cfg::SHTnsConfig, spat::AbstractMatrix{<:Complex})
+    spat64 = spat isa Matrix{ComplexF64} ? spat : ComplexF64.(spat)
+    sh = allocate_complex_spectral(cfg)
+    cplx_spat_to_sh(cfg, reshape(spat64, :), sh)
+    return sh
+end
+
+# === HIGH-LEVEL VECTOR TRANSFORMS ===
+
+"""Synthesize vector field from spheroidal and toroidal coefficients."""
+function synthesize_vector(cfg::SHTnsConfig, 
+                          Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real})
+    Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
+    Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
+    
+    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+    Vt = Matrix{Float64}(undef, nlat, nphi)
+    Vp = Matrix{Float64}(undef, nlat, nphi)
+    
+    SHsphtor_to_spat(cfg, Slm64, Tlm64, reshape(Vt, :), reshape(Vp, :))
+    return Vt, Vp
+end
+
+"""Analyze vector field to spheroidal and toroidal coefficients."""
+function analyze_vector(cfg::SHTnsConfig,
+                       Vt::AbstractMatrix{<:Real}, Vp::AbstractMatrix{<:Real})
+    Vt64 = Vt isa Matrix{Float64} ? Vt : Float64.(Vt)
+    Vp64 = Vp isa Matrix{Float64} ? Vp : Float64.(Vp)
+    
+    nlm = get_nlm(cfg)
+    Slm = Vector{Float64}(undef, nlm)
+    Tlm = Vector{Float64}(undef, nlm)
+    
+    spat_to_SHsphtor(cfg, reshape(Vt64, :), reshape(Vp64, :), Slm, Tlm)
+    return Slm, Tlm
+end
+
+"""Compute gradient of scalar field."""
+function compute_gradient(cfg::SHTnsConfig, Slm::AbstractVector{<:Real})
+    Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
+    
+    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+    Vt = Matrix{Float64}(undef, nlat, nphi)
+    Vp = Matrix{Float64}(undef, nlat, nphi)
+    
+    SHsph_to_spat(cfg, Slm64, reshape(Vt, :), reshape(Vp, :))
+    return Vt, Vp
+end
+
+"""Compute curl of toroidal field."""
+function compute_curl(cfg::SHTnsConfig, Tlm::AbstractVector{<:Real})
+    Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
+    
+    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+    Vt = Matrix{Float64}(undef, nlat, nphi)
+    Vp = Matrix{Float64}(undef, nlat, nphi)
+    
+    SHtor_to_spat(cfg, Tlm64, reshape(Vt, :), reshape(Vp, :))
+    return Vt, Vp
+end
+
+# === HIGH-LEVEL ROTATION FUNCTIONS ===
+
+"""Rotate spherical harmonic field by Euler angles."""
+function rotate_field(cfg::SHTnsConfig, sh::AbstractVector{<:Real},
+                     alpha::Real, beta::Real, gamma::Real)
+    sh64 = sh isa Vector{Float64} ? sh : Float64.(sh)
+    sh_out = allocate_spectral(cfg)
+    rotation_wigner(cfg, Float64(alpha), Float64(beta), Float64(gamma), sh64, sh_out)
+    return sh_out
+end
+
+"""Rotate spatial field by Euler angles."""
+function rotate_spatial_field(cfg::SHTnsConfig, spat::AbstractMatrix{<:Real},
+                             alpha::Real, beta::Real, gamma::Real)
+    spat64 = spat isa Matrix{Float64} ? spat : Float64.(spat)
+    spat_out = allocate_spatial(cfg)
+    rotate_to_grid(cfg, Float64(alpha), Float64(beta), Float64(gamma), 
+                  reshape(spat64, :), reshape(spat_out, :))
+    return spat_out
+end
+
+# === HIGH-LEVEL THREADING CONTROL ===
+
+"""Set optimal number of OpenMP threads for SHTns."""
+function set_optimal_threads(; max_threads::Union{Nothing,Integer} = nothing)
+    if max_threads === nothing
+        max_threads = Threads.nthreads()
+    end
+    set_num_threads(max_threads)
+    return get_num_threads()
+end
+
+# === HIGH-LEVEL GPU MANAGEMENT ===
+
+"""Initialize GPU with error handling."""
+function initialize_gpu(device_id::Integer = 0; verbose::Bool = false)
+    try
+        result = gpu_init(device_id)
+        if result == 0
+            verbose && @info "GPU initialized successfully on device $device_id"
+            return true
+        else
+            verbose && @warn "GPU initialization failed with code $result"
+            return false
+        end
+    catch e
+        verbose && @warn "GPU initialization error: $e"
+        return false
+    end
+end
+
+"""Clean up GPU resources."""
+function cleanup_gpu(; verbose::Bool = false)
+    try
+        gpu_finalize()
+        verbose && @info "GPU resources cleaned up successfully"
+        return true
+    catch e
+        verbose && @warn "GPU cleanup error: $e"
+        return false
+    end
+end
+
+# === UTILITY FUNCTIONS FOR GRID CREATION ===
+
+"""Create configuration with Gauss-Legendre grid."""
+function create_gauss_config(lmax::Integer, mmax::Integer = lmax; 
+                            mres::Integer = 1, flags::UInt32 = UInt32(0))
+    cfg = create_config(lmax, mmax, mres, flags)
+    nlat = lmax + 1
+    nphi = 2 * mmax + 1
+    set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_GAUSS)
+    return cfg
+end
+
+"""Create configuration with regular (equiangular) grid."""
+function create_regular_config(lmax::Integer, mmax::Integer = lmax;
+                              mres::Integer = 1, flags::UInt32 = UInt32(0))
+    cfg = create_config(lmax, mmax, mres, flags)
+    nlat = 2 * lmax + 1  
+    nphi = 2 * mmax + 1
+    set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_REGULAR)
+    return cfg
+end
+
+"""Create GPU-optimized configuration."""
+function create_gpu_config(lmax::Integer, mmax::Integer = lmax;
+                          mres::Integer = 1, grid_type::Integer = SHTnsFlags.SHT_GAUSS)
+    flags = UInt32(SHTnsFlags.SHT_ALLOW_GPU)
+    cfg = create_config(lmax, mmax, mres, flags)
+    
+    nlat = grid_type == SHTnsFlags.SHT_GAUSS ? lmax + 1 : 2 * lmax + 1
+    nphi = 2 * mmax + 1
+    set_grid(cfg, nlat, nphi, grid_type)
+    return cfg
+end
