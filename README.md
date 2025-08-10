@@ -12,5 +12,5 @@ SHTns C API:
 - `sh_to_spat` and `spat_to_sh` – perform synthesis and analysis transforms.
 - `free_config` – release resources allocated for a configuration.
 
-These wrappers expect the `libshtns` shared library to be available on the
+These wrappers expect the `libshtns.so` shared library to be available on the
 system. They provide the building blocks for higher level Julia interfaces.
