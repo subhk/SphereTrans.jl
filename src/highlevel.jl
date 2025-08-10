@@ -3,11 +3,150 @@ High-level convenience wrappers around the low-level SHTns C API.
 
 These helpers provide allocation, shape-safe interfaces, and GPU-friendly
 variants that operate on device arrays by staging through host memory.
+They also add safe multi-threading by serializing concurrent transforms that
+share the same SHTns configuration.
 """
 
+import Libdl
+using Base.Threads: Atomic, atomic_load, atomic_store!
+
 # --- Optional native GPU entrypoint detection (runtime) ---
-const _gpu_sh2spat_ptr = Ref{Ptr{Cvoid}}(C_NULL)
-const _gpu_spat2sh_ptr = Ref{Ptr{Cvoid}}(C_NULL)
+const _gpu_sh2spat_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+const _gpu_spat2sh_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+
+# --- Optional native vector transform entrypoints ---
+const _vec_torpol2uv_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+const _vec_uv2torpol_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+
+"""
+    enable_native_vec!(; torpol2uv=nothing, uv2torpol=nothing) -> Bool
+
+Resolve and cache SHTns vector transform entrypoints by name. If not provided,
+tries environment variables `SHTNSKIT_VEC_TORPOL2UV` and `SHTNSKIT_VEC_UV2TORPOL`.
+Assumes signatures:
+  torpol2uv: (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}) -> Cvoid
+  uv2torpol: (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}) -> Cvoid
+where inputs are (cfg, tor, pol, u, v) in double precision.
+"""
+function enable_native_vec!(; torpol2uv::Union{Nothing,String}=get(ENV, "SHTNSKIT_VEC_TORPOL2UV", nothing),
+                               uv2torpol::Union{Nothing,String}=get(ENV, "SHTNSKIT_VEC_UV2TORPOL", nothing))
+    found = false
+    try
+        handle = Libdl.dlopen(libshtns)
+        if torpol2uv !== nothing
+            if (sym = Libdl.dlsym_e(handle, torpol2uv)) !== C_NULL
+                atomic_store!(_vec_torpol2uv_ptr, sym); found = true
+            end
+        end
+        if uv2torpol !== nothing
+            if (sym = Libdl.dlsym_e(handle, uv2torpol)) !== C_NULL
+                atomic_store!(_vec_uv2torpol_ptr, sym); found = true
+            end
+        end
+    catch
+    end
+    return found
+end
+
+# If still not enabled, try common default vector symbol names
+try
+    if !is_native_vec_enabled()
+        enable_native_vec!(; torpol2uv="shtns_torpol2uv", uv2torpol="shtns_uv2torpol")
+    end
+catch
+end
+
+"""Return true if either vector transform entrypoint is enabled."""
+is_native_vec_enabled() = (atomic_load(_vec_torpol2uv_ptr) != C_NULL) || (atomic_load(_vec_uv2torpol_ptr) != C_NULL)
+
+"""Vector synthesis: (tor, pol) -> (u, v). Arrays must be preallocated."""
+function synthesize_vec!(cfg::SHTnsConfig,
+                         tor::AbstractVector{Float64}, pol::AbstractVector{Float64},
+                         u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64})
+    @assert length(tor) == get_nlm(cfg) && length(pol) == get_nlm(cfg)
+    @assert size(u) == (get_nlat(cfg), get_nphi(cfg)) && size(v) == size(u)
+    ptr = atomic_load(_vec_torpol2uv_ptr)
+    ptr == C_NULL && error("Vector synthesis entrypoint not enabled. Call enable_native_vec! or set env SHTNSKIT_VEC_TORPOL2UV.")
+    ccall(ptr, Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, tor), Base.unsafe_convert(Ptr{Float64}, pol),
+          Base.unsafe_convert(Ptr{Float64}, reshape(u, :)), Base.unsafe_convert(Ptr{Float64}, reshape(v, :)))
+    return u, v
+end
+
+"""
+    grid_latitudes(cfg; mode=:approx) -> Vector{Float64}
+
+Return latitude coordinates (radians) for the configured grid. By default
+computes an equiangular approximation. If you have native SHTns functions to
+retrieve exact grid nodes, set environment variables:
+- SHTNSKIT_GRID_GET_THETA: symbol taking (Ptr{Cvoid}, Ptr{Float64}) and filling
+  `nlat` entries with latitude in radians.
+"""
+function grid_latitudes(cfg::SHTnsConfig; mode=:approx)
+    nlat = get_nlat(cfg)
+    lat = Vector{Float64}(undef, nlat)
+    sym = try
+        handle = Libdl.dlopen(libshtns)
+        Libdl.dlsym_e(handle, get(ENV, "SHTNSKIT_GRID_GET_THETA", ""))
+    catch
+        C_NULL
+    end
+    if sym != C_NULL
+        ccall(sym, Cvoid, (Ptr{Cvoid}, Ptr{Float64}), cfg.ptr, Base.unsafe_convert(Ptr{Float64}, lat))
+        return lat
+    end
+    @inbounds for i in 1:nlat
+        lat[i] = (i - 0.5) * π / nlat - π/2
+    end
+    return lat
+end
+
+"""Return longitude coordinates (radians) for the configured grid (equiangular)."""
+function grid_longitudes(cfg::SHTnsConfig)
+    nphi = get_nphi(cfg)
+    lon = Vector{Float64}(undef, nphi)
+    @inbounds for j in 1:nphi
+        lon[j] = 2π * (j - 1) / nphi
+    end
+    return lon
+end
+
+"""Vector analysis: (u, v) -> (tor, pol). Arrays must be preallocated."""
+function analyze_vec!(cfg::SHTnsConfig,
+                      u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64},
+                      tor::AbstractVector{Float64}, pol::AbstractVector{Float64})
+    @assert size(u) == (get_nlat(cfg), get_nphi(cfg)) && size(v) == size(u)
+    @assert length(tor) == get_nlm(cfg) && length(pol) == get_nlm(cfg)
+    ptr = atomic_load(_vec_uv2torpol_ptr)
+    ptr == C_NULL && error("Vector analysis entrypoint not enabled. Call enable_native_vec! or set env SHTNSKIT_VEC_UV2TORPOL.")
+    ccall(ptr, Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, reshape(u, :)), Base.unsafe_convert(Ptr{Float64}, reshape(v, :)),
+          Base.unsafe_convert(Ptr{Float64}, tor), Base.unsafe_convert(Ptr{Float64}, pol))
+    return tor, pol
+end
+# --- Per-config locks to ensure thread-safe calls on the same cfg ---
+const _cfg_locks = Dict{Ptr{Cvoid}, Base.ReentrantLock}()
+const _cfg_locks_guard = Base.ReentrantLock()
+
+_get_lock(cfg::SHTnsConfig) = begin
+    lk = nothing
+    Base.lock(_cfg_locks_guard) do
+        lk = get!(_cfg_locks, cfg.ptr, Base.ReentrantLock())
+    end
+    return lk
+end
+
+# Called from free_config to cleanup lock map
+function _on_free_config(cfg::SHTnsConfig)
+    Base.lock(_cfg_locks_guard) do
+        if haskey(_cfg_locks, cfg.ptr)
+            delete!(_cfg_locks, cfg.ptr)
+        end
+    end
+    return nothing
+end
 
 """
     enable_native_gpu!(; sh2spat=nothing, spat2sh=nothing) -> Bool
@@ -29,13 +168,13 @@ function enable_native_gpu!(; sh2spat::Union{Nothing,String}=get(ENV, "SHTNSKIT_
         handle = Libdl.dlopen(libshtns)
         if sh2spat !== nothing
             if (sym = Libdl.dlsym_e(handle, sh2spat)) !== C_NULL
-                _gpu_sh2spat_ptr[] = sym
+                atomic_store!(_gpu_sh2spat_ptr, sym)
                 found = true
             end
         end
         if spat2sh !== nothing
             if (sym = Libdl.dlsym_e(handle, spat2sh)) !== C_NULL
-                _gpu_spat2sh_ptr[] = sym
+                atomic_store!(_gpu_spat2sh_ptr, sym)
                 found = true
             end
         end
@@ -50,11 +189,17 @@ end
 
 True if a native GPU entrypoint for at least one transform direction is active.
 """
-is_native_gpu_enabled() = (_gpu_sh2spat_ptr[] != C_NULL) || (_gpu_spat2sh_ptr[] != C_NULL)
+is_native_gpu_enabled() = (atomic_load(_gpu_sh2spat_ptr) != C_NULL) || (atomic_load(_gpu_spat2sh_ptr) != C_NULL)
 
 # Try to enable from ENV at load time (no error if absent)
 try
     enable_native_gpu!()
+catch
+end
+try
+    if !is_native_gpu_enabled()
+        enable_native_gpu!(; sh2spat="shtns_sh_to_spat_gpu", spat2sh="shtns_spat_to_sh_gpu")
+    end
 catch
 end
 
@@ -90,13 +235,20 @@ function synthesize!(cfg::SHTnsConfig,
     @assert length(sh) == get_nlm(cfg) "length(sh) must be get_nlm(cfg)"
     @assert size(spat, 1) == get_nlat(cfg) && size(spat, 2) == get_nphi(cfg) "spat has wrong size"
     # Low-level expects linear memory; pass a vector view of spat
-    if _gpu_sh2spat_ptr[] != C_NULL
-        ccall(_gpu_sh2spat_ptr[], Cvoid,
-              (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
-              Base.unsafe_convert(Ptr{Float64}, sh),
-              Base.unsafe_convert(Ptr{Float64}, reshape(spat, :)))
-    else
-        sh_to_spat(cfg, sh, reshape(spat, :))
+    lk = _get_lock(cfg)
+    Base.lock(lk)
+    try
+        ptr = atomic_load(_gpu_sh2spat_ptr)
+        if ptr != C_NULL
+            ccall(ptr, Cvoid,
+                  (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+                  Base.unsafe_convert(Ptr{Float64}, sh),
+                  Base.unsafe_convert(Ptr{Float64}, reshape(spat, :)))
+        else
+            sh_to_spat(cfg, sh, reshape(spat, :))
+        end
+    finally
+        Base.unlock(lk)
     end
     return spat
 end
@@ -113,13 +265,20 @@ function analyze!(cfg::SHTnsConfig,
     @assert size(spat, 1) == get_nlat(cfg) && size(spat, 2) == get_nphi(cfg) "spat has wrong size"
     @assert length(sh) == get_nlm(cfg) "length(sh) must be get_nlm(cfg)"
     # Low-level expects linear memory; pass a vector view of spat
-    if _gpu_spat2sh_ptr[] != C_NULL
-        ccall(_gpu_spat2sh_ptr[], Cvoid,
-              (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
-              Base.unsafe_convert(Ptr{Float64}, reshape(spat, :)),
-              Base.unsafe_convert(Ptr{Float64}, sh))
-    else
-        spat_to_sh(cfg, reshape(spat, :), sh)
+    lk = _get_lock(cfg)
+    Base.lock(lk)
+    try
+        ptr = atomic_load(_gpu_spat2sh_ptr)
+        if ptr != C_NULL
+            ccall(ptr, Cvoid,
+                  (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+                  Base.unsafe_convert(Ptr{Float64}, reshape(spat, :)),
+                  Base.unsafe_convert(Ptr{Float64}, sh))
+        else
+            spat_to_sh(cfg, reshape(spat, :), sh)
+        end
+    finally
+        Base.unlock(lk)
     end
     return sh
 end

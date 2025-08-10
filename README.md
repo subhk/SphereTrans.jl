@@ -33,6 +33,14 @@ wrappers and GPU-friendly helpers:
 
 All high-level transforms operate on `Float64` data, promoting inputs as needed.
 
+### Threading
+
+- High-level transforms are safe under Julia multi-threading: calls using the
+  same `SHTnsConfig` are serialized via an internal lock to avoid races.
+- Different configurations may run concurrently in parallel threads.
+- SHTns itself may use internal OpenMP threads; to avoid oversubscription, set
+  either Julia threads or SHTns OpenMP threads conservatively.
+
 ### GPU/CUDA usage
 
 If you work with CUDA arrays (e.g., `CUDA.CuArray`), you can use:
@@ -68,6 +76,53 @@ sh2  = analyze(cfg, spat)           # length matches get_nlm(cfg)
 free_config(cfg)
 ```
 
+Device-pointer fast path
+- If your SHTns GPU entrypoints expect device pointers and run kernels
+  internally, opt-in to a zero-copy path that avoids host staging.
+  - Set env: `SHTNSKIT_GPU_PTRKIND=device`
+  - Or call: `SHTnsKit.SHTnsKitCUDAExt.enable_gpu_deviceptrs!()`
+- Combine this with native GPU entrypoints (see below) for best performance.
+
+### MPI (distributed SHT)
+
+This package exposes a lightweight MPI extension that can call SHTns's native
+MPI entrypoints when available. Symbol names vary across builds, so the
+extension dynamically loads them via environment variables or an explicit call:
+
+- `SHTNSKIT_MPI_CREATE`   – MPI config constructor symbol
+- `SHTNSKIT_MPI_SET_GRID` – grid setup symbol
+- `SHTNSKIT_MPI_SH2SPAT`  – spectral→spatial symbol
+- `SHTNSKIT_MPI_SPAT2SH`  – spatial→spectral symbol
+- `SHTNSKIT_MPI_FREE`     – destructor symbol
+
+When present, you can do per-rank distributed transforms using:
+
+```julia
+using MPI, SHTnsKit
+MPI.Init()
+comm = MPI.COMM_WORLD
+
+# Enable native SHTns MPI entrypoints by name
+SHTnsKit.SHTnsKitMPIExt.enable_native_mpi!(; create="...", set_grid="...",
+    sh2spat="...", spat2sh="...", free="...")
+
+cfg = SHTnsKit.SHTnsKitMPIExt.create_mpi_config(comm, 16, 16, 1)
+set_grid(cfg, 64, 128, 0)
+sh = allocate_spectral(cfg.cfg)          # allocation uses cfg.cfg underneath
+spat = allocate_spatial(cfg.cfg)
+synthesize!(cfg, sh, spat)
+analyze!(cfg, spat, sh)
+free_config(cfg)
+MPI.Finalize()
+```
+
+Notes:
+- If you don’t enable MPI entrypoints, the extension transparently falls back
+  to per-rank CPU SHTns (each rank creates its own `SHTnsConfig`).
+- Precise C signatures may differ across builds; if your entrypoints require
+  explicit `MPI_Comm` arguments or other parameters, please share the exact C
+  prototypes and we will wire exact wrappers.
+
 ### Native SHTns GPU entrypoints (optional)
 
 If your `libshtns` build provides GPU-accelerated entrypoints that are drop-in
@@ -94,5 +149,29 @@ SHTnsKit.enable_native_gpu!(; sh2spat="shtns_sh_to_spat_gpu",
 ```
 
 When enabled, high-level `analyze!`/`synthesize!` use these entrypoints; the
-GPU-friendly wrappers (`analyze_gpu`/`synthesize_gpu`) stage through host but
-benefit from the native GPU acceleration internally.
+GPU-friendly wrappers (`analyze_gpu`/`synthesize_gpu`) will either stage through
+host memory (default) or pass device pointers directly if
+`SHTNSKIT_GPU_PTRKIND=device` is set or `enable_gpu_deviceptrs!()` was called.
+
+### Default Symbols
+
+If environment variables are not set, SHTnsKit tries common default symbol
+names for dynamic resolution:
+
+- CPU vector transforms:
+  - torpol2uv: `shtns_torpol2uv`
+  - uv2torpol: `shtns_uv2torpol`
+- GPU scalar transforms:
+  - sh_to_spat: `shtns_sh_to_spat_gpu`
+  - spat_to_sh: `shtns_spat_to_sh_gpu`
+- MPI scalar transforms:
+  - create: `shtns_mpi_create_with_opts`
+  - set_grid: `shtns_mpi_set_grid`
+  - sh_to_spat: `shtns_mpi_sh_to_spat`
+  - spat_to_sh: `shtns_mpi_spat_to_sh`
+  - free: `shtns_mpi_free`
+- MPI vector transforms:
+  - torpol2uv: `shtns_mpi_torpol2uv`
+  - uv2torpol: `shtns_mpi_uv2torpol`
+- Grid latitudes (optional):
+  - get_theta: `shtns_get_theta`

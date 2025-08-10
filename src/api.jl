@@ -5,8 +5,19 @@ struct SHTnsConfig
     ptr::Ptr{Cvoid}
 end
 
-# Name of the shared library. Adjust if needed on other platforms.
-const libshtns = "libshtns"
+# Name/handle of the shared library. Prefer SHTns_jll if available.
+const libshtns = let
+    lib = "libshtns"
+    try
+        Base.require(:SHTns_jll)
+        if get(Base.loaded_modules, :SHTns_jll, nothing) !== nothing
+            lib = Base.loaded_modules[:SHTns_jll].libshtns
+        end
+    catch
+        # fall back to system library name
+    end
+    lib
+end
 
 """
     create_config(lmax, mmax, mres, flags=UInt32(0)) -> SHTnsConfig
@@ -125,6 +136,11 @@ Free resources associated with a configuration using `shtns_free`.
 """
 function free_config(cfg::SHTnsConfig)
     ccall((:shtns_free, libshtns), Cvoid, (Ptr{Cvoid},), cfg.ptr)
+    # Allow high-level helpers to cleanup per-config state (locks)
+    try
+        _on_free_config(cfg)
+    catch
+        # ignore if high-level not loaded yet
+    end
     return nothing
 end
-
