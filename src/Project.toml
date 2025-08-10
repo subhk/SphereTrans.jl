@@ -1,0 +1,21 @@
+name = "SHTnsKit"
+uuid = "1b9d0af0-2e90-4fb0-9eae-4a2e2cdf5320"
+version = "0.1.0"
+
+[deps]
+
+[extras]
+Test = "8dfed614-57b6-5c53-8559-9a1b9990f74e"
+
+[targets]
+test = ["Test"]
+
+[compat]
+julia = "1.10"
+CUDA = "5"
+
+[weakdeps]
+CUDA = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+
+[extensions]
+SHTnsKitCUDAExt = "CUDA"
