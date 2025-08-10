@@ -60,6 +60,65 @@ function spat_to_sh(cfg::SHTnsConfig, spat::AbstractVector{Float64}, sh::Abstrac
 end
 
 """
+    get_lmax(cfg) -> Int
+
+Return the maximum spherical harmonic degree associated with `cfg` using
+`shtns_get_lmax`.
+"""
+function get_lmax(cfg::SHTnsConfig)
+    return ccall((:shtns_get_lmax, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
+end
+
+"""
+    get_mmax(cfg) -> Int
+
+Return the maximum order associated with `cfg` using `shtns_get_mmax`.
+"""
+function get_mmax(cfg::SHTnsConfig)
+    return ccall((:shtns_get_mmax, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
+end
+
+"""
+    get_nlat(cfg) -> Int
+
+Retrieve the number of latitudinal grid points set for `cfg` using
+`shtns_get_nlat`.
+"""
+function get_nlat(cfg::SHTnsConfig)
+    return ccall((:shtns_get_nlat, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
+end
+
+"""
+    get_nphi(cfg) -> Int
+
+Retrieve the number of longitudinal grid points set for `cfg` using
+`shtns_get_nphi`.
+"""
+function get_nphi(cfg::SHTnsConfig)
+    return ccall((:shtns_get_nphi, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
+end
+
+"""
+    get_nlm(cfg) -> Int
+
+Return the number of spherical harmonic coefficients using `shtns_get_nlm`.
+"""
+function get_nlm(cfg::SHTnsConfig)
+    return ccall((:shtns_get_nlm, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
+end
+
+"""
+    lmidx(cfg, l, m) -> Int
+
+Return the packed index corresponding to the spherical harmonic degree `l` and
+order `m` using `shtns_lmidx`.
+"""
+function lmidx(cfg::SHTnsConfig, l::Integer, m::Integer)
+    return ccall((:shtns_lmidx, libshtns), Cint,
+                 (Ptr{Cvoid}, Cint, Cint), cfg.ptr, l, m)
+end
+
+"""
     free_config(cfg)
 
 Free resources associated with a configuration using `shtns_free`.
