@@ -59,18 +59,15 @@ const libshtns = let
         end
     end
     
-    # Try SHTns_jll first
-    lib = "libshtns"
+    # Try SHTns_jll first (it's now a dependency)
     try
-        Base.require(:SHTns_jll)
-        if get(Base.loaded_modules, :SHTns_jll, nothing) !== nothing
-            lib = Base.loaded_modules[:SHTns_jll].libshtns
-        end
+        import SHTns_jll
+        SHTns_jll.LibSHTns
     catch e
         # fall back to system library name
-        @debug "SHTns_jll not available, using system library: $e"
+        @debug "SHTns_jll failed to load, using system library: $e"
+        "libshtns"
     end
-    lib
 end
 
 """
