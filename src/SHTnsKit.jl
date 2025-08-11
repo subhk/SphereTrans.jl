@@ -46,7 +46,7 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        # Helper functions for automatic differentiation
        get_lm_from_index, get_index_from_lm,
        # Library path management
-       set_library_path, get_library_path
+       set_library_path, get_library_path, validate_library, find_system_library
 
     include("api.jl")
     include("highlevel.jl")

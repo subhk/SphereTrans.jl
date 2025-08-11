@@ -80,6 +80,13 @@ SHTnsKit.set_library_path("/path/to/your/libshtns.so")
 # Check current library path
 current_path = SHTnsKit.get_library_path()
 println("Using library: $current_path")
+
+# Validate the library is working
+if SHTnsKit.validate_library()
+    println("✓ SHTns library is working correctly")
+else
+    println("✗ Library validation failed - check your SHTns installation")
+end
 ```
 
 **Library Loading Priority:**

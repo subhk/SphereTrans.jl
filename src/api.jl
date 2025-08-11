@@ -2,6 +2,7 @@
 
 using LinearAlgebra
 using FFTW
+using Libdl
 
 # SHTns flags and grid types
 module SHTnsFlags
@@ -35,7 +36,27 @@ const libshtns = let
     # Check for user-specified custom library path
     custom_lib = get(ENV, "SHTNS_LIBRARY_PATH", nothing)
     if custom_lib !== nothing
-        return custom_lib
+        # Validate custom library path
+        if !isfile(custom_lib)
+            @error "Custom SHTns library not found: $custom_lib" 
+            @info "Falling back to system library. Check SHTNS_LIBRARY_PATH environment variable."
+        else
+            # Try to validate it's actually a SHTns library by checking for key symbols
+            try
+                handle = Libdl.dlopen(custom_lib, Libdl.RTLD_LAZY)
+                has_shtns = Libdl.dlsym_e(handle, :shtns_create_with_opts) != C_NULL
+                Libdl.dlclose(handle)
+                if has_shtns
+                    return custom_lib
+                else
+                    @error "Library $custom_lib does not appear to be a valid SHTns library (missing shtns_create_with_opts symbol)"
+                    @info "Falling back to system library."
+                end
+            catch e
+                @error "Failed to validate custom SHTns library $custom_lib: $e"
+                @info "Falling back to system library."
+            end
+        end
     end
     
     # Try SHTns_jll first
@@ -45,8 +66,9 @@ const libshtns = let
         if get(Base.loaded_modules, :SHTns_jll, nothing) !== nothing
             lib = Base.loaded_modules[:SHTns_jll].libshtns
         end
-    catch
+    catch e
         # fall back to system library name
+        @debug "SHTns_jll not available, using system library: $e"
     end
     lib
 end
