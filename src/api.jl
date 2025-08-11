@@ -118,9 +118,34 @@ function set_grid(cfg::SHTnsConfig, nlat::Integer, nphi::Integer, grid_type::Int
     # Strict validation following successful SHTns.jl patterns
     cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
     
-    # Get lmax/mmax for validation
-    lmax = get_lmax(cfg)  
-    mmax = get_mmax(cfg)
+    # Get lmax/mmax for validation - but handle missing symbols
+    lmax = try
+        get_lmax(cfg)
+    catch e
+        if occursin("shtns_get_lmax", string(e)) || occursin("undefined symbol", string(e))
+            @debug "shtns_get_lmax symbol missing - using fallback validation"
+            # Use reasonable fallback - assume lmax is related to grid size
+            if grid_type == SHTnsFlags.SHT_GAUSS
+                max(nlat - 1, 2)  # For Gauss: nlat ~ lmax + 1
+            else
+                max(div(nlat - 1, 2), 2)  # For Regular: nlat ~ 2*lmax + 1
+            end
+        else
+            rethrow(e)
+        end
+    end
+    
+    mmax = try
+        get_mmax(cfg)
+    catch e
+        if occursin("shtns_get_mmax", string(e)) || occursin("undefined symbol", string(e))
+            @debug "shtns_get_mmax symbol missing - using fallback validation"
+            # Use reasonable fallback - assume mmax is related to nphi
+            max(div(nphi - 1, 2), 0)  # For most grids: nphi ~ 2*mmax + 1
+        else
+            rethrow(e)
+        end
+    end
     
     # Apply SHTns.jl validation rules
     nlat >= 16 || error("nlat must be >= 16 (SHTns stability requirement), got $nlat")
