@@ -70,7 +70,7 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        check_platform_support, get_platform_description, warn_if_problematic_platform,
        
        # SHTns binary compatibility functions
-       has_shtns_symbols, check_shtns_status,
+       has_shtns_symbols, check_shtns_status, should_test_shtns_by_default,
 
        # Grid and coordinates
        get_theta, get_phi, get_gauss_weights,

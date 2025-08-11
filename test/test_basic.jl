@@ -13,26 +13,40 @@ using LinearAlgebra
         println("✅ Package structure and exports working")
     end
     
-    # Check if SHTns_jll binary is functional before running SHTns-dependent tests
-    import SHTnsKit: has_shtns_symbols
+    # Check if SHTns testing should be enabled based on platform and configuration
+    import SHTnsKit: has_shtns_symbols, should_test_shtns_by_default
     has_symbols = has_shtns_symbols()
+    should_test_by_default = should_test_shtns_by_default()
     
-    # The SHTns_jll binary distribution has widespread issues across platforms
-    # Rather than trying to detect specific problematic platforms, we check for
-    # an environment variable that allows opting into SHTns testing
-    should_test_shtns = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    # Determine if we should run SHTns tests
+    should_test_shtns = should_test_by_default
     
     if !has_symbols || !should_test_shtns
         reason = if !has_symbols
             "missing required symbols"
+        elseif !should_test_by_default
+            "SHTns testing disabled by default on this platform ($(Sys.KERNEL) $(Sys.ARCH))"
         else
-            "SHTns_jll binary testing disabled (set SHTNSKIT_TEST_SHTNS=true to enable)"
+            "SHTns testing explicitly disabled"
         end
-        @test_skip "SHTns-dependent tests - $reason on $(Sys.KERNEL) $(Sys.ARCH)"
+        
+        @test_skip "SHTns-dependent tests - $reason"
         println("⚠️ Skipping SHTns tests: $reason")
-        println("   The SHTns_jll binary distribution has known issues across platforms.")
-        println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force testing (may crash).")
+        
+        if !should_test_by_default
+            if Sys.islinux()
+                println("   Linux has known SHTns_jll binary compatibility issues")
+            end
+            println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force enable (risky)")
+        else
+            println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to enable testing")
+        end
         return
+    end
+    
+    println("✅ SHTns testing ENABLED on $(Sys.KERNEL) $(Sys.ARCH)")
+    if !should_test_by_default
+        println("   (explicitly enabled via SHTNSKIT_TEST_SHTNS environment variable)")
     end
     
     @testset "Configuration Creation and Grid Setup" begin

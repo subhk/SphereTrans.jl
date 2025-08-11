@@ -24,14 +24,24 @@ platform_desc = get_platform_description()
 println("Running tests on: $platform_desc")
 println("Platform support level: $platform_support")
 
-# Check if SHTns testing is enabled
-shtns_testing_enabled = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
-if shtns_testing_enabled
-    println("⚠️ SHTns testing ENABLED via SHTNSKIT_TEST_SHTNS environment variable")
-    println("   This may cause crashes due to SHTns_jll binary distribution issues")
+# Check SHTns testing configuration based on platform
+import SHTnsKit: should_test_shtns_by_default
+should_test_by_default = should_test_shtns_by_default()
+explicit_override = get(ENV, "SHTNSKIT_TEST_SHTNS", nothing)
+
+if should_test_by_default
+    if explicit_override == "false"
+        println("ℹ️ SHTns testing DISABLED via SHTNSKIT_TEST_SHTNS environment variable")
+    else
+        println("✅ SHTns testing ENABLED by default on $(Sys.KERNEL)")
+        println("   Set SHTNSKIT_TEST_SHTNS=false to disable if issues occur")
+    end
+elseif explicit_override == "true"
+    println("⚠️ SHTns testing FORCE ENABLED via SHTNSKIT_TEST_SHTNS environment variable")
+    println("   This may cause crashes due to SHTns_jll binary distribution issues on $(Sys.KERNEL)")
 else
-    println("ℹ️ SHTns testing DISABLED by default due to widespread SHTns_jll issues")
-    println("   Set SHTNSKIT_TEST_SHTNS=true environment variable to enable (risky)")
+    println("ℹ️ SHTns testing DISABLED by default on $(Sys.KERNEL) due to known SHTns_jll issues")
+    println("   Set SHTNSKIT_TEST_SHTNS=true environment variable to force enable (risky)")
 end
 
 @testset "SHTnsKit Complete Test Suite" begin
@@ -135,7 +145,12 @@ end
 
     # Legacy comprehensive tests (keep for backward compatibility)
     # Apply the same SHTns testing logic as the main tests
-    should_test_shtns = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    should_test_shtns = should_test_by_default
+    if explicit_override == "true"
+        should_test_shtns = true
+    elseif explicit_override == "false"
+        should_test_shtns = false
+    end
     
     if platform_support == :supported && should_test_shtns
         @testset "Legacy Comprehensive Tests" begin
@@ -254,8 +269,12 @@ end
         if platform_support != :supported
             println("ℹ Legacy comprehensive tests skipped due to platform limitations")
         else
-            println("ℹ Legacy comprehensive tests skipped due to SHTns_jll binary issues")
-            println("   Set SHTNSKIT_TEST_SHTNS=true to enable (risky)")
+            if should_test_by_default
+                println("ℹ Legacy comprehensive tests skipped via SHTNSKIT_TEST_SHTNS=false")
+            else
+                println("ℹ Legacy comprehensive tests skipped - SHTns testing disabled by default on $(Sys.KERNEL)")
+                println("   Set SHTNSKIT_TEST_SHTNS=true to enable (risky)")
+            end
         end
     end
 

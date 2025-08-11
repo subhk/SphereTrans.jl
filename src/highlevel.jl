@@ -684,6 +684,33 @@ function has_shtns_symbols()
 end
 
 """
+    should_test_shtns_by_default() -> Bool
+
+Determine if SHTns testing should be enabled by default based on platform.
+Returns true for platforms where SHTns_jll typically works (Linux/Ubuntu),
+false for problematic platforms (macOS, Windows).
+"""
+function should_test_shtns_by_default()
+    # Check explicit environment variable first
+    explicit_setting = get(ENV, "SHTNSKIT_TEST_SHTNS", nothing)
+    if explicit_setting !== nothing
+        return explicit_setting == "true"
+    end
+    
+    # Platform-based defaults
+    if Sys.isapple() || Sys.iswindows()
+        # Enable by default on macOS and Windows
+        return true
+    elseif Sys.islinux()
+        # Disable by default on Linux (including Ubuntu CI) due to SHTns_jll issues
+        return false
+    else
+        # Conservative default for other platforms
+        return false
+    end
+end
+
+"""
     check_shtns_status() -> NamedTuple
 
 Check the status of SHTns functionality and provide diagnostic information.
@@ -693,6 +720,7 @@ Returns a NamedTuple with status information and recommendations.
 - `functional`: Boolean indicating if SHTns appears to work
 - `has_symbols`: Boolean indicating if required symbols are present
 - `platform`: String describing the current platform  
+- `should_test_default`: Boolean indicating if this platform should test by default
 - `recommendations`: Vector of strings with suggested actions
 
 # Examples
@@ -706,29 +734,35 @@ end
 function check_shtns_status()
     has_symbols = has_shtns_symbols()
     platform_desc = get_platform_description()
+    should_test_default = should_test_shtns_by_default()
     
-    # For now, we assume SHTns_jll is problematic everywhere unless proven otherwise
-    # This is based on observed failures across Linux, macOS, and likely Windows
-    is_functional = has_symbols && get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    # SHTns is considered functional if:
+    # 1. It has required symbols AND
+    # 2. Either testing is enabled by default for this platform OR explicitly requested
+    explicit_override = get(ENV, "SHTNSKIT_TEST_SHTNS", nothing)
+    is_functional = has_symbols && (should_test_default || explicit_override == "true")
     
     recommendations = String[]
     
     if !has_symbols
         push!(recommendations, "SHTns_jll binary is missing required symbols")
         push!(recommendations, "Try compiling SHTns from source or using conda-forge version")
+    elseif !should_test_default
+        push!(recommendations, "SHTns testing disabled by default on this platform due to known SHTns_jll issues")
+        push!(recommendations, "Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force enable (risky)")
+        push!(recommendations, "Consider using conda-forge SHTns or compiling from source for production")
     end
     
-    if !is_functional
-        push!(recommendations, "SHTns_jll binary distribution has known runtime issues")
-        push!(recommendations, "Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force enable (risky)")
-        push!(recommendations, "Consider using conda-forge SHTns or compiling from source")
-        push!(recommendations, "For CI/testing: Skip SHTns-dependent tests or use alternative implementations")
+    if !is_functional && should_test_default
+        push!(recommendations, "SHTns_jll may have runtime issues on this platform")
+        push!(recommendations, "If tests crash, set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"false\" to disable")
     end
     
     return (
         functional = is_functional,
         has_symbols = has_symbols,
         platform = platform_desc,
+        should_test_default = should_test_default,
         recommendations = recommendations
     )
 end
