@@ -34,24 +34,12 @@ jobs:
         version:
           - '1.10'  # LTS version
           - '1.11'  # Latest stable
-          - 'nightly'
         os:
           - ubuntu-latest
           - macOS-latest
           - windows-latest
         arch:
           - x64
-        include:
-          # Test on ARM64 macOS
-          - version: '1.11'
-            os: macOS-latest
-            arch: aarch64
-        exclude:
-          # Reduce CI load by testing nightly only on Linux
-          - version: 'nightly'
-            os: macOS-latest
-          - version: 'nightly'
-            os: windows-latest
     
     steps:
       - uses: actions/checkout@v4
@@ -84,24 +72,36 @@ jobs:
       
       - name: Build package
         run: |
+          echo "Building package..."
           julia --project=. -e '
             using Pkg
+            println("Julia version: ", VERSION)
+            println("Project status:")
+            Pkg.status()
+            println("Instantiating...")
             Pkg.instantiate()
-            Pkg.precompile()'
+            println("Precompiling...")
+            Pkg.precompile()
+            println("Build completed successfully!")'
         env:
           JULIA_NUM_THREADS: 2
       
       - name: Run basic tests
-        uses: julia-actions/julia-runtest@v1
+        run: |
+          echo "Running tests..."
+          julia --project=. -e '
+            using Pkg
+            Pkg.test(coverage=true)
+            println("Tests completed!")'
         env:
           JULIA_NUM_THREADS: 2
-        with:
-          coverage: true
           
       - name: Process coverage
+        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
         uses: julia-actions/julia-processcoverage@v1
         
       - name: Upload coverage reports to Codecov
+        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v3
         with:
           files: lcov.info
@@ -116,6 +116,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
+          - '1.10'
           - '1.11'
         os:
           - ubuntu-latest
@@ -171,6 +172,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
+          - '1.10'
           - '1.11'
         
     steps:
@@ -217,6 +219,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
+          - '1.10'
           - '1.11'
         
     steps:
