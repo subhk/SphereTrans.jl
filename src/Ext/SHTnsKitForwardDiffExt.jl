@@ -211,18 +211,19 @@ function synthesize_vector(cfg::SHTnsConfig,
     Vt_values, Vp_values = synthesize_vector(cfg, S_values, T_values)
     
     # Apply vector transform to each partial component
-    Vt_partials = ntuple(N) do i
+    vector_partials = ntuple(N) do i
         S_partials_i = map(p -> p[i], S_partials)
         T_partials_i = map(p -> p[i], T_partials)
-        Vt_i, _ = synthesize_vector(cfg, S_partials_i, T_partials_i)
-        Vt_i
+        synthesize_vector(cfg, S_partials_i, T_partials_i)  # Returns (Vt_i, Vp_i)
+    end
+    
+    # Separate Vt and Vp components
+    Vt_partials = ntuple(N) do i
+        vector_partials[i][1]  # First element is Vt
     end
     
     Vp_partials = ntuple(N) do i
-        S_partials_i = map(p -> p[i], S_partials)
-        T_partials_i = map(p -> p[i], T_partials)
-        _, Vp_i = synthesize_vector(cfg, S_partials_i, T_partials_i)
-        Vp_i
+        vector_partials[i][2]  # Second element is Vp
     end
     
     # Reconstruct dual numbers
@@ -255,18 +256,19 @@ function analyze_vector(cfg::SHTnsConfig,
     S_values, T_values = analyze_vector(cfg, Vt_values, Vp_values)
     
     # Apply vector transform to each partial component
-    S_partials = ntuple(N) do i
+    vector_analysis_partials = ntuple(N) do i
         Vt_partials_i = map(p -> p[i], Vt_partials)
         Vp_partials_i = map(p -> p[i], Vp_partials)
-        S_i, _ = analyze_vector(cfg, Vt_partials_i, Vp_partials_i)
-        S_i
+        analyze_vector(cfg, Vt_partials_i, Vp_partials_i)  # Returns (S_i, T_i)
+    end
+    
+    # Separate S and T components
+    S_partials = ntuple(N) do i
+        vector_analysis_partials[i][1]  # First element is S
     end
     
     T_partials = ntuple(N) do i
-        Vt_partials_i = map(p -> p[i], Vt_partials)
-        Vp_partials_i = map(p -> p[i], Vp_partials)
-        _, T_i = analyze_vector(cfg, Vt_partials_i, Vp_partials_i)
-        T_i
+        vector_analysis_partials[i][2]  # Second element is T
     end
     
     # Reconstruct dual numbers
@@ -300,16 +302,18 @@ function compute_gradient(cfg::SHTnsConfig,
     ∇θ_values, ∇φ_values = compute_gradient(cfg, scalar_values)
     
     # Apply gradient to each partial component
-    ∇θ_partials = ntuple(N) do i
+    gradient_partials = ntuple(N) do i
         scalar_partials_i = map(p -> p[i], scalar_partials)
-        ∇θ_i, _ = compute_gradient(cfg, scalar_partials_i)
-        ∇θ_i
+        compute_gradient(cfg, scalar_partials_i)  # Returns (∇θ_i, ∇φ_i)
+    end
+    
+    # Separate θ and φ components
+    ∇θ_partials = ntuple(N) do i
+        gradient_partials[i][1]  # First element is ∇θ
     end
     
     ∇φ_partials = ntuple(N) do i
-        scalar_partials_i = map(p -> p[i], scalar_partials)
-        _, ∇φ_i = compute_gradient(cfg, scalar_partials_i)
-        ∇φ_i
+        gradient_partials[i][2]  # Second element is ∇φ
     end
     
     # Reconstruct dual numbers
@@ -339,16 +343,18 @@ function compute_curl(cfg::SHTnsConfig,
     curlθ_values, curlφ_values = compute_curl(cfg, toroidal_values)
     
     # Apply curl to each partial component
-    curlθ_partials = ntuple(N) do i
+    curl_partials = ntuple(N) do i
         toroidal_partials_i = map(p -> p[i], toroidal_partials)
-        curlθ_i, _ = compute_curl(cfg, toroidal_partials_i)
-        curlθ_i
+        compute_curl(cfg, toroidal_partials_i)  # Returns (curlθ_i, curlφ_i)
+    end
+    
+    # Separate θ and φ components
+    curlθ_partials = ntuple(N) do i
+        curl_partials[i][1]  # First element is curlθ
     end
     
     curlφ_partials = ntuple(N) do i
-        toroidal_partials_i = map(p -> p[i], toroidal_partials)
-        _, curlφ_i = compute_curl(cfg, toroidal_partials_i)
-        curlφ_i
+        curl_partials[i][2]  # Second element is curlφ
     end
     
     # Reconstruct dual numbers
