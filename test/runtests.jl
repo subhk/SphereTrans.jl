@@ -50,12 +50,14 @@ println("Platform support level: $platform_support")
         try
             include("test_basic.jl")
         catch e
-            if occursin("bad SHT accuracy", string(e)) || occursin("undefined symbol", string(e)) || occursin("shtns_get_", string(e)) || occursin("nlat or nphi is zero", string(e))
+            if occursin("bad SHT accuracy", string(e)) || occursin("undefined symbol", string(e)) || occursin("shtns_get_", string(e)) || occursin("nlat or nphi is zero", string(e)) || occursin("SHTns_jll binary distribution", string(e))
                 println("⚠ SHTns_jll binary issue detected:")
                 if occursin("undefined symbol", string(e))
                     println("  - Missing SHTns symbols in binary distribution")
                 elseif occursin("nlat or nphi is zero", string(e))
                     println("  - Grid parameter validation failure")
+                elseif occursin("SHTns_jll binary distribution", string(e))
+                    println("  - SHTns_jll binary is non-functional on this platform")
                 else
                     println("  - SHTns accuracy test failure")
                 end
