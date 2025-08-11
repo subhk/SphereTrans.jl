@@ -118,10 +118,10 @@ Attempt to find SHTns library in common system locations.
 
 # Examples
 ```julia
-lib_path = SHTnsKit.find_system_library()
-if lib_path !== nothing
-    println("Found SHTns library at: $lib_path")
-    SHTnsKit.set_library_path(lib_path)
+library_path = SHTnsKit.find_system_library()
+if library_path !== nothing
+    println("Found SHTns library at: \$library_path")
+    SHTnsKit.set_library_path(library_path)
 end
 ```
 """
