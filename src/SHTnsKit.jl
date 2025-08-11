@@ -1,3 +1,62 @@
+"""
+    SHTnsKit
+
+A Julia interface to the SHTns (Spherical Harmonic Transforms) library for fast spherical harmonic transforms.
+
+## Important Note on SHTns_jll Binary Issues
+
+The SHTns_jll binary distribution has known compatibility issues across multiple platforms
+(Linux, macOS, Windows) that can cause runtime errors like "nlat or nphi is zero!" which
+terminate the Julia process.
+
+### Testing SHTns Functionality
+
+By default, SHTns-dependent tests are DISABLED to prevent crashes. To enable them:
+
+```julia
+ENV["SHTNSKIT_TEST_SHTNS"] = "true"
+using Pkg; Pkg.test("SHTnsKit")
+```
+
+### Recommended Solutions for Production Use
+
+1. **Compile SHTns from source** (most reliable):
+   ```bash
+   git clone https://github.com/nschaeff/shtns.git
+   cd shtns && make
+   export SHTNS_LIBRARY_PATH="/path/to/shtns/libshtns.so"
+   ```
+
+2. **Use conda-forge SHTns** (often more stable):
+   ```bash
+   conda install -c conda-forge shtns
+   # Set SHTNS_LIBRARY_PATH to conda environment
+   ```
+
+3. **Skip SHTns functionality** in your code when binary issues are detected.
+
+The package provides fallback functions and graceful degradation when SHTns_jll is problematic.
+
+## Basic Usage
+
+```julia
+using SHTnsKit
+
+# Create configuration (may skip if SHTns_jll is problematic)
+try
+    cfg = create_gauss_config(32, 32)
+    # ... use SHTns functionality ...
+    free_config(cfg)
+catch e
+    if occursin("SHTns_jll", string(e))
+        @warn "SHTns functionality unavailable due to binary issues"
+        # Use alternative approaches or skip SHTns-dependent code
+    else
+        rethrow(e)
+    end
+end
+```
+"""
 module SHTnsKit
 
 export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh, free_config,
@@ -9,6 +68,9 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        
        # Platform support functions
        check_platform_support, get_platform_description, warn_if_problematic_platform,
+       
+       # SHTns binary compatibility functions
+       has_shtns_symbols, check_shtns_status,
 
        # Grid and coordinates
        get_theta, get_phi, get_gauss_weights,

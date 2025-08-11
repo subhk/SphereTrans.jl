@@ -24,6 +24,16 @@ platform_desc = get_platform_description()
 println("Running tests on: $platform_desc")
 println("Platform support level: $platform_support")
 
+# Check if SHTns testing is enabled
+shtns_testing_enabled = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+if shtns_testing_enabled
+    println("⚠️ SHTns testing ENABLED via SHTNSKIT_TEST_SHTNS environment variable")
+    println("   This may cause crashes due to SHTns_jll binary distribution issues")
+else
+    println("ℹ️ SHTns testing DISABLED by default due to widespread SHTns_jll issues")
+    println("   Set SHTNSKIT_TEST_SHTNS=true environment variable to enable (risky)")
+end
+
 @testset "SHTnsKit Complete Test Suite" begin
 
     # Platform-aware test execution
@@ -55,13 +65,16 @@ println("Platform support level: $platform_support")
                 if occursin("undefined symbol", string(e))
                     println("  - Missing SHTns symbols in binary distribution")
                 elseif occursin("nlat or nphi is zero", string(e))
-                    println("  - Grid parameter validation failure")
+                    println("  - Grid parameter validation failure in C library")
+                    println("  - This error terminates Julia and cannot be caught")
+                    println("  - Occurs on multiple platforms including Linux x86_64")
                 elseif occursin("SHTns_jll binary distribution", string(e))
                     println("  - SHTns_jll binary is non-functional on this platform")
                 else
                     println("  - SHTns accuracy test failure")
                 end
                 println("  - This is a known SHTns_jll binary distribution issue")
+                println("  - SHTns functionality should be skipped on this platform")  
                 println("  - See: https://github.com/JuliaBinaryWrappers/SHTns_jll.jl/issues")
                 @test_skip "test_basic.jl - SHTns_jll binary issue (known problem): $e"
             else

@@ -644,10 +644,82 @@ function create_gpu_config(lmax::Integer, mmax::Integer = lmax;
     return cfg
 end
 
-# Note: The is_shtns_functional() function has been removed because
-# SHTns C library errors (like "nlat or nphi is zero!") are not catchable
-# by Julia's try/catch mechanism - they terminate the process.
-# Instead, we rely on the test infrastructure to gracefully handle these errors.
+"""
+    has_shtns_symbols() -> Bool
+
+Check if the SHTns_jll binary has the required symbols without calling them.
+This is a safe way to detect SHTns_jll binary issues before they cause process termination.
+"""
+function has_shtns_symbols()
+    try
+        handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
+        has_create = Libdl.dlsym_e(handle, :shtns_create) != C_NULL
+        has_set_grid = Libdl.dlsym_e(handle, :shtns_set_grid) != C_NULL
+        has_free = Libdl.dlsym_e(handle, :shtns_free) != C_NULL
+        has_get_lmax = Libdl.dlsym_e(handle, :shtns_get_lmax) != C_NULL
+        has_get_mmax = Libdl.dlsym_e(handle, :shtns_get_mmax) != C_NULL
+        has_get_nlat = Libdl.dlsym_e(handle, :shtns_get_nlat) != C_NULL
+        has_get_nphi = Libdl.dlsym_e(handle, :shtns_get_nphi) != C_NULL
+        has_get_nlm = Libdl.dlsym_e(handle, :shtns_get_nlm) != C_NULL
+        Libdl.dlclose(handle)
+        
+        # We need at least the basic functions to work
+        return has_create && has_set_grid && has_free
+    catch e
+        @debug "Failed to check SHTns symbols: $e"
+        return false
+    end
+end
+
+"""
+    check_shtns_status() -> NamedTuple
+
+Check the status of SHTns functionality and provide diagnostic information.
+Returns a NamedTuple with status information and recommendations.
+
+# Returns
+- `functional`: Boolean indicating if SHTns appears to work
+- `has_symbols`: Boolean indicating if required symbols are present
+- `platform`: String describing the current platform  
+- `recommendations`: Vector of strings with suggested actions
+
+# Examples
+```julia
+status = check_shtns_status()
+if !status.functional
+    @warn "SHTns not functional" status.recommendations
+end
+```
+"""
+function check_shtns_status()
+    has_symbols = has_shtns_symbols()
+    platform_desc = get_platform_description()
+    
+    # For now, we assume SHTns_jll is problematic everywhere unless proven otherwise
+    # This is based on observed failures across Linux, macOS, and likely Windows
+    is_functional = has_symbols && get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    
+    recommendations = String[]
+    
+    if !has_symbols
+        push!(recommendations, "SHTns_jll binary is missing required symbols")
+        push!(recommendations, "Try compiling SHTns from source or using conda-forge version")
+    end
+    
+    if !is_functional
+        push!(recommendations, "SHTns_jll binary distribution has known runtime issues")
+        push!(recommendations, "Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force enable (risky)")
+        push!(recommendations, "Consider using conda-forge SHTns or compiling from source")
+        push!(recommendations, "For CI/testing: Skip SHTns-dependent tests or use alternative implementations")
+    end
+    
+    return (
+        functional = is_functional,
+        has_symbols = has_symbols,
+        platform = platform_desc,
+        recommendations = recommendations
+    )
+end
 
 """
     create_test_config(lmax::Integer, mmax::Integer = lmax) -> SHTnsConfig

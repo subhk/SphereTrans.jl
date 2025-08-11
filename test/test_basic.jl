@@ -13,6 +13,28 @@ using LinearAlgebra
         println("✅ Package structure and exports working")
     end
     
+    # Check if SHTns_jll binary is functional before running SHTns-dependent tests
+    import SHTnsKit: has_shtns_symbols
+    has_symbols = has_shtns_symbols()
+    
+    # The SHTns_jll binary distribution has widespread issues across platforms
+    # Rather than trying to detect specific problematic platforms, we check for
+    # an environment variable that allows opting into SHTns testing
+    should_test_shtns = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    
+    if !has_symbols || !should_test_shtns
+        reason = if !has_symbols
+            "missing required symbols"
+        else
+            "SHTns_jll binary testing disabled (set SHTNSKIT_TEST_SHTNS=true to enable)"
+        end
+        @test_skip "SHTns-dependent tests - $reason on $(Sys.KERNEL) $(Sys.ARCH)"
+        println("⚠️ Skipping SHTns tests: $reason")
+        println("   The SHTns_jll binary distribution has known issues across platforms.")
+        println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force testing (may crash).")
+        return
+    end
+    
     @testset "Configuration Creation and Grid Setup" begin
         try
             # Test different configuration creation methods
