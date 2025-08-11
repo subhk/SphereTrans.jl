@@ -1,0 +1,12 @@
+name: 📚 Build & Deploy Docs
+
+on:
+  push:
+    branches:
+      - main   # or whatever your default branch is
+
+# <-- this block gives Actions the right to push commits and pages files
+permissions:
+  contents: write     # ability to push commits/tags
+  pages: write        # ability to push to gh-pages
+  id-token: write     # needed for OIDC if you’re doing advanced deploys
