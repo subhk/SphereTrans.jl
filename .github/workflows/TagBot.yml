@@ -1,0 +1,27 @@
+name: TagBot
+
+on:
+  # Automatic trigger – TagBot listens for its own comments
+  issue_comment:
+    types: [created]
+
+  # Manual trigger – lets you test TagBot from the Actions tab
+  workflow_dispatch:
+    inputs:
+      lookback:
+        default: "3"   # how many days of registry PRs to scan
+
+jobs:
+  TagBot:
+    # Run only when fired manually *or* when the comment comes from @JuliaTagBot
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    runs-on: ubuntu-latest
+    permissions:        # give the default token write access
+      contents: write
+    steps:
+      - uses: JuliaRegistries/TagBot@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}      # mandatory
+          ssh:   ${{ secrets.DOCUMENTER_KEY }}    # optional, see §4
+
+
