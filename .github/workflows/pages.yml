@@ -1,0 +1,42 @@
+name: pages
+
+on:
+  push:
+    branches: [ main ]         # deploys only come from main
+    tags: ['v*']               # optional: still build/test on tags
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # build your site here
+      # e.g., for a static generator:
+      # - run: npm ci
+      # - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist   # <-- change to your built site directory
+
+  deploy:
+    needs: build
+    if: github.ref_type == 'branch' && github.ref_name == 'main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
