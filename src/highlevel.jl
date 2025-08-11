@@ -63,11 +63,16 @@ function enable_native_vec!(; torpol2uv::Union{Nothing,String}=get(ENV, "SHTNSKI
 end
 
 # If still not enabled, try common default vector symbol names
-try
-    if !is_native_vec_enabled()
-        enable_native_vec!(; torpol2uv="shtns_torpol2uv", uv2torpol="shtns_uv2torpol")
+# Only attempt this if SHTns functionality is explicitly enabled
+if get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true" || get(ENV, "SHTNSKIT_ENABLE_VECTOR", "false") == "true"
+    try
+        if !is_native_vec_enabled()
+            enable_native_vec!(; torpol2uv="shtns_torpol2uv", uv2torpol="shtns_uv2torpol")
+        end
+    catch
     end
-catch
+else
+    @debug "Skipping vector initialization to avoid SHTns_jll issues. Set SHTNSKIT_ENABLE_VECTOR=true to enable."
 end
 
 """Return true if either vector transform entrypoint is enabled."""
@@ -201,16 +206,23 @@ True if a native GPU entrypoint for at least one transform direction is active.
 """
 is_native_gpu_enabled() = (_load_ptr(_gpu_sh2spat_ptr) != C_NULL) || (_load_ptr(_gpu_spat2sh_ptr) != C_NULL)
 
-# Try to enable from ENV at load time (no error if absent)
-try
-    enable_native_gpu!()
-catch
-end
-try
-    if !is_native_gpu_enabled()
-        enable_native_gpu!(; sh2spat="shtns_sh_to_spat_gpu", spat2sh="shtns_spat_to_sh_gpu")
+# Try to enable GPU functions from ENV at load time (no error if absent)
+# Only attempt this if SHTns testing is explicitly enabled to avoid triggering
+# SHTns library initialization issues
+if get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true" || get(ENV, "SHTNSKIT_ENABLE_GPU", "false") == "true"
+    try
+        enable_native_gpu!()
+    catch
     end
-catch
+    try
+        if !is_native_gpu_enabled()
+            enable_native_gpu!(; sh2spat="shtns_sh_to_spat_gpu", spat2sh="shtns_spat_to_sh_gpu")
+        end
+    catch
+    end
+else
+    # Skip GPU initialization to avoid potential SHTns_jll binary issues
+    @debug "Skipping GPU initialization to avoid SHTns_jll issues. Set SHTNSKIT_ENABLE_GPU=true to enable."
 end
 
 """

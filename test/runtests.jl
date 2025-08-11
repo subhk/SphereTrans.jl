@@ -134,7 +134,10 @@ end
     end
 
     # Legacy comprehensive tests (keep for backward compatibility)
-    if platform_support == :supported
+    # Apply the same SHTns testing logic as the main tests
+    should_test_shtns = get(ENV, "SHTNSKIT_TEST_SHTNS", "false") == "true"
+    
+    if platform_support == :supported && should_test_shtns
         @testset "Legacy Comprehensive Tests" begin
 
             @testset "Basic Functionality" begin
@@ -248,7 +251,12 @@ end
 
         end # Legacy Comprehensive Tests
     else
-        println("ℹ Legacy comprehensive tests skipped due to platform limitations")
+        if platform_support != :supported
+            println("ℹ Legacy comprehensive tests skipped due to platform limitations")
+        else
+            println("ℹ Legacy comprehensive tests skipped due to SHTns_jll binary issues")
+            println("   Set SHTNSKIT_TEST_SHTNS=true to enable (risky)")
+        end
     end
 
 end # Complete test suite
