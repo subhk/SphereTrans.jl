@@ -110,20 +110,16 @@ function grid_latitudes(cfg::SHTnsConfig; mode=:approx)
         ccall(sym, Cvoid, (Ptr{Cvoid}, Ptr{Float64}), cfg.ptr, Base.unsafe_convert(Ptr{Float64}, lat))
         return lat
     end
-    @inbounds for i in 1:nlat
-        lat[i] = (i - 0.5) * π / nlat - π/2
-    end
+    # Vectorized calculation is more efficient
+    lat .= (1:nlat .- 0.5) .* π ./ nlat .- π/2
     return lat
 end
 
 """Return longitude coordinates (radians) for the configured grid (equiangular)."""
 function grid_longitudes(cfg::SHTnsConfig)
     nphi = get_nphi(cfg)
-    lon = Vector{Float64}(undef, nphi)
-    @inbounds for j in 1:nphi
-        lon[j] = 2π * (j - 1) / nphi
-    end
-    return lon
+    # Vectorized calculation is more efficient than loop
+    return collect(range(0, 2π * (nphi - 1) / nphi, length=nphi))
 end
 
 """Vector analysis: (u, v) -> (tor, pol). Arrays must be preallocated."""
@@ -301,8 +297,27 @@ end
     synthesize(cfg, sh) -> Matrix{Float64}
 
 Allocate output and perform spectral-to-spatial transform.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `sh::AbstractVector{<:Real}`: Spectral coefficients
+
+# Returns
+- `Matrix{Float64}`: Spatial field of size (nlat, nphi)
+
+# Examples
+```julia
+cfg = create_gauss_config(32, 32)
+sh = randn(get_nlm(cfg))
+spatial = synthesize(cfg, sh)
+free_config(cfg)
+```
 """
 function synthesize(cfg::SHTnsConfig, sh::AbstractVector{<:Real})
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    length(sh) == get_nlm(cfg) || error("sh must have length $(get_nlm(cfg)), got $(length(sh))")
+    
     # Promote to Float64 as required by SHTns API
     sh64 = sh isa AbstractVector{Float64} ? sh : Float64.(sh)
     spat = allocate_spatial(cfg; T=Float64)
@@ -365,12 +380,15 @@ end
 
 """Allocate complex spectral coefficient vector."""
 function allocate_complex_spectral(cfg::SHTnsConfig; T::Type{<:Complex}=ComplexF64)
-    return Vector{T}(undef, get_nlm(cfg))
+    nlm = get_nlm(cfg)
+    return Vector{T}(undef, nlm)
 end
 
 """Allocate complex spatial grid matrix."""
 function allocate_complex_spatial(cfg::SHTnsConfig; T::Type{<:Complex}=ComplexF64)
-    return Matrix{T}(undef, get_nlat(cfg), get_nphi(cfg))
+    nlat = get_nlat(cfg)
+    nphi = get_nphi(cfg)
+    return Matrix{T}(undef, nlat, nphi)
 end
 
 """Complex spectral-to-spatial transform with allocation."""
@@ -394,6 +412,13 @@ end
 """Synthesize vector field from spheroidal and toroidal coefficients."""
 function synthesize_vector(cfg::SHTnsConfig, 
                           Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real})
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_nlm = get_nlm(cfg)
+    length(Slm) == expected_nlm || error("Slm must have length $expected_nlm, got $(length(Slm))")
+    length(Tlm) == expected_nlm || error("Tlm must have length $expected_nlm, got $(length(Tlm))")
+    
+    # Type promotion to Float64 for API compatibility
     Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
     Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
     
@@ -466,10 +491,32 @@ end
 
 # === HIGH-LEVEL THREADING CONTROL ===
 
-"""Set optimal number of OpenMP threads for SHTns."""
+"""
+    set_optimal_threads(; max_threads::Union{Nothing,Integer} = nothing) -> Int
+
+Set optimal number of OpenMP threads for SHTns operations.
+
+# Arguments
+- `max_threads`: Maximum threads to use. If `nothing`, uses `Threads.nthreads()`
+
+# Returns
+- Number of threads actually set (may be less than requested)
+
+# Examples
+```julia
+# Use all available Julia threads
+actual_threads = set_optimal_threads()
+println("Using \$actual_threads threads")
+
+# Limit to specific number
+set_optimal_threads(max_threads=4)
+```
+"""
 function set_optimal_threads(; max_threads::Union{Nothing,Integer} = nothing)
     if max_threads === nothing
         max_threads = Threads.nthreads()
+    else
+        max_threads > 0 || error("max_threads must be positive, got $max_threads")
     end
     set_num_threads(max_threads)
     return get_num_threads()
@@ -562,11 +609,20 @@ end
 """Create GPU-optimized configuration."""
 function create_gpu_config(lmax::Integer, mmax::Integer = lmax;
                           mres::Integer = 1, grid_type::Integer = SHTnsFlags.SHT_GAUSS)
+    # Enhanced validation
+    lmax > 0 || error("lmax must be positive, got $lmax")
+    mmax > 0 || error("mmax must be positive, got $mmax")
+    mmax <= lmax || error("mmax ($mmax) must be <= lmax ($lmax)")
+    mres > 0 || error("mres must be positive, got $mres")
+    
     flags = UInt32(SHTnsFlags.SHT_ALLOW_GPU)
     cfg = create_config(lmax, mmax, mres, flags)
     
-    nlat = grid_type == SHTnsFlags.SHT_GAUSS ? lmax + 1 : 2 * lmax + 1
-    nphi = 2 * mmax + 1
+    # Use larger grid sizes to satisfy SHTns requirements
+    nlat = grid_type == SHTnsFlags.SHT_GAUSS ? max(lmax + 1, 32) : max(2 * lmax + 1, 32)
+    nphi = max(2 * mmax + 1, 32)
+    
+    @debug "Creating GPU config" lmax mmax mres nlat nphi grid_type
     set_grid(cfg, nlat, nphi, grid_type)
     return cfg
 end

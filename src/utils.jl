@@ -125,23 +125,28 @@ if library_path !== nothing
 end
 ```
 """
-function find_system_library()
+function find_system_library()::Union{String, Nothing}
     # Common library names across platforms
-    if Sys.iswindows()
-        lib_names = ["libshtns.dll", "shtns.dll"]
-        search_paths = [
+    lib_names::Vector{String} = if Sys.iswindows()
+        ["libshtns.dll", "shtns.dll"]
+    elseif Sys.isapple()
+        ["libshtns.dylib", "libshtns.so"]
+    else  # Linux and other Unix-like
+        ["libshtns.so", "libshtns.so.1", "libshtns.so.0"]
+    end
+    
+    search_paths::Vector{String} = if Sys.iswindows()
+        [
             "C:/lib", "C:/usr/lib", "C:/Program Files/lib",
             joinpath(get(ENV, "USERPROFILE", ""), "lib")
         ]
     elseif Sys.isapple()
-        lib_names = ["libshtns.dylib", "libshtns.so"]
-        search_paths = [
+        [
             "/usr/local/lib", "/opt/homebrew/lib", "/usr/lib",
             "/opt/local/lib", joinpath(homedir(), ".local/lib")
         ]
     else  # Linux and other Unix-like
-        lib_names = ["libshtns.so", "libshtns.so.1", "libshtns.so.0"]
-        search_paths = [
+        [
             "/usr/local/lib", "/usr/lib", "/lib",
             "/usr/lib/x86_64-linux-gnu", "/usr/local/lib64", "/usr/lib64",
             joinpath(homedir(), ".local/lib")

@@ -304,7 +304,10 @@ end
 
 """Get Gauss-Legendre weights for quadrature using `shtns_gauss_wt`."""
 function get_gauss_weights(cfg::SHTnsConfig)
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
     nlat = get_nlat(cfg)
+    nlat > 0 || error("Invalid nlat: $nlat")
+    
     weights = Vector{Float64}(undef, nlat)
     for i in 1:nlat
         weights[i] = ccall((:shtns_gauss_wt, libshtns), Float64,
@@ -423,15 +426,26 @@ end
 
 """Compute power spectrum from spherical harmonic coefficients."""
 function power_spectrum(cfg::SHTnsConfig, sh::AbstractVector{Float64})
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    
     lmax = get_lmax(cfg)
+    mmax = get_mmax(cfg)
+    nlm = get_nlm(cfg)
+    
+    # Input validation
+    length(sh) == nlm || error("sh must have length $nlm, got $(length(sh))")
+    
+    # Pre-allocate output
     power = zeros(Float64, lmax + 1)
-    for l in 0:lmax
-        for m in 0:min(l, get_mmax(cfg))
-            idx = lmidx(cfg, l, m)
+    
+    # Optimized computation with bounds checking avoided in inner loop
+    @inbounds for l in 0:lmax
+        for m in 0:min(l, mmax)
+            idx = lmidx(cfg, l, m) + 1  # Convert to 1-based indexing
             if m == 0
-                power[l+1] += sh[idx+1]^2
+                power[l+1] += sh[idx]^2
             else
-                power[l+1] += 2 * sh[idx+1]^2
+                power[l+1] += 2 * sh[idx]^2
             end
         end
     end
