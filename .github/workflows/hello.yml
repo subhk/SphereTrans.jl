@@ -1,0 +1,17 @@
+name: Hello World
+on: 
+  push:
+  pull_request:
+  
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say hello
+        run: echo "Hello from SHTnsKit.jl CI!"
+        
+      - name: Check environment
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"
