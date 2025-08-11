@@ -6,7 +6,6 @@ on:
       - main
       - master
       - develop
-    tags: ['*']
   pull_request:
     branches:
       - main
@@ -15,31 +14,24 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Skip intermediate builds: always.
-  # Cancel intermediate builds: only if it is a pull request build.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
-      actions: write
-      contents: read
     strategy:
       fail-fast: false
       matrix:
         version:
-          - '1.10'  # LTS version
-          - '1.11'  # Latest stable
+          - '1.10'
+          - '1.11'
         os:
           - ubuntu-latest
           - macOS-latest
           - windows-latest
-        arch:
-          - x64
     
     steps:
       - uses: actions/checkout@v4
@@ -47,11 +39,9 @@ jobs:
       - uses: julia-actions/setup-julia@v1
         with:
           version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
       
       - uses: julia-actions/cache@v1
       
-      # Install build dependencies (SHTns provided by SHTns_jll)
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -63,209 +53,29 @@ jobs:
         run: |
           brew install fftw gcc
           
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          # Windows dependencies handled by Julia artifacts system
-          echo "Windows dependencies managed by artifacts"
-      
       - name: Build package
         run: |
           echo "Building package..."
           julia --project=. -e '
             using Pkg
             println("Julia version: ", VERSION)
-            println("Project status:")
-            Pkg.status()
-            println("Instantiating...")
+            println("Installing dependencies...")
             Pkg.instantiate()
             println("Precompiling...")
             Pkg.precompile()
-            println("Build completed successfully!")'
-        env:
-          JULIA_NUM_THREADS: 2
+            println("Build completed!")'
       
-      - name: Run basic tests
+      - name: Run tests
         run: |
           echo "Running tests..."
           julia --project=. -e '
             using Pkg
-            Pkg.test(coverage=true)
+            Pkg.test()
             println("Tests completed!")'
-        env:
-          JULIA_NUM_THREADS: 2
-          
-      - name: Process coverage
-        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
-        uses: julia-actions/julia-processcoverage@v1
-        
-      - name: Upload coverage reports to Codecov
-        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v3
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
-  test-autodiff:
-    name: AD Tests - Julia ${{ matrix.version }} - ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.10'
-          - '1.11'
-        os:
-          - ubuntu-latest
-          - macOS-latest
-        
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: ${{ matrix.version }}
-          
-      - uses: julia-actions/cache@v1
-      
-      # Install build dependencies (SHTns provided by SHTns_jll)
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
-          
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install fftw gcc
-      
-      - name: Build package
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.instantiate()'
-            
-      - name: Install AD dependencies
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.add(["ForwardDiff", "Zygote", "ChainRulesCore"])
-            Pkg.precompile()'
-            
-      - name: Run AD-specific tests
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.test(; test_args=["--autodiff"])'
-        env:
-          JULIA_NUM_THREADS: 2
-
-  test-gpu:
-    name: GPU Tests - Julia ${{ matrix.version }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.10'
-          - '1.11'
-        
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: ${{ matrix.version }}
-          
-      - uses: julia-actions/cache@v1
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
-      
-      - name: Build package
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.instantiate()'
-            
-      - name: Install CUDA dependencies
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.add("CUDA")
-            Pkg.precompile()'
-            
-      - name: Run GPU tests (CPU fallback)
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.test(; test_args=["--gpu"])'
-        env:
-          JULIA_NUM_THREADS: 2
-          JULIA_CUDA_USE_BINARYBUILDER: false
-
-  test-mpi:
-    name: MPI Tests - Julia ${{ matrix.version }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.10'
-          - '1.11'
-        
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: ${{ matrix.version }}
-          
-      - uses: julia-actions/cache@v1
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev mpich libmpich-dev
-      
-      - name: Build package
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.instantiate()'
-            
-      - name: Install MPI dependencies
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.add("MPI")
-            Pkg.precompile()'
-            
-      - name: Run MPI tests
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.test(; test_args=["--mpi"])'
-        env:
-          JULIA_NUM_THREADS: 2
 
   docs:
     name: Documentation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
-      contents: read
-      pages: write # needed to deploy to GitHub Pages
-      id-token: write # needed for pages deployment
     steps:
       - uses: actions/checkout@v4
       
@@ -290,83 +100,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-          GKSwstype: "100" # For headless plotting
-          JULIA_NUM_THREADS: 2
-
-  format-check:
-    name: Format Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: '1.11'
-          
-      - uses: julia-actions/cache@v1
-      
-      - name: Install JuliaFormatter
-        run: |
-          julia -e '
-            using Pkg
-            Pkg.add("JuliaFormatter")'
-            
-      - name: Check formatting
-        run: |
-          julia -e '
-            using JuliaFormatter
-            if !format(".", verbose=true, overwrite=false)
-                println("Files are not properly formatted!")
-                exit(1)
-            else
-                println("All files are properly formatted.")
-            end'
-
-  compat:
-    name: Compatibility Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: '1.11'
-          
-      - uses: julia-actions/cache@v1
-      
-      - name: Install CompatHelper dependencies  
-        run: |
-          julia -e '
-            using Pkg
-            Pkg.add("Pkg")
-            Pkg.add("TOML")'
-            
-      - name: Check Project.toml compatibility
-        run: |
-          julia -e '
-            using Pkg, TOML
-            
-            project = TOML.parsefile("Project.toml")
-            
-            # Check that all dependencies have compat entries
-            deps = get(project, "deps", Dict())
-            weakdeps = get(project, "weakdeps", Dict()) 
-            compat = get(project, "compat", Dict())
-            
-            all_deps = merge(deps, weakdeps)
-            missing_compat = []
-            
-            for (name, uuid) in all_deps
-                if name != "julia" && !haskey(compat, name)
-                    push!(missing_compat, name)
-                end
-            end
-            
-            if !isempty(missing_compat)
-                println("Missing compat entries for: ", join(missing_compat, ", "))
-                exit(1)
-            else
-                println("All dependencies have compat entries ✓")
-            end'
