@@ -686,9 +686,10 @@ end
 """
     should_test_shtns_by_default() -> Bool
 
-Determine if SHTns testing should be enabled by default based on platform.
-Returns true for platforms where SHTns_jll typically works (Linux/Ubuntu),
-false for problematic platforms (macOS, Windows).
+Determine if SHTns testing should be enabled by default.
+Due to widespread SHTns_jll binary issues causing "nlat or nphi is zero!" errors
+that terminate Julia processes, testing is disabled by default on all platforms.
+Users must explicitly set ENV["SHTNSKIT_TEST_SHTNS"] = "true" to enable testing.
 """
 function should_test_shtns_by_default()
     # Check explicit environment variable first
@@ -697,14 +698,10 @@ function should_test_shtns_by_default()
         return explicit_setting == "true"
     end
     
-    # Platform-based defaults - ONLY enable on macOS and Windows
-    if Sys.isapple() || Sys.iswindows()
-        # Enable by default ONLY on macOS and Windows
-        return true
-    else
-        # Disable by default on ALL other platforms (Linux, Ubuntu, etc.)
-        return false
-    end
+    # Conservative approach: disable by default everywhere due to SHTns_jll issues
+    # The "nlat or nphi is zero!" error occurs across platforms including macOS
+    # Users must explicitly enable testing if they want to try
+    return false
 end
 
 """

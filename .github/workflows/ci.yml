@@ -50,6 +50,9 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         env:
+          # SHTns testing disabled by default due to "nlat or nphi is zero!" runtime errors
+          # Uncomment the next line to force enable testing (risky - may crash CI)
+          # SHTNSKIT_TEST_SHTNS: "true"
           # Limit OpenMP threads to avoid oversubscription in CI
           OMP_NUM_THREADS: 2
           OPENBLAS_NUM_THREADS: 1

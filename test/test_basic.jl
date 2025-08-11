@@ -34,12 +34,10 @@ using LinearAlgebra
         println("⚠️ Skipping SHTns tests: $reason")
         
         if !should_test_by_default
-            if !Sys.isapple() && !Sys.iswindows()
-                println("   SHTns testing only enabled on macOS and Windows by default")
-            end
+            println("   SHTns testing disabled by default due to widespread SHTns_jll binary issues")
             println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to force enable (risky)")
         else
-            println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"true\" to enable testing")
+            println("   Set ENV[\"SHTNSKIT_TEST_SHTNS\"] = \"false\" to disable testing")
         end
         return
     end

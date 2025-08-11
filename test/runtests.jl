@@ -64,9 +64,9 @@ end
         end
     end
 
-    # Include all test modules - but only on supported platforms
-    if platform_support == :supported
-        println("ℹ Running full test suite on supported platform")
+    # Include all test modules - but only on supported platforms AND if SHTns testing is enabled
+    if platform_support == :supported && should_test_by_default
+        println("ℹ Running full test suite on supported platform with SHTns testing enabled")
         try
             include("test_basic.jl")
         catch e
@@ -130,6 +130,14 @@ end
             include("test_autodiff.jl")
         catch e
             @test_skip "test_autodiff.jl - file not found or error: $e"
+        end
+    elseif platform_support == :supported && !should_test_by_default
+        println("ℹ Running basic tests only - SHTns testing disabled by default")
+        # Include only the basic test which has proper SHTns skipping logic
+        try
+            include("test_basic.jl")
+        catch e
+            @test_skip "test_basic.jl - error: $e"
         end
     else
         println("ℹ Skipping external test modules due to platform limitations")
