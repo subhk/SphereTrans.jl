@@ -2,6 +2,16 @@
 
 [![Build Status](https://github.com/subhk/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/subhk/SHTnsKit.jl/actions)
 
+<!-- Badges -->
+ <p align="left">
+    <a href="https://subhk.github.io/BiGSTARSDocumentation/stable">
+        <img alt="stable docs" src="https://img.shields.io/badge/documentation-stable%20-blue">
+    </a>
+      <a href="https://subhk.github.io/BiGSTARSDocumentation/dev">
+        <img alt="latest docs" src="https://img.shields.io/badge/documentation-dev%20-orange">
+    </a>
+</p>
+
 A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
 
 ## Features
