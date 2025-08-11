@@ -30,9 +30,9 @@ jobs:
           - '1.10'  # Current LTS
           - '1'     # Latest stable release
         os:
-          - ubuntu-latest
           - macOS-latest
           - windows-latest
+          # NOTE: Ubuntu/Linux excluded - SHTns testing disabled on Linux by design
         arch:
           - x64
         exclude:
@@ -62,7 +62,7 @@ jobs:
 
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: macOS-latest
     permissions:
       actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
       contents: write
