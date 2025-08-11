@@ -78,13 +78,13 @@ end
 # HTML format configuration
 format = Documenter.HTML(
     prettyurls = get(ENV, "CI", "false") == "true",
-    canonical = "https://username.github.io/SHTnsKit.jl/stable",
+    canonical = "https://subhk.github.io/SHTnsKit.jl/stable",
     assets = String[],
     analytics = "",
     collapselevel = 2,
     sidebar_sitename = true,
     edit_link = "main",
-    repolink = "https://github.com/username/SHTnsKit.jl",
+    repolink = "https://github.com/subhk/SHTnsKit.jl",
     size_threshold = 200 * 1024^2,  # 200 MiB
     size_threshold_warn = 10 * 1024^2   # 10 MiB warning
 )
@@ -136,7 +136,7 @@ println("Generating documentation with Documenter.jl...")
 makedocs(;
     modules = [SHTnsKit],
     authors = "SHTnsKit.jl contributors",
-    repo = "https://github.com/username/SHTnsKit.jl/blob/{commit}{path}#{line}",
+    repo = "https://github.com/subhk/SHTnsKit.jl/blob/{commit}{path}#{line}",
     sitename = "SHTnsKit.jl",
     format = format,
     pages = pages,
