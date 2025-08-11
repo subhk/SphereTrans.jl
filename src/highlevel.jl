@@ -8,15 +8,29 @@ share the same SHTns configuration.
 """
 
 import Libdl
-using Base.Threads: Atomic, atomic_load, atomic_store!
+# Thread-safe pointer storage (Atomic doesn't support Ptr{Cvoid} in newer Julia)
+const _ptr_lock = ReentrantLock()
 
 # --- Optional native GPU entrypoint detection (runtime) ---
-const _gpu_sh2spat_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
-const _gpu_spat2sh_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+const _gpu_sh2spat_ptr = Ref{Ptr{Cvoid}}(C_NULL)
+const _gpu_spat2sh_ptr = Ref{Ptr{Cvoid}}(C_NULL)
 
 # --- Optional native vector transform entrypoints ---
-const _vec_torpol2uv_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
-const _vec_uv2torpol_ptr = Atomic{Ptr{Cvoid}}(C_NULL)
+const _vec_torpol2uv_ptr = Ref{Ptr{Cvoid}}(C_NULL)
+const _vec_uv2torpol_ptr = Ref{Ptr{Cvoid}}(C_NULL)
+
+# Thread-safe accessor functions
+@inline function _load_ptr(ref::Ref{Ptr{Cvoid}})
+    lock(_ptr_lock) do
+        ref[]
+    end
+end
+
+@inline function _store_ptr!(ref::Ref{Ptr{Cvoid}}, value::Ptr{Cvoid})
+    lock(_ptr_lock) do
+        ref[] = value
+    end
+end
 
 """
     enable_native_vec!(; torpol2uv=nothing, uv2torpol=nothing) -> Bool
@@ -35,12 +49,12 @@ function enable_native_vec!(; torpol2uv::Union{Nothing,String}=get(ENV, "SHTNSKI
         handle = Libdl.dlopen(libshtns)
         if torpol2uv !== nothing
             if (sym = Libdl.dlsym_e(handle, torpol2uv)) !== C_NULL
-                atomic_store!(_vec_torpol2uv_ptr, sym); found = true
+                _store_ptr!(_vec_torpol2uv_ptr, sym); found = true
             end
         end
         if uv2torpol !== nothing
             if (sym = Libdl.dlsym_e(handle, uv2torpol)) !== C_NULL
-                atomic_store!(_vec_uv2torpol_ptr, sym); found = true
+                _store_ptr!(_vec_uv2torpol_ptr, sym); found = true
             end
         end
     catch
@@ -57,7 +71,7 @@ catch
 end
 
 """Return true if either vector transform entrypoint is enabled."""
-is_native_vec_enabled() = (atomic_load(_vec_torpol2uv_ptr) != C_NULL) || (atomic_load(_vec_uv2torpol_ptr) != C_NULL)
+is_native_vec_enabled() = (_load_ptr(_vec_torpol2uv_ptr) != C_NULL) || (_load_ptr(_vec_uv2torpol_ptr) != C_NULL)
 
 """Vector synthesis: (tor, pol) -> (u, v). Arrays must be preallocated."""
 function synthesize_vec!(cfg::SHTnsConfig,
@@ -65,7 +79,7 @@ function synthesize_vec!(cfg::SHTnsConfig,
                          u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64})
     @assert length(tor) == get_nlm(cfg) && length(pol) == get_nlm(cfg)
     @assert size(u) == (get_nlat(cfg), get_nphi(cfg)) && size(v) == size(u)
-    ptr = atomic_load(_vec_torpol2uv_ptr)
+    ptr = _load_ptr(_vec_torpol2uv_ptr)
     ptr == C_NULL && error("Vector synthesis entrypoint not enabled. Call enable_native_vec! or set env SHTNSKIT_VEC_TORPOL2UV.")
     ccall(ptr, Cvoid,
           (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
@@ -118,7 +132,7 @@ function analyze_vec!(cfg::SHTnsConfig,
                       tor::AbstractVector{Float64}, pol::AbstractVector{Float64})
     @assert size(u) == (get_nlat(cfg), get_nphi(cfg)) && size(v) == size(u)
     @assert length(tor) == get_nlm(cfg) && length(pol) == get_nlm(cfg)
-    ptr = atomic_load(_vec_uv2torpol_ptr)
+    ptr = _load_ptr(_vec_uv2torpol_ptr)
     ptr == C_NULL && error("Vector analysis entrypoint not enabled. Call enable_native_vec! or set env SHTNSKIT_VEC_UV2TORPOL.")
     ccall(ptr, Cvoid,
           (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
@@ -168,13 +182,13 @@ function enable_native_gpu!(; sh2spat::Union{Nothing,String}=get(ENV, "SHTNSKIT_
         handle = Libdl.dlopen(libshtns)
         if sh2spat !== nothing
             if (sym = Libdl.dlsym_e(handle, sh2spat)) !== C_NULL
-                atomic_store!(_gpu_sh2spat_ptr, sym)
+                _store_ptr!(_gpu_sh2spat_ptr, sym)
                 found = true
             end
         end
         if spat2sh !== nothing
             if (sym = Libdl.dlsym_e(handle, spat2sh)) !== C_NULL
-                atomic_store!(_gpu_spat2sh_ptr, sym)
+                _store_ptr!(_gpu_spat2sh_ptr, sym)
                 found = true
             end
         end
@@ -189,7 +203,7 @@ end
 
 True if a native GPU entrypoint for at least one transform direction is active.
 """
-is_native_gpu_enabled() = (atomic_load(_gpu_sh2spat_ptr) != C_NULL) || (atomic_load(_gpu_spat2sh_ptr) != C_NULL)
+is_native_gpu_enabled() = (_load_ptr(_gpu_sh2spat_ptr) != C_NULL) || (_load_ptr(_gpu_spat2sh_ptr) != C_NULL)
 
 # Try to enable from ENV at load time (no error if absent)
 try
@@ -238,7 +252,7 @@ function synthesize!(cfg::SHTnsConfig,
     lk = _get_lock(cfg)
     Base.lock(lk)
     try
-        ptr = atomic_load(_gpu_sh2spat_ptr)
+        ptr = _load_ptr(_gpu_sh2spat_ptr)
         if ptr != C_NULL
             ccall(ptr, Cvoid,
                   (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
@@ -268,7 +282,7 @@ function analyze!(cfg::SHTnsConfig,
     lk = _get_lock(cfg)
     Base.lock(lk)
     try
-        ptr = atomic_load(_gpu_spat2sh_ptr)
+        ptr = _load_ptr(_gpu_spat2sh_ptr)
         if ptr != C_NULL
             ccall(ptr, Cvoid,
                   (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,

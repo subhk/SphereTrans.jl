@@ -2,8 +2,6 @@ module SHTnsKitCUDAExt
 
 using SHTnsKit
 import CUDA
-using Base.Threads: Atomic, atomic_load, atomic_store!
-
 """
 CuArray-specialized GPU helpers. These methods are loaded only when CUDA is
 available, via Julia package extensions. By default, they stage data to host,
@@ -12,11 +10,25 @@ GPU entrypoints are enabled and expect device pointers, you can switch to a
 zero-copy device-pointer path.
 """
 
-const _use_device_ptrs = Atomic{Bool}(false)
+# Thread-safe boolean flag for device pointer mode
+const _device_ptr_lock = ReentrantLock()
+const _use_device_ptrs = Ref{Bool}(false)
+
+@inline function _load_device_flag()
+    lock(_device_ptr_lock) do
+        _use_device_ptrs[]
+    end
+end
+
+@inline function _store_device_flag!(value::Bool)
+    lock(_device_ptr_lock) do
+        _use_device_ptrs[] = value
+    end
+end
 
 """Enable device-pointer mode for native SHTns GPU entrypoints."""
 function enable_gpu_deviceptrs!()
-    atomic_store!(_use_device_ptrs, true)
+    _store_device_flag!(true)
     try
         # Ensure native GPU entrypoints are resolved if available
         SHTnsKit.enable_native_gpu!()
@@ -36,7 +48,7 @@ end
 function SHTnsKit.synthesize_gpu(cfg::SHTnsKit.SHTnsConfig,
                                  sh_dev::CUDA.CuArray{<:Real,1})
     # Fast path: native GPU entrypoint with device pointers
-    if atomic_load(_use_device_ptrs) && (atomic_load(SHTnsKit._gpu_sh2spat_ptr) != C_NULL)
+    if _load_device_flag() && (SHTnsKit._load_ptr(SHTnsKit._gpu_sh2spat_ptr) != C_NULL)
         shd64 = eltype(sh_dev) === Float64 ? sh_dev : CUDA.convert(CUDA.CuArray{Float64,1}, sh_dev)
         nlat, nphi = SHTnsKit.get_nlat(cfg), SHTnsKit.get_nphi(cfg)
         spat_dev = CUDA.CuArray{Float64}(undef, nlat, nphi)
@@ -47,7 +59,7 @@ function SHTnsKit.synthesize_gpu(cfg::SHTnsKit.SHTnsConfig,
         end
         if lk !== nothing; Base.lock(lk); end
         try
-            ccall(atomic_load(SHTnsKit._gpu_sh2spat_ptr), Cvoid,
+            ccall(SHTnsKit._load_ptr(SHTnsKit._gpu_sh2spat_ptr), Cvoid,
                   (Ptr{Cvoid}, CUDA.CuPtr{Float64}, CUDA.CuPtr{Float64}), cfg.ptr,
                   CUDA.device_pointer(shd64), CUDA.device_pointer(spat_dev))
         finally
@@ -68,7 +80,7 @@ end
 function SHTnsKit.analyze_gpu(cfg::SHTnsKit.SHTnsConfig,
                               spat_dev::CUDA.CuArray{<:Real,2})
     # Fast path: native GPU entrypoint with device pointers
-    if atomic_load(_use_device_ptrs) && (atomic_load(SHTnsKit._gpu_spat2sh_ptr) != C_NULL)
+    if _load_device_flag() && (SHTnsKit._load_ptr(SHTnsKit._gpu_spat2sh_ptr) != C_NULL)
         spatd64 = eltype(spat_dev) === Float64 ? spat_dev : CUDA.convert(CUDA.CuArray{Float64,2}, spat_dev)
         nlm = SHTnsKit.get_nlm(cfg)
         sh_dev = CUDA.CuArray{Float64}(undef, nlm)
@@ -79,7 +91,7 @@ function SHTnsKit.analyze_gpu(cfg::SHTnsKit.SHTnsConfig,
         end
         if lk !== nothing; Base.lock(lk); end
         try
-            ccall(atomic_load(SHTnsKit._gpu_spat2sh_ptr), Cvoid,
+            ccall(SHTnsKit._load_ptr(SHTnsKit._gpu_spat2sh_ptr), Cvoid,
                   (Ptr{Cvoid}, CUDA.CuPtr{Float64}, CUDA.CuPtr{Float64}), cfg.ptr,
                   CUDA.device_pointer(spatd64), CUDA.device_pointer(sh_dev))
         finally

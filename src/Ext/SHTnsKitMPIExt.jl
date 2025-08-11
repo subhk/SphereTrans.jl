@@ -4,8 +4,6 @@ using SHTnsKit
 import Libdl
 import MPI
 import Base
-using Base.Threads: Atomic, atomic_load, atomic_store!
-
 """
 MPI-backed distributed SHT wrappers for SHTns.
 
@@ -26,13 +24,28 @@ build expects different signatures (e.g., explicit MPI_Comm arguments), please
 share the exact C prototypes so we can wire precise calls.
 """
 
-const _mpi_create_ptr   = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_setgrid_ptr  = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_sh2spat_ptr  = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_spat2sh_ptr  = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_free_ptr     = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_vec_t2u_ptr  = Atomic{Ptr{Cvoid}}(C_NULL)
-const _mpi_vec_u2t_ptr  = Atomic{Ptr{Cvoid}}(C_NULL)
+# Thread-safe pointer storage for MPI functions
+const _mpi_ptr_lock = ReentrantLock()
+
+const _mpi_create_ptr   = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_setgrid_ptr  = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_sh2spat_ptr  = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_spat2sh_ptr  = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_free_ptr     = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_vec_t2u_ptr  = Ref{Ptr{Cvoid}}(C_NULL)
+const _mpi_vec_u2t_ptr  = Ref{Ptr{Cvoid}}(C_NULL)
+
+@inline function _mpi_load_ptr(ref::Ref{Ptr{Cvoid}})
+    lock(_mpi_ptr_lock) do
+        ref[]
+    end
+end
+
+@inline function _mpi_store_ptr!(ref::Ref{Ptr{Cvoid}}, value::Ptr{Cvoid})
+    lock(_mpi_ptr_lock) do
+        ref[] = value
+    end
+end
 
 """
     enable_native_mpi!(; create, set_grid, sh2spat, spat2sh, free) -> Bool
@@ -53,37 +66,37 @@ function enable_native_mpi!(; create   ::Union{Nothing,String}=get(ENV, "SHTNSKI
         handle = Libdl.dlopen(SHTnsKit.libshtns)
         if create !== nothing
             if (sym = Libdl.dlsym_e(handle, create)) !== C_NULL
-                atomic_store!(_mpi_create_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_create_ptr, sym); found = true
             end
         end
         if set_grid !== nothing
             if (sym = Libdl.dlsym_e(handle, set_grid)) !== C_NULL
-                atomic_store!(_mpi_setgrid_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_setgrid_ptr, sym); found = true
             end
         end
         if sh2spat !== nothing
             if (sym = Libdl.dlsym_e(handle, sh2spat)) !== C_NULL
-                atomic_store!(_mpi_sh2spat_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_sh2spat_ptr, sym); found = true
             end
         end
         if spat2sh !== nothing
             if (sym = Libdl.dlsym_e(handle, spat2sh)) !== C_NULL
-                atomic_store!(_mpi_spat2sh_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_spat2sh_ptr, sym); found = true
             end
         end
         if free !== nothing
             if (sym = Libdl.dlsym_e(handle, free)) !== C_NULL
-                atomic_store!(_mpi_free_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_free_ptr, sym); found = true
             end
         end
         if vec_t2u !== nothing
             if (sym = Libdl.dlsym_e(handle, vec_t2u)) !== C_NULL
-                atomic_store!(_mpi_vec_t2u_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_vec_t2u_ptr, sym); found = true
             end
         end
         if vec_u2t !== nothing
             if (sym = Libdl.dlsym_e(handle, vec_u2t)) !== C_NULL
-                atomic_store!(_mpi_vec_u2t_ptr, sym); found = true
+                _mpi_store_ptr!(_mpi_vec_u2t_ptr, sym); found = true
             end
         end
     catch
@@ -93,13 +106,13 @@ function enable_native_mpi!(; create   ::Union{Nothing,String}=get(ENV, "SHTNSKI
 end
 
 """Return true if at least one MPI entrypoint is enabled."""
-is_native_mpi_enabled() = (atomic_load(_mpi_create_ptr)  != C_NULL) ||
-                          (atomic_load(_mpi_setgrid_ptr) != C_NULL) ||
-                          (atomic_load(_mpi_sh2spat_ptr) != C_NULL) ||
-                          (atomic_load(_mpi_spat2sh_ptr) != C_NULL) ||
-                          (atomic_load(_mpi_free_ptr)    != C_NULL) ||
-                          (atomic_load(_mpi_vec_t2u_ptr) != C_NULL) ||
-                          (atomic_load(_mpi_vec_u2t_ptr) != C_NULL)
+is_native_mpi_enabled() = (_mpi_load_ptr(_mpi_create_ptr)  != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_setgrid_ptr) != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_sh2spat_ptr) != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_spat2sh_ptr) != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_free_ptr)    != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_vec_t2u_ptr) != C_NULL) ||
+                          (_mpi_load_ptr(_mpi_vec_u2t_ptr) != C_NULL)
 
 # Try common default MPI symbol names if none provided via ENV
 try
@@ -133,7 +146,7 @@ Create a new SHTns configuration, using the MPI-enabled entrypoint if present.
 If not enabled, falls back to per-rank CPU config creation.
 """
 function create_mpi_config(comm::MPI.Comm, lmax::Integer, mmax::Integer, mres::Integer; flags::UInt32=UInt32(0))
-    ptr = atomic_load(_mpi_create_ptr)
+    ptr = _mpi_load_ptr(_mpi_create_ptr)
     if ptr == C_NULL
         # Fallback: per-rank CPU config
         return SHTnsMPIConfig(SHTnsKit.create_config(lmax, mmax, mres, flags))
@@ -151,7 +164,7 @@ end
 Set the spatial grid. Uses MPI entrypoint if available; otherwise CPU variant.
 """
 function SHTnsKit.set_grid(cfg::SHTnsMPIConfig, nlat::Integer, nphi::Integer, grid_type::Integer)
-    ptr = atomic_load(_mpi_setgrid_ptr)
+    ptr = _mpi_load_ptr(_mpi_setgrid_ptr)
     if ptr == C_NULL
         return SHTnsKit.set_grid(cfg.cfg, nlat, nphi, grid_type)
     end
@@ -165,7 +178,7 @@ function SHTnsKit.synthesize!(cfg::SHTnsMPIConfig,
                               spat::AbstractMatrix{Float64})
     @assert length(sh) == SHTnsKit.get_nlm(cfg.cfg)
     @assert size(spat) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg))
-    ptr = atomic_load(_mpi_sh2spat_ptr)
+    ptr = _mpi_load_ptr(_mpi_sh2spat_ptr)
     if ptr == C_NULL
         return SHTnsKit.synthesize!(cfg.cfg, sh, spat)
     end
@@ -196,7 +209,7 @@ function SHTnsKit.analyze!(cfg::SHTnsMPIConfig,
                            sh::AbstractVector{Float64})
     @assert size(spat) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg))
     @assert length(sh) == SHTnsKit.get_nlm(cfg.cfg)
-    ptr = atomic_load(_mpi_spat2sh_ptr)
+    ptr = _mpi_load_ptr(_mpi_spat2sh_ptr)
     if ptr == C_NULL
         return SHTnsKit.analyze!(cfg.cfg, spat, sh)
     end
@@ -222,7 +235,7 @@ end
 
 """Free the MPI-enabled configuration (uses MPI entrypoint if available)."""
 function SHTnsKit.free_config(cfg::SHTnsMPIConfig)
-    ptr = atomic_load(_mpi_free_ptr)
+    ptr = _mpi_load_ptr(_mpi_free_ptr)
     if ptr == C_NULL
         return SHTnsKit.free_config(cfg.cfg)
     end
@@ -238,7 +251,7 @@ end
 function SHTnsKit.synthesize_vec!(cfg::SHTnsMPIConfig,
                                   tor::AbstractVector{Float64}, pol::AbstractVector{Float64},
                                   u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64})
-    ptr = atomic_load(_mpi_vec_t2u_ptr)
+    ptr = _mpi_load_ptr(_mpi_vec_t2u_ptr)
     if ptr == C_NULL
         return SHTnsKit.synthesize_vec!(cfg.cfg, tor, pol, u, v)
     end
@@ -265,7 +278,7 @@ end
 function SHTnsKit.analyze_vec!(cfg::SHTnsMPIConfig,
                                u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64},
                                tor::AbstractVector{Float64}, pol::AbstractVector{Float64})
-    ptr = atomic_load(_mpi_vec_u2t_ptr)
+    ptr = _mpi_load_ptr(_mpi_vec_u2t_ptr)
     if ptr == C_NULL
         return SHTnsKit.analyze_vec!(cfg.cfg, u, v, tor, pol)
     end
