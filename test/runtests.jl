@@ -8,7 +8,20 @@ using LinearAlgebra
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "2")
 ENV["OPENBLAS_NUM_THREADS"] = get(ENV, "OPENBLAS_NUM_THREADS", "1")
 
-@testset "SHTnsKit Comprehensive Tests" begin
+@testset "SHTnsKit Complete Test Suite" begin
+
+# Include all test modules
+include("test_basic.jl")
+include("test_vector.jl") 
+include("test_complex.jl")
+include("test_rotation.jl")
+include("test_threading.jl")
+include("test_gpu.jl")
+include("test_mpi.jl")
+include("test_benchmarks.jl")
+
+# Legacy comprehensive tests (keep for backward compatibility)
+@testset "Legacy Comprehensive Tests" begin
 
 @testset "Basic Functionality" begin
     try
@@ -288,4 +301,6 @@ end
     end
 end
 
-end # Main testset
+end # Legacy comprehensive tests
+
+end # Complete test suite

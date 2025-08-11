@@ -1,6 +1,7 @@
 name = "SHTnsKit"
 uuid = "1b9d0af0-2e90-4fb0-9eae-4a2e2cdf5320"
-version = "0.1.0"
+authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
+version = "1.0.0"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
