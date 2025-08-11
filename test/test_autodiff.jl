@@ -124,10 +124,12 @@ end
             free_config(cfg)
         end
         
-    catch LoadError
-        @test_skip "ForwardDiff tests skipped: ForwardDiff.jl not available"
     catch e
-        @test_skip "ForwardDiff tests skipped: $e"
+        if isa(e, LoadError)
+            @test_skip "ForwardDiff tests skipped: ForwardDiff.jl not available"
+        else
+            @test_skip "ForwardDiff tests skipped: $e"
+        end
     end
 end
 
@@ -225,10 +227,12 @@ end
             free_config(cfg)
         end
         
-    catch LoadError
-        @test_skip "Zygote tests skipped: Zygote.jl not available"
     catch e
-        @test_skip "Zygote tests skipped: $e"
+        if isa(e, LoadError)
+            @test_skip "Zygote tests skipped: Zygote.jl not available"
+        else
+            @test_skip "Zygote tests skipped: $e"
+        end
     end
 end
 
@@ -256,10 +260,12 @@ end
         
         free_config(cfg)
         
-    catch LoadError
-        @test_skip "Consistency tests skipped: ForwardDiff or Zygote not available"
     catch e
-        @test_skip "Consistency tests skipped: $e"
+        if isa(e, LoadError)
+            @test_skip "Consistency tests skipped: ForwardDiff or Zygote not available"
+        else
+            @test_skip "Consistency tests skipped: $e"
+        end
     end
 end
 
@@ -285,10 +291,12 @@ end
         
         free_config(cfg)
         
-    catch LoadError
-        @test_skip "Performance tests skipped: ForwardDiff not available"
     catch e
-        @test_skip "Performance tests skipped: $e"
+        if isa(e, LoadError)
+            @test_skip "Performance tests skipped: ForwardDiff not available"
+        else
+            @test_skip "Performance tests skipped: $e"
+        end
     end
 end
 
