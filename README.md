@@ -4,10 +4,10 @@
 
 <!-- Badges -->
  <p align="left">
-    <a href="https://subhk.github.io/BiGSTARSDocumentation/stable">
+    <a href="https://subhk.github.io/SHTnsKit.jl">
         <img alt="stable docs" src="https://img.shields.io/badge/documentation-stable%20-blue">
     </a>
-      <a href="https://subhk.github.io/BiGSTARSDocumentation/dev">
+      <a href="https://subhk.github.io/SHTnsKit.jl">
         <img alt="latest docs" src="https://img.shields.io/badge/documentation-dev%20-orange">
     </a>
 </p>
