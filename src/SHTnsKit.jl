@@ -3,39 +3,57 @@
 
 A Julia interface to the SHTns (Spherical Harmonic Transforms) library for fast spherical harmonic transforms.
 
-## Important Note on SHTns_jll Binary Issues
+## ⚠️ Important: SHTns_jll Binary Issues
 
-The SHTns_jll binary distribution has known compatibility issues across multiple platforms
-(Linux, macOS, Windows) that can cause runtime errors like "nlat or nphi is zero!" which
-terminate the Julia process.
+**SHTns_jll version 3.7.0 has confirmed runtime issues** that cause "nlat or nphi is zero!" 
+errors, terminating Julia processes across all platforms (Linux, macOS, Windows).
+
+### Current Status
+- ❌ **SHTns_jll 3.7.0**: Known to crash with "nlat or nphi is zero!" error
+- ✅ **SHTnsKit.jl**: Provides safe fallback and graceful degradation
+- ✅ **Alternative approaches**: Multiple working solutions available
 
 ### Testing SHTns Functionality
 
-By default, SHTns-dependent tests are DISABLED to prevent crashes. To enable them:
+**Tests are DISABLED by default** to prevent crashes. To enable (risky):
 
 ```julia
-ENV["SHTNSKIT_TEST_SHTNS"] = "true"
+ENV["SHTNSKIT_TEST_SHTNS"] = "true"  # May crash Julia!
 using Pkg; Pkg.test("SHTnsKit")
 ```
 
-### Recommended Solutions for Production Use
+### ✅ Working Solutions for Production
 
-1. **Compile SHTns from source** (most reliable):
-   ```bash
-   git clone https://github.com/nschaeff/shtns.git
-   cd shtns && make
-   export SHTNS_LIBRARY_PATH="/path/to/shtns/libshtns.so"
-   ```
+#### Option 1: Use Conda SHTns (Recommended)
+```bash
+conda install -c conda-forge shtns
+export SHTNS_LIBRARY_PATH="$CONDA_PREFIX/lib/libshtns.so"  # Linux
+export SHTNS_LIBRARY_PATH="$CONDA_PREFIX/lib/libshtns.dylib"  # macOS
+```
 
-2. **Use conda-forge SHTns** (often more stable):
-   ```bash
-   conda install -c conda-forge shtns
-   # Set SHTNS_LIBRARY_PATH to conda environment
-   ```
+#### Option 2: Compile from Source
+```bash
+git clone https://bitbucket.org/nschaeff/shtns.git
+cd shtns && ./configure --enable-openmp && make
+export SHTNS_LIBRARY_PATH="/path/to/shtns/libshtns.so"
+```
 
-3. **Skip SHTns functionality** in your code when binary issues are detected.
+#### Option 3: Use Alternative Packages
+- **SHTnsSpheres.jl**: ClimFlows registry, may have workarounds
+- **FastSphericalHarmonics.jl**: Based on FastTransforms.jl  
+- **SHTOOLS.jl**: Alternative spherical harmonic library
 
-The package provides fallback functions and graceful degradation when SHTns_jll is problematic.
+#### Option 4: Skip SHTns (Package Still Useful)
+```julia
+using SHTnsKit
+status = check_shtns_status()
+if !status.functional
+    @info "Using SHTnsKit without SHTns functionality"
+    # Use platform utilities, constants, documentation, etc.
+end
+```
+
+The package provides comprehensive diagnostics and graceful degradation when SHTns is unavailable.
 
 ## Basic Usage
 
