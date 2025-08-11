@@ -245,4 +245,4 @@ println("-" * 10)
 
 free_config(cfg)
 println("Configuration freed successfully")
-println("\nVector field demo completed! 🎉")
+println("\nVector field demo completed!")
