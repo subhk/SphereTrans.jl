@@ -136,7 +136,7 @@ Represents an MPI-enabled SHTns configuration. Internally wraps a standard
 otherwise falls back to CPU constructor on each rank.
 """
 struct SHTnsMPIConfig
-    cfg::SHTnsKit.SHTnsConfig
+    cfg::SHTnsConfig
 end
 
 """
@@ -149,13 +149,13 @@ function create_mpi_config(comm::MPI.Comm, lmax::Integer, mmax::Integer, mres::I
     ptr = _mpi_load_ptr(_mpi_create_ptr)
     if ptr == C_NULL
         # Fallback: per-rank CPU config
-        return SHTnsMPIConfig(SHTnsKit.create_config(lmax, mmax, mres, flags))
+        return SHTnsMPIConfig(create_config(lmax, mmax, mres, flags))
     end
     # If the MPI constructor has the same signature as CPU, call directly.
     # Otherwise, please provide the exact prototype and we will adjust.
     cfg_ptr = ccall(ptr, Ptr{Cvoid}, (Cint, Cint, Cint, UInt32), lmax, mmax, mres, flags)
     cfg_ptr == C_NULL && error("SHTns MPI create returned NULL; ensure symbol/signature match")
-    return SHTnsMPIConfig(SHTnsKit.SHTnsConfig(cfg_ptr))
+    return SHTnsMPIConfig(SHTnsConfig(cfg_ptr))
 end
 
 """
@@ -163,24 +163,24 @@ end
 
 Set the spatial grid. Uses MPI entrypoint if available; otherwise CPU variant.
 """
-function SHTnsKit.set_grid(cfg::SHTnsMPIConfig, nlat::Integer, nphi::Integer, grid_type::Integer)
+function set_grid(cfg::SHTnsMPIConfig, nlat::Integer, nphi::Integer, grid_type::Integer)
     ptr = _mpi_load_ptr(_mpi_setgrid_ptr)
     if ptr == C_NULL
-        return SHTnsKit.set_grid(cfg.cfg, nlat, nphi, grid_type)
+        return set_grid(cfg.cfg, nlat, nphi, grid_type)
     end
     ccall(ptr, Cvoid, (Ptr{Cvoid}, Cint, Cint, Cint), cfg.cfg.ptr, nlat, nphi, grid_type)
     return cfg
 end
 
 """MPI-enabled synthesis (spectral→spatial) in-place."""
-function SHTnsKit.synthesize!(cfg::SHTnsMPIConfig,
+function synthesize!(cfg::SHTnsMPIConfig,
                               sh::AbstractVector{Float64},
                               spat::AbstractMatrix{Float64})
-    @assert length(sh) == SHTnsKit.get_nlm(cfg.cfg)
-    @assert size(spat) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg))
+    @assert length(sh) == get_nlm(cfg.cfg)
+    @assert size(spat) == (get_nlat(cfg.cfg), get_nphi(cfg.cfg))
     ptr = _mpi_load_ptr(_mpi_sh2spat_ptr)
     if ptr == C_NULL
-        return SHTnsKit.synthesize!(cfg.cfg, sh, spat)
+        return synthesize!(cfg.cfg, sh, spat)
     end
     # Reuse the per-config lock from high-level helpers if available
     lk = try
@@ -204,14 +204,14 @@ function SHTnsKit.synthesize!(cfg::SHTnsMPIConfig,
 end
 
 """MPI-enabled analysis (spatial→spectral) in-place."""
-function SHTnsKit.analyze!(cfg::SHTnsMPIConfig,
+function analyze!(cfg::SHTnsMPIConfig,
                            spat::AbstractMatrix{Float64},
                            sh::AbstractVector{Float64})
-    @assert size(spat) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg))
-    @assert length(sh) == SHTnsKit.get_nlm(cfg.cfg)
+    @assert size(spat) == (get_nlat(cfg.cfg), get_nphi(cfg.cfg))
+    @assert length(sh) == get_nlm(cfg.cfg)
     ptr = _mpi_load_ptr(_mpi_spat2sh_ptr)
     if ptr == C_NULL
-        return SHTnsKit.analyze!(cfg.cfg, spat, sh)
+        return analyze!(cfg.cfg, spat, sh)
     end
     lk = try
         SHTnsKit._get_lock(cfg.cfg)
@@ -234,10 +234,10 @@ function SHTnsKit.analyze!(cfg::SHTnsMPIConfig,
 end
 
 """Free the MPI-enabled configuration (uses MPI entrypoint if available)."""
-function SHTnsKit.free_config(cfg::SHTnsMPIConfig)
+function free_config(cfg::SHTnsMPIConfig)
     ptr = _mpi_load_ptr(_mpi_free_ptr)
     if ptr == C_NULL
-        return SHTnsKit.free_config(cfg.cfg)
+        return free_config(cfg.cfg)
     end
     ccall(ptr, Cvoid, (Ptr{Cvoid},), cfg.cfg.ptr)
     try
@@ -248,15 +248,15 @@ function SHTnsKit.free_config(cfg::SHTnsMPIConfig)
 end
 
 """MPI-enabled vector synthesis (tor/pol -> u,v) in-place, if symbols are set."""
-function SHTnsKit.synthesize_vec!(cfg::SHTnsMPIConfig,
+function synthesize_vec!(cfg::SHTnsMPIConfig,
                                   tor::AbstractVector{Float64}, pol::AbstractVector{Float64},
                                   u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64})
     ptr = _mpi_load_ptr(_mpi_vec_t2u_ptr)
     if ptr == C_NULL
-        return SHTnsKit.synthesize_vec!(cfg.cfg, tor, pol, u, v)
+        return synthesize_vec!(cfg.cfg, tor, pol, u, v)
     end
-    @assert length(tor) == SHTnsKit.get_nlm(cfg.cfg) && length(pol) == SHTnsKit.get_nlm(cfg.cfg)
-    @assert size(u) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg)) && size(v) == size(u)
+    @assert length(tor) == get_nlm(cfg.cfg) && length(pol) == get_nlm(cfg.cfg)
+    @assert size(u) == (get_nlat(cfg.cfg), get_nphi(cfg.cfg)) && size(v) == size(u)
     lk = try
         SHTnsKit._get_lock(cfg.cfg)
     catch
@@ -275,15 +275,15 @@ function SHTnsKit.synthesize_vec!(cfg::SHTnsMPIConfig,
 end
 
 """MPI-enabled vector analysis (u,v -> tor/pol) in-place, if symbols are set."""
-function SHTnsKit.analyze_vec!(cfg::SHTnsMPIConfig,
+function analyze_vec!(cfg::SHTnsMPIConfig,
                                u::AbstractMatrix{Float64}, v::AbstractMatrix{Float64},
                                tor::AbstractVector{Float64}, pol::AbstractVector{Float64})
     ptr = _mpi_load_ptr(_mpi_vec_u2t_ptr)
     if ptr == C_NULL
-        return SHTnsKit.analyze_vec!(cfg.cfg, u, v, tor, pol)
+        return analyze_vec!(cfg.cfg, u, v, tor, pol)
     end
-    @assert size(u) == (SHTnsKit.get_nlat(cfg.cfg), SHTnsKit.get_nphi(cfg.cfg)) && size(v) == size(u)
-    @assert length(tor) == SHTnsKit.get_nlm(cfg.cfg) && length(pol) == SHTnsKit.get_nlm(cfg.cfg)
+    @assert size(u) == (get_nlat(cfg.cfg), get_nphi(cfg.cfg)) && size(v) == size(u)
+    @assert length(tor) == get_nlm(cfg.cfg) && length(pol) == get_nlm(cfg.cfg)
     lk = try
         SHTnsKit._get_lock(cfg.cfg)
     catch
