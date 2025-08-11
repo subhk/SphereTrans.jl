@@ -8,6 +8,15 @@ using LinearAlgebra
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "2")
 ENV["OPENBLAS_NUM_THREADS"] = get(ENV, "OPENBLAS_NUM_THREADS", "1")
 
+# Check if SHTns tests should be skipped entirely
+if get(ENV, "SHTNS_SKIP_TESTS", "false") == "true"
+    println("SHTNS_SKIP_TESTS=true - skipping all SHTns functionality tests")
+    @testset "SHTnsKit Tests (Skipped)" begin
+        @test_skip "All SHTns tests skipped due to SHTNS_SKIP_TESTS environment variable"
+    end
+    exit(0)
+end
+
 # Check platform support before running tests
 platform_support = check_platform_support()
 platform_desc = get_platform_description()

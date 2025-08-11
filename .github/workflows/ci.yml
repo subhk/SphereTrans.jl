@@ -35,74 +35,52 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
-      
-      - uses: julia-actions/cache@v1
-      
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
-          
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install fftw gcc
-          
-      - name: Build package
-        run: |
-          echo "Building package..."
-          julia --project=. -e '
-            using Pkg
-            println("Julia version: ", VERSION)
-            println("Installing dependencies...")
-            Pkg.instantiate()
-            println("Precompiling...")
-            Pkg.precompile()
-            println("Build completed!")'
-      
-      - name: Run tests
-        run: |
-          echo "Running tests..."
-          julia --project=. -e '
-            using Pkg
-            Pkg.test()
-            println("Tests completed!")'
+          arch: x64
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
         env:
-          # Help with SHTns accuracy test issues
-          JULIA_PKG_TEST: "true"
           # Limit OpenMP threads to avoid oversubscription in CI
           OMP_NUM_THREADS: 2
           OPENBLAS_NUM_THREADS: 1
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
+      contents: write
+      statuses: write
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11'
-          
-      - uses: julia-actions/cache@v1
-      
-      - name: Install system dependencies
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Configure doc environment
+        shell: julia --project=docs --color=yes {0}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
-      
-      - name: Build documentation
-        run: |
-          julia --project=docs -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.instantiate()
-            include("docs/make.jl")'
+          using Pkg
+          Pkg.develop(PackageSpec(path=pwd()))
+          Pkg.instantiate()
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-docdeploy@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+      - name: Run doctests
+        shell: julia --project=docs --color=yes {0}
+        run: |
+          using Documenter: DocMeta, doctest
+          using SHTnsKit
+          DocMeta.setdocmeta!(SHTnsKit, :DocTestSetup, :(using SHTnsKit); recursive=true)
+          doctest(SHTnsKit)

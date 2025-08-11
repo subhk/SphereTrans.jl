@@ -79,12 +79,14 @@ Create a new SHTns configuration. Uses `shtns_create_with_opts` if available, ot
 This function detects and handles known issues with SHTns_jll versions.
 """
 function create_config(lmax::Integer, mmax::Integer, mres::Integer, flags::UInt32=UInt32(0))
-    # Input validation following SHTns.jl patterns
-    lmax >= 2 || error("lmax must be >= 2 (SHTns requirement), got $lmax")
+    # Strict input validation following successful SHTns.jl patterns
+    lmax > 1 || error("lmax must be > 1 (SHTns requirement), got $lmax")
     mmax >= 0 || error("mmax must be >= 0, got $mmax")
     mmax <= lmax || error("mmax ($mmax) must be <= lmax ($lmax)")
-    mres >= 1 || error("mres must be >= 1, got $mres")
+    mres > 0 || error("mres must be > 0, got $mres")
     mmax * mres <= lmax || error("mmax*mres ($mmax*$mres = $(mmax*mres)) must be <= lmax ($lmax)")
+    
+    @debug "Creating SHTns config with strict validation" lmax mmax mres flags
     
     # Try shtns_create_with_opts first (newer API)
     handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
@@ -113,12 +115,25 @@ Configure the spatial grid for the transform. Due to known issues with SHTns_jll
 this function detects problematic configurations and uses automatic grid selection as fallback.
 """
 function set_grid(cfg::SHTnsConfig, nlat::Integer, nphi::Integer, grid_type::Integer)
-    # Validate inputs
-    nlat > 0 || error("nlat must be positive, got $nlat")
-    nphi > 0 || error("nphi must be positive, got $nphi")
+    # Strict validation following successful SHTns.jl patterns
     cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
     
-    @debug "Setting grid" nlat nphi grid_type
+    # Get lmax/mmax for validation
+    lmax = get_lmax(cfg)  
+    mmax = get_mmax(cfg)
+    
+    # Apply SHTns.jl validation rules
+    nlat >= 16 || error("nlat must be >= 16 (SHTns stability requirement), got $nlat")
+    nphi > 2 * mmax || error("nphi ($nphi) must be > 2*mmax ($(2*mmax))")
+    
+    # Grid-type specific validation like SHTns.jl
+    if grid_type == SHTnsFlags.SHT_GAUSS
+        nlat > lmax || error("For Gauss grid: nlat ($nlat) must be > lmax ($lmax)")
+    else # Regular and other grid types
+        nlat > 2 * lmax || error("For non-Gauss grid: nlat ($nlat) must be > 2*lmax ($(2*lmax))")
+    end
+    
+    @debug "Setting grid with strict validation" nlat nphi grid_type lmax mmax
     
     # Check if we have set_grid_auto available - if so, use it to avoid SHTns_jll issues
     handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
