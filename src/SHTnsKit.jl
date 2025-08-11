@@ -27,8 +27,8 @@ using Pkg; Pkg.test("SHTnsKit")
 #### Option 1: Use Conda SHTns (Recommended)
 ```bash
 conda install -c conda-forge shtns
-export SHTNS_LIBRARY_PATH="$CONDA_PREFIX/lib/libshtns.so"  # Linux
-export SHTNS_LIBRARY_PATH="$CONDA_PREFIX/lib/libshtns.dylib"  # macOS
+export SHTNS_LIBRARY_PATH="\$CONDA_PREFIX/lib/libshtns.so"  # Linux
+export SHTNS_LIBRARY_PATH="\$CONDA_PREFIX/lib/libshtns.dylib"  # macOS
 ```
 
 #### Option 2: Compile from Source
