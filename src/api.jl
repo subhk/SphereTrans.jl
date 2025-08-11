@@ -30,8 +30,15 @@ struct SHTnsConfig
     ptr::Ptr{Cvoid}
 end
 
-# Name/handle of the shared library. Prefer SHTns_jll if available.
+# Name/handle of the shared library. Prefer custom path, then SHTns_jll if available.
 const libshtns = let
+    # Check for user-specified custom library path
+    custom_lib = get(ENV, "SHTNS_LIBRARY_PATH", nothing)
+    if custom_lib !== nothing
+        return custom_lib
+    end
+    
+    # Try SHTns_jll first
     lib = "libshtns"
     try
         Base.require(:SHTns_jll)

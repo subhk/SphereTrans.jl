@@ -59,6 +59,40 @@ cd shtns-3.x.x
 make && sudo make install
 ```
 
+### Custom Library Path
+
+SHTnsKit.jl provides flexible options for specifying a custom libshtns library path, allowing you to use your own compiled version instead of relying on system packages:
+
+**Option 1: Environment Variable (Recommended)**
+```julia
+# Set before loading SHTnsKit
+ENV["SHTNS_LIBRARY_PATH"] = "/path/to/your/libshtns.so"
+using SHTnsKit
+```
+
+**Option 2: Runtime Configuration**
+```julia
+using SHTnsKit
+
+# Set custom library path (requires Julia restart to take effect)
+SHTnsKit.set_library_path("/path/to/your/libshtns.so")
+
+# Check current library path
+current_path = SHTnsKit.get_library_path()
+println("Using library: $current_path")
+```
+
+**Library Loading Priority:**
+1. Custom path (via `SHTNS_LIBRARY_PATH` environment variable)
+2. SHTns_jll package (if available)
+3. System library (`libshtns`)
+
+This flexibility allows you to:
+- Use optimized builds with specific compiler flags
+- Test against development versions of SHTns
+- Work in environments where system packages aren't available
+- Use custom installations with additional features enabled
+
 ## Quick Start
 
 ```julia
