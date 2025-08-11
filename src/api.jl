@@ -147,6 +147,10 @@ function set_grid(cfg::SHTnsConfig, nlat::Integer, nphi::Integer, grid_type::Int
         end
     end
     
+    # Strict validation to prevent "nlat or nphi is zero" error
+    nlat > 0 || error("nlat must be > 0, got $nlat")
+    nphi > 0 || error("nphi must be > 0, got $nphi")
+    
     # Apply SHTns.jl validation rules
     nlat >= 16 || error("nlat must be >= 16 (SHTns stability requirement), got $nlat")
     nphi > 2 * mmax || error("nphi ($nphi) must be > 2*mmax ($(2*mmax))")
@@ -157,6 +161,8 @@ function set_grid(cfg::SHTnsConfig, nlat::Integer, nphi::Integer, grid_type::Int
     else # Regular and other grid types
         nlat > 2 * lmax || error("For non-Gauss grid: nlat ($nlat) must be > 2*lmax ($(2*lmax))")
     end
+    
+    @debug "Grid validation passed" nlat nphi lmax mmax grid_type
     
     @debug "Setting grid with strict validation" nlat nphi grid_type lmax mmax
     

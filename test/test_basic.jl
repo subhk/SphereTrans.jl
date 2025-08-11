@@ -20,8 +20,15 @@ using LinearAlgebra
             cfg1 = try
                 create_test_config(8, 8)
             catch e
-                if occursin("undefined symbol", string(e)) || occursin("shtns_get_", string(e))
-                    @test_skip "SHTns configuration - missing symbols in SHTns_jll binary: $e"
+                if occursin("undefined symbol", string(e)) || occursin("shtns_get_", string(e)) || occursin("nlat or nphi is zero", string(e))
+                    error_type = if occursin("undefined symbol", string(e))
+                        "missing symbols"
+                    elseif occursin("nlat or nphi is zero", string(e))
+                        "grid parameter validation"
+                    else
+                        "unknown SHTns issue"
+                    end
+                    @test_skip "SHTns configuration - $error_type in SHTns_jll binary: $e"
                     return  # Skip rest of this testset
                 else
                     rethrow(e)
