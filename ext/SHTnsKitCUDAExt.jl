@@ -272,4 +272,5 @@ function compute_curl_gpu(cfg::SHTnsConfig,
     return Vt_dev, Vp_dev
 end
 
+
 end # module

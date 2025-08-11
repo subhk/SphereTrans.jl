@@ -478,4 +478,5 @@ function rrule(::typeof(get_coordinates), cfg::SHTnsConfig)
     return result, _ -> (NoTangent(), NoTangent())
 end
 
+
 end # module
