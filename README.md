@@ -308,7 +308,7 @@ If you use SHTnsKit.jl in your research, please cite:
 
 1. **SHTns library**: Schaeffer, N. (2013). Efficient Spherical Harmonic Transforms aimed at pseudospectral numerical simulations. *Geochemistry, Geophysics, Geosystems*, 14(3), 751-758.
 
-2. **SHTnsKit.jl**: [Citation to be added if/when published]
+2. 
 
 ## License
 
