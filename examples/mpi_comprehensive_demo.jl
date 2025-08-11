@@ -347,7 +347,7 @@ SHTnsKit.free_config(cfg)
 MPI.Barrier(comm)
 if rank == 0
     println("All MPI ranks completed successfully")
-    println("\nMPI comprehensive demo completed! 🌐")
+    println("\nMPI comprehensive demo completed!")
 end
 
 MPI.Finalize()

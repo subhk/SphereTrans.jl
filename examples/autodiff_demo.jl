@@ -156,9 +156,9 @@ function forwarddiff_demo()
         println("✓ ForwardDiff integration successful!")
         
     catch LoadError
-        println("⚠ ForwardDiff.jl not available - install with: using Pkg; Pkg.add(\"ForwardDiff\")")
+        println("ForwardDiff.jl not available - install with: using Pkg; Pkg.add(\"ForwardDiff\")")
     catch e
-        println("❌ ForwardDiff demo failed: $e")
+        println("ForwardDiff demo failed: $e")
     end
 end
 
@@ -213,9 +213,9 @@ function zygote_demo()
         
         grad_real, grad_imag = Zygote.gradient(complex_functional, sh_real, sh_imag)
         
-        println(@sprintf("   Complex functional value: %.6f", complex_functional(sh_real, sh_imag)))
-        println(@sprintf("   Real part gradient norm: %.6f", norm(grad_real)))
-        println(@sprintf("   Imag part gradient norm: %.6f", norm(grad_imag)))
+        println(@sprintf("Complex functional value: %.6f", complex_functional(sh_real, sh_imag)))
+        println(@sprintf("Real part gradient norm: %.6f", norm(grad_real)))
+        println(@sprintf("Imag part gradient norm: %.6f", norm(grad_imag)))
         
         # Example 3: Nested transforms
         println("\nExample 3: Nested transform gradients")
@@ -240,9 +240,9 @@ function zygote_demo()
         println("✓ Zygote integration successful!")
         
     catch LoadError
-        println("⚠ Zygote.jl not available - install with: using Pkg; Pkg.add(\"Zygote\")")
+        println("Zygote.jl not available - install with: using Pkg; Pkg.add(\"Zygote\")")
     catch e
-        println("❌ Zygote demo failed: $e")
+        println("Zygote demo failed: $e")
     end
 end
 
@@ -290,9 +290,9 @@ function comparison_demo()
             println(@sprintf("   Zygote time:      %.2f ms", reverse_time * 1000))
             
             if forward_time < reverse_time
-                println(@sprintf("   ForwardDiff is %.1fx faster", reverse_time / forward_time))
+                println(@sprintf("ForwardDiff is %.1fx faster", reverse_time / forward_time))
             else
-                println(@sprintf("   Zygote is %.1fx faster", forward_time / reverse_time))
+                println(@sprintf("Zygote is %.1fx faster", forward_time / reverse_time))
             end
             
         catch
@@ -302,9 +302,9 @@ function comparison_demo()
         free_config(cfg)
         
     catch LoadError
-        println("⚠ Comparison requires both ForwardDiff and Zygote")
+        println("Comparison requires both ForwardDiff and Zygote")
     catch e
-        println("❌ Comparison demo failed: $e")
+        println("Comparison demo failed: $e")
     end
 end
 
@@ -400,17 +400,17 @@ function inverse_problem_demo()
         println(@sprintf("Parameter error:    %.6f", parameter_error))
         
         if parameter_error < 0.2
-            println("✓ Parameter estimation successful!")
+            println("Parameter estimation successful!")
         else
-            println("⚠ Parameter estimation needs more iterations or tuning")
+            println("Parameter estimation needs more iterations or tuning")
         end
         
         free_config(cfg)
         
     catch LoadError
-        println("⚠ Inverse problem demo requires ForwardDiff")
+        println("Inverse problem demo requires ForwardDiff")
     catch e
-        println("❌ Inverse problem demo failed: $e")
+        println("Inverse problem demo failed: $e")
     end
 end
 

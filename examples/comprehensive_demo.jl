@@ -205,7 +205,7 @@ free_config(cfg_gauss)
 free_config(cfg_regular)
 
 println("All configurations freed successfully")
-println("\nDemo completed! 🎉")
+println("\nDemo completed!")
 
 # Optional: Create a simple power spectrum output
 try

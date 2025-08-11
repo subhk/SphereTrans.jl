@@ -275,4 +275,4 @@ free_config(cfg_cpu)
 free_config(cfg_gpu)
 
 println("All resources cleaned up successfully")
-println("\nGPU acceleration demo completed! 🚀")
+println("\nGPU acceleration demo completed!")
