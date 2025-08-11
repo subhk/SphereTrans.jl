@@ -368,3 +368,51 @@ function free_config(cfg::SHTnsConfig)
     end
     return nothing
 end
+
+# === HELPER FUNCTIONS FOR AD ===
+
+"""
+    get_lm_from_index(cfg::SHTnsConfig, idx::Int) -> (l::Int, m::Int)
+
+Get the spherical harmonic degree l and order m for a given linear index.
+This is needed for automatic differentiation rules that need to know
+which (l,m) mode corresponds to each spectral coefficient.
+
+Note: This assumes triangular truncation where coefficients are ordered
+as (0,0), (1,-1), (1,0), (1,1), (2,-2), (2,-1), (2,0), (2,1), (2,2), ...
+"""
+function get_lm_from_index(cfg::SHTnsConfig, idx::Int)
+    lmax = get_lmax(cfg)
+    
+    # Convert from 1-based to 0-based indexing
+    idx_0 = idx - 1
+    
+    # Find degree l by solving: sum_{l'=0}^{l-1} (2*l'+1) <= idx_0 < sum_{l'=0}^l (2*l'+1)
+    # This gives: l*(l+1) <= idx_0 < (l+1)*(l+2)
+    l = floor(Int, sqrt(idx_0 + 0.25) - 0.5)
+    
+    # Find order m within degree l
+    # idx_0 = l*(l+1) + (l + m) where m ranges from -l to l
+    offset_in_l = idx_0 - l * (l + 1)
+    m = offset_in_l - l
+    
+    return l, m
+end
+
+"""
+    get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int) -> Int
+
+Get the linear index for spherical harmonic degree l and order m.
+This is the inverse of get_lm_from_index.
+"""
+function get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int)
+    lmax = get_lmax(cfg)
+    @assert 0 <= l <= lmax "l must be between 0 and lmax"
+    @assert -l <= m <= l "m must be between -l and l"
+    
+    # Calculate index using triangular truncation formula
+    idx_0 = l * (l + 1) + (l + m)
+    
+    # Convert to 1-based indexing
+    return idx_0 + 1
+end
