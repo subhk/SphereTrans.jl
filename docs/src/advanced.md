@@ -987,4 +987,338 @@ end
 # free_config(cfg)
 ```
 
-This comprehensive advanced usage guide demonstrates sophisticated patterns for expert users of SHTnsKit.jl, covering everything from configuration management to large-scale data processing and integration with external scientific computing workflows.
+## Automatic Differentiation Integration
+
+SHTnsKit.jl provides seamless integration with Julia's automatic differentiation ecosystem through package extensions for ForwardDiff.jl and Zygote.jl.
+
+### ForwardDiff.jl Support (Forward-Mode AD)
+
+Forward-mode automatic differentiation is ideal for functions with few inputs and many outputs, common in parameter estimation problems.
+
+```julia
+using SHTnsKit
+using ForwardDiff
+
+cfg = create_gauss_config(16, 16)
+
+# Example: Parameter estimation for spherical harmonic coefficients
+function objective(params)
+    # Create spherical harmonic field from parameters
+    sh = zeros(get_nlm(cfg))
+    sh[1:length(params)] = params
+    
+    # Transform to spatial domain
+    spatial = synthesize(cfg, sh)
+    
+    # Compute some objective (e.g., match target pattern)
+    target = rand(size(spatial))
+    return sum((spatial - target).^2)
+end
+
+# Initial parameters
+params₀ = rand(10)
+
+# Compute gradient using ForwardDiff
+∇f = ForwardDiff.gradient(objective, params₀)
+
+# Use gradient for optimization
+params₁ = params₀ - 0.01 * ∇f
+
+free_config(cfg)
+```
+
+### Zygote.jl Support (Reverse-Mode AD)
+
+Reverse-mode AD is ideal for functions with many inputs and few outputs, common in neural networks and optimization problems.
+
+```julia
+using SHTnsKit
+using Zygote
+
+cfg = create_gauss_config(16, 16)
+
+# Example: Optimizing spatial field patterns
+function loss_function(spatial_field)
+    # Transform to spectral domain
+    sh = analyze(cfg, spatial_field)
+    
+    # Regularize high-frequency components
+    high_freq_penalty = sum(sh[end-20:end].^2)
+    
+    # Target smooth field
+    smooth_penalty = sum(abs2, spatial_field .- mean(spatial_field))
+    
+    return 0.1 * high_freq_penalty + smooth_penalty
+end
+
+# Initial spatial field
+spatial₀ = randn(get_nlat(cfg), get_nphi(cfg))
+
+# Compute gradient using Zygote
+∇L = Zygote.gradient(loss_function, spatial₀)[1]
+
+# Update field
+spatial₁ = spatial₀ - 0.01 * ∇L
+
+free_config(cfg)
+```
+
+### Advanced AD Patterns
+
+#### Differentiable Vector Field Operations
+
+```julia
+using SHTnsKit
+using ForwardDiff
+
+cfg = create_gauss_config(12, 12)
+
+function vector_field_energy(params)
+    n = length(params) ÷ 2
+    S_lm = params[1:n]          # Spheroidal coefficients
+    T_lm = params[n+1:end]      # Toroidal coefficients
+    
+    # Synthesize vector field
+    Vθ, Vφ = synthesize_vector(cfg, S_lm, T_lm)
+    
+    # Compute kinetic energy
+    kinetic_energy = sum(Vθ.^2 + Vφ.^2)
+    
+    # Add enstrophy (related to vorticity)
+    _, T_reconstructed = analyze_vector(cfg, Vθ, Vφ)
+    enstrophy = sum(abs2, T_reconstructed)
+    
+    return 0.5 * kinetic_energy + 0.1 * enstrophy
+end
+
+# Optimize vector field parameters
+nlm = get_nlm(cfg)
+vector_params = randn(2 * nlm)
+
+# Gradient descent
+for i in 1:10
+    grad = ForwardDiff.gradient(vector_field_energy, vector_params)
+    vector_params .-= 0.01 * grad
+    
+    energy = vector_field_energy(vector_params)
+    println("Iteration $i: Energy = $energy")
+end
+
+free_config(cfg)
+```
+
+#### Differentiable Field Rotations
+
+```julia
+using SHTnsKit
+using ForwardDiff
+
+cfg = create_gauss_config(16, 16)
+
+# Optimize rotation angles to match target field
+function rotation_objective(angles)
+    α, β, γ = angles
+    
+    # Original field
+    sh_original = rand(get_nlm(cfg))
+    
+    # Rotate field
+    sh_rotated = rotate_field(cfg, sh_original, α, β, γ)
+    
+    # Target field (e.g., aligned with some axis)
+    sh_target = zeros(get_nlm(cfg))
+    sh_target[1] = 1.0  # Y₀⁰ mode only
+    
+    return sum((sh_rotated - sh_target).^2)
+end
+
+# Find optimal rotation angles
+angles₀ = [0.1, 0.1, 0.1]
+
+for i in 1:20
+    grad = ForwardDiff.gradient(rotation_objective, angles₀)
+    angles₀ .-= 0.01 * grad
+    
+    obj = rotation_objective(angles₀)
+    println("Iteration $i: Objective = $obj, Angles = $angles₀")
+end
+
+free_config(cfg)
+```
+
+#### Neural Differential Equations on the Sphere
+
+```julia
+using SHTnsKit
+using Zygote
+# using DifferentialEquations  # For ODE solving
+
+cfg = create_gauss_config(20, 20)
+
+# Define a neural ODE on the sphere using SHT
+function sphere_neural_ode!(du, u, p, t)
+    # u contains spherical harmonic coefficients
+    # p contains neural network parameters
+    
+    # Transform to spatial domain
+    spatial = synthesize(cfg, u)
+    
+    # Apply nonlinear transformation (neural network layer)
+    # This is a simplified version - real neural networks would be more complex
+    W, b = p[1:length(spatial)], p[length(spatial)+1:end]
+    transformed = tanh.(W .* spatial .+ b[1:size(spatial, 1), 1:size(spatial, 2)])
+    
+    # Transform back to spectral domain for time derivative
+    du .= analyze(cfg, transformed)
+end
+
+# Example usage would involve solving the ODE and differentiating through the solution
+```
+
+### Performance Considerations for AD
+
+#### Memory Management
+
+```julia
+using SHTnsKit
+using ForwardDiff
+
+cfg = create_gauss_config(32, 32)
+
+# Pre-allocate buffers to avoid repeated allocation during AD
+struct ADBuffers
+    sh_buffer::Vector{Float64}
+    spatial_buffer::Matrix{Float64}
+    grad_buffer::Vector{Float64}
+end
+
+function create_ad_buffers(cfg)
+    ADBuffers(
+        allocate_spectral(cfg),
+        allocate_spatial(cfg),
+        zeros(get_nlm(cfg))
+    )
+end
+
+buffers = create_ad_buffers(cfg)
+
+# Use buffers in AD computations to reduce allocation
+function efficient_objective(params, buffers)
+    # Use pre-allocated buffers
+    buffers.sh_buffer[1:length(params)] = params
+    fill!(buffers.sh_buffer, 0.0)
+    buffers.sh_buffer[1:length(params)] = params
+    
+    synthesize!(cfg, buffers.sh_buffer, buffers.spatial_buffer)
+    
+    return sum(abs2, buffers.spatial_buffer)
+end
+
+# This version is more memory efficient
+grad = ForwardDiff.gradient(p -> efficient_objective(p, buffers), rand(10))
+
+free_config(cfg)
+```
+
+#### Choosing Between Forward and Reverse Mode
+
+```julia
+using BenchmarkTools
+
+# Rule of thumb:
+# - Use ForwardDiff when: n_parameters < n_outputs
+# - Use Zygote when: n_parameters > n_outputs
+
+cfg = create_gauss_config(16, 16)
+n_params = 50
+n_spatial = get_nlat(cfg) * get_nphi(cfg)
+
+println("Parameters: $n_params, Spatial points: $n_spatial")
+
+function test_objective(params)
+    sh = zeros(get_nlm(cfg))
+    sh[1:n_params] = params
+    spatial = synthesize(cfg, sh)
+    return sum(abs2, spatial)  # Single output
+end
+
+params = rand(n_params)
+
+if n_params < n_spatial
+    println("ForwardDiff recommended (fewer parameters than outputs)")
+    @btime ForwardDiff.gradient($test_objective, $params)
+else
+    println("Zygote recommended (more parameters than outputs)")
+    @btime Zygote.gradient($test_objective, $params)
+end
+
+free_config(cfg)
+```
+
+### Applications in Scientific Computing
+
+#### Inverse Problems
+
+```julia
+# Parameter estimation from observations
+function solve_inverse_problem(observations, initial_guess, cfg)
+    using ForwardDiff
+    using Optim
+    
+    function forward_model(params)
+        # Convert parameters to spherical harmonic field
+        sh = param_to_sh(params, cfg)
+        return synthesize(cfg, sh)
+    end
+    
+    function objective(params)
+        predicted = forward_model(params)
+        return sum((observations - predicted).^2)
+    end
+    
+    # Use automatic differentiation for optimization
+    result = optimize(objective, initial_guess, BFGS(), 
+                     autodiff=:forward)
+    
+    return result.minimizer
+end
+```
+
+#### Data Assimilation
+
+```julia
+# Variational data assimilation with spherical harmonic background
+function variational_assimilation(observations, background_sh, obs_locations, cfg)
+    using Zygote
+    
+    function cost_function(analysis_sh)
+        # Background term
+        background_cost = sum((analysis_sh - background_sh).^2)
+        
+        # Observation term
+        analysis_spatial = synthesize(cfg, analysis_sh)
+        obs_cost = sum((analysis_spatial[obs_locations] - observations).^2)
+        
+        return 0.5 * (background_cost + obs_cost)
+    end
+    
+    # Minimize cost function using gradients
+    analysis_sh = copy(background_sh)
+    
+    for i in 1:100
+        grad = Zygote.gradient(cost_function, analysis_sh)[1]
+        analysis_sh .-= 0.01 * grad
+        
+        cost = cost_function(analysis_sh)
+        println("Iteration $i: Cost = $cost")
+        
+        if norm(grad) < 1e-6
+            break
+        end
+    end
+    
+    return analysis_sh
+end
+```
+
+This comprehensive advanced usage guide demonstrates sophisticated patterns for expert users of SHTnsKit.jl, covering everything from configuration management to large-scale data processing, automatic differentiation, and integration with external scientific computing workflows.

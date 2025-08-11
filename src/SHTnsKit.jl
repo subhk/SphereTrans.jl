@@ -42,8 +42,9 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
 
        rotate_field, rotate_spatial_field,
        # Utility grid creation functions
-
-       create_gauss_config, create_regular_config, create_gpu_config
+       create_gauss_config, create_regular_config, create_gpu_config,
+       # Helper functions for automatic differentiation
+       get_lm_from_index, get_index_from_lm
 
     include("api.jl")
     include("highlevel.jl")

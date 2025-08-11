@@ -19,6 +19,7 @@ include("test_threading.jl")
 include("test_gpu.jl")
 include("test_mpi.jl")
 include("test_benchmarks.jl")
+include("test_autodiff.jl")
 
 # Legacy comprehensive tests (keep for backward compatibility)
 @testset "Legacy Comprehensive Tests" begin

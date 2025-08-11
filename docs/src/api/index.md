@@ -573,3 +573,108 @@ with_config(create_gauss_config(32, 32)) do cfg
     # automatically freed
 end
 ```
+
+## Automatic Differentiation Support
+
+### Helper Functions
+
+```julia
+get_lm_from_index(cfg::SHTnsConfig, idx::Int) → (l::Int, m::Int)
+```
+Get spherical harmonic degree and order from linear index.
+
+**Arguments:**
+- `idx::Int`: Linear index (1-based) in spectral coefficient array
+
+**Returns:**
+- `l::Int`: Spherical harmonic degree (0 ≤ l ≤ lmax)
+- `m::Int`: Spherical harmonic order (-l ≤ m ≤ l)
+
+**Example:**
+```julia
+cfg = create_gauss_config(8, 8)
+l, m = get_lm_from_index(cfg, 1)  # Returns (0, 0) for Y₀⁰
+l, m = get_lm_from_index(cfg, 4)  # Returns (1, 1) for Y₁¹
+```
+
+---
+
+```julia
+get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int) → Int
+```
+Get linear index from spherical harmonic degree and order.
+
+**Arguments:**
+- `l::Int`: Spherical harmonic degree
+- `m::Int`: Spherical harmonic order
+
+**Returns:**
+- `idx::Int`: Linear index in spectral coefficient array
+
+**Example:**
+```julia
+cfg = create_gauss_config(8, 8)
+idx = get_index_from_lm(cfg, 0, 0)  # Returns 1 for Y₀⁰
+idx = get_index_from_lm(cfg, 1, 1)  # Returns 4 for Y₁¹
+```
+
+### ForwardDiff.jl Integration
+
+When ForwardDiff.jl is available, all SHTnsKit transform functions automatically support forward-mode automatic differentiation:
+
+```julia
+using SHTnsKit, ForwardDiff
+
+cfg = create_gauss_config(16, 16)
+
+function objective(sh_params)
+    spatial = synthesize(cfg, sh_params)
+    return sum(spatial.^2)
+end
+
+sh = rand(get_nlm(cfg))
+gradient = ForwardDiff.gradient(objective, sh)
+```
+
+**Supported Functions:**
+- `synthesize`, `synthesize!`
+- `analyze`, `analyze!`  
+- `synthesize_complex`, `analyze_complex`
+- `synthesize_vector`, `analyze_vector`
+- `compute_gradient`, `compute_curl`
+- `power_spectrum`
+
+### Zygote.jl Integration
+
+When Zygote.jl is available, all SHTnsKit transform functions automatically support reverse-mode automatic differentiation:
+
+```julia
+using SHTnsKit, Zygote
+
+cfg = create_gauss_config(16, 16)
+
+function loss(spatial_field)
+    sh = analyze(cfg, spatial_field)  
+    return sum(sh[1:10].^2)  # Focus on low modes
+end
+
+spatial = rand(get_nlat(cfg), get_nphi(cfg))
+gradient = Zygote.gradient(loss, spatial)[1]
+```
+
+**Key Features:**
+- Leverages linearity of spherical harmonic transforms
+- Efficient adjoint computations using transform duality
+- Full support for complex and vector field operations
+- Memory-efficient implementation
+
+### Performance Notes
+
+**Forward vs Reverse Mode Selection:**
+- Use **ForwardDiff** when: `n_parameters < n_outputs`
+- Use **Zygote** when: `n_parameters > n_outputs`
+
+**Memory Optimization:**
+- Pre-allocate buffers for repeated AD computations
+- Use in-place operations (`synthesize!`, `analyze!`) when possible
+- Consider chunking for very large problems
