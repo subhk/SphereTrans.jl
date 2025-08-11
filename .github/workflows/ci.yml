@@ -63,17 +63,17 @@ jobs:
       
       - uses: julia-actions/cache@v1
       
-      # Install system dependencies for SHTns
+      # Install build dependencies (SHTns provided by SHTns_jll)
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev libshtns-dev
+          sudo apt-get install -y build-essential gfortran libfftw3-dev
           
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install fftw gcc shtns
+          brew install fftw gcc
           
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
@@ -125,7 +125,7 @@ jobs:
           
       - uses: julia-actions/cache@v1
       
-      # Install system dependencies
+      # Install build dependencies (SHTns provided by SHTns_jll)
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -135,7 +135,7 @@ jobs:
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install fftw gcc shtns
+          brew install fftw gcc
       
       - name: Build package
         run: |

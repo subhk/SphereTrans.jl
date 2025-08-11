@@ -40,15 +40,15 @@ Pkg.add("SHTnsKit")
 
 SHTnsKit.jl requires the SHTns C library to be installed on your system. You can install it using:
 
-**Ubuntu/Debian:**
+<!-- **Ubuntu/Debian:**
 ```bash
 sudo apt-get install libshtns-dev
-```
+``` -->
 
-**macOS (Homebrew):**
+<!-- **macOS (Homebrew):**
 ```bash
 brew install shtns
-```
+``` -->
 
 **From source:**
 ```bash

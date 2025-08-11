@@ -33,39 +33,41 @@ end
 
 # Name/handle of the shared library. Prefer custom path, then SHTns_jll if available.
 const libshtns = let
-    # Check for user-specified custom library path
+    # Check for user-specified custom library path first
     custom_lib = get(ENV, "SHTNS_LIBRARY_PATH", nothing)
     if custom_lib !== nothing
         # Validate custom library path
         if !isfile(custom_lib)
             @error "Custom SHTns library not found: $custom_lib" 
-            @info "Falling back to system library. Check SHTNS_LIBRARY_PATH environment variable."
+            @info "Falling back to SHTns_jll. Check SHTNS_LIBRARY_PATH environment variable."
         else
             # Try to validate it's actually a SHTns library by checking for key symbols
             try
                 handle = Libdl.dlopen(custom_lib, Libdl.RTLD_LAZY)
-                has_shtns = Libdl.dlsym_e(handle, :shtns_create_with_opts) != C_NULL
+                # Check for either version of create function
+                has_shtns = (Libdl.dlsym_e(handle, :shtns_create_with_opts) != C_NULL) || 
+                           (Libdl.dlsym_e(handle, :shtns_create) != C_NULL)
                 Libdl.dlclose(handle)
                 if has_shtns
                     return custom_lib
                 else
-                    @error "Library $custom_lib does not appear to be a valid SHTns library (missing shtns_create_with_opts symbol)"
-                    @info "Falling back to system library."
+                    @error "Library $custom_lib does not appear to be a valid SHTns library (missing shtns_create symbols)"
+                    @info "Falling back to SHTns_jll."
                 end
             catch e
                 @error "Failed to validate custom SHTns library $custom_lib: $e"
-                @info "Falling back to system library."
+                @info "Falling back to SHTns_jll."
             end
         end
     end
     
-    # Try SHTns_jll first (it's now a dependency)
+    # Use SHTns_jll as the primary library source
     try
         import SHTns_jll
         SHTns_jll.LibSHTns
     catch e
-        # fall back to system library name
-        @debug "SHTns_jll failed to load, using system library: $e"
+        # This should not happen since SHTns_jll is a dependency, but fallback to system library just in case
+        @warn "SHTns_jll failed to load, falling back to system library: $e"
         "libshtns"
     end
 end
@@ -73,12 +75,24 @@ end
 """
     create_config(lmax, mmax, mres, flags=UInt32(0)) -> SHTnsConfig
 
-Create a new SHTns configuration using `shtns_create_with_opts`.
+Create a new SHTns configuration. Uses `shtns_create_with_opts` if available, otherwise `shtns_create`.
 """
 function create_config(lmax::Integer, mmax::Integer, mres::Integer, flags::UInt32=UInt32(0))
-    cfg = ccall((:shtns_create_with_opts, libshtns), Ptr{Cvoid},
-                (Cint, Cint, Cint, UInt32), lmax, mmax, mres, flags)
-    cfg == C_NULL && error("shtns_create_with_opts returned NULL")
+    # Try shtns_create_with_opts first (newer API)
+    handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
+    has_with_opts = Libdl.dlsym_e(handle, :shtns_create_with_opts) != C_NULL
+    Libdl.dlclose(handle)
+    
+    cfg = if has_with_opts
+        ccall((:shtns_create_with_opts, libshtns), Ptr{Cvoid},
+              (Cint, Cint, Cint, UInt32), lmax, mmax, mres, flags)
+    else
+        # Fall back to older API - shtns_create typically takes fewer parameters
+        ccall((:shtns_create, libshtns), Ptr{Cvoid},
+              (Cint, Cint, Cint), lmax, mmax, mres)
+    end
+    
+    cfg == C_NULL && error("SHTns create function returned NULL")
     return SHTnsConfig(cfg)
 end
 
