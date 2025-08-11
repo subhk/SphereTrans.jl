@@ -697,15 +697,12 @@ function should_test_shtns_by_default()
         return explicit_setting == "true"
     end
     
-    # Platform-based defaults
+    # Platform-based defaults - ONLY enable on macOS and Windows
     if Sys.isapple() || Sys.iswindows()
-        # Enable by default on macOS and Windows
+        # Enable by default ONLY on macOS and Windows
         return true
-    elseif Sys.islinux()
-        # Disable by default on Linux (including Ubuntu CI) due to SHTns_jll issues
-        return false
     else
-        # Conservative default for other platforms
+        # Disable by default on ALL other platforms (Linux, Ubuntu, etc.)
         return false
     end
 end
