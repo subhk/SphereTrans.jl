@@ -1,9 +1,8 @@
 name: pages
-
 on:
   push:
-    branches: [ main ]         # deploys only come from main
-    tags: ['v*']               # optional: still build/test on tags
+    branches: [ main ]
+    tags:   ['v*']          # builds on tags, but deploy is guarded
   workflow_dispatch:
 
 permissions:
@@ -12,23 +11,24 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SITE_DIR: dist        # set to your builder’s output
     steps:
       - uses: actions/checkout@v4
-
-      # build your site here
-      # e.g., for a static generator:
-      # - run: npm ci
-      # - run: npm run build
-
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - run: npm run build  # make sure this creates $SITE_DIR
+      - name: Check site folder exists
+        run: test -d "$SITE_DIR" || { echo "Missing $SITE_DIR"; ls -la; exit 1; }
       - uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist   # <-- change to your built site directory
+        with: { path: ${{ env.SITE_DIR }} }
 
   deploy:
     needs: build
