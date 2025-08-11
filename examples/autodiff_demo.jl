@@ -17,12 +17,12 @@ using SHTnsKit
 using LinearAlgebra
 using Printf
 
-println("🔄 SHTnsKit.jl Automatic Differentiation Demo")
+println("SHTnsKit.jl Automatic Differentiation Demo")
 println("=" ^ 60)
 
 # Test basic functionality first (even without AD packages)
 function basic_functionality_demo()
-    println("\n📊 Basic Functionality Test")
+    println("\n Basic Functionality Test")
     
     cfg = create_gauss_config(16, 16)
     
@@ -41,7 +41,7 @@ basic_functionality_demo()
 
 # ForwardDiff demo
 function forwarddiff_demo()
-    println("\n🔄 ForwardDiff.jl Integration Demo")
+    println("\n ForwardDiff.jl Integration Demo")
     
     try
         using ForwardDiff
@@ -166,7 +166,7 @@ forwarddiff_demo()
 
 # Zygote demo
 function zygote_demo()
-    println("\n🔄 Zygote.jl Integration Demo")
+    println("\n Zygote.jl Integration Demo")
     
     try
         using Zygote
@@ -250,7 +250,7 @@ zygote_demo()
 
 # Comparison demo
 function comparison_demo()
-    println("\n⚖️  ForwardDiff vs Zygote Comparison")
+    println("\n  ForwardDiff vs Zygote Comparison")
     
     try
         using ForwardDiff, Zygote, BenchmarkTools
@@ -274,9 +274,9 @@ function comparison_demo()
         println(@sprintf("   Gradient difference norm: %.2e", difference))
         
         if difference < 1e-10
-            println("   ✓ Both methods agree to machine precision!")
+            println(" Both methods agree to machine precision!")
         else
-            println("   ⚠ Methods disagree - check implementation")
+            println("  Methods disagree - check implementation")
         end
         
         # Performance comparison (if BenchmarkTools available)
@@ -312,7 +312,7 @@ comparison_demo()
 
 # Application example: Simple inverse problem
 function inverse_problem_demo()
-    println("\n🎯 Application: Simple Inverse Problem")
+    println("\n Application: Simple Inverse Problem")
     
     try
         using ForwardDiff
@@ -417,7 +417,7 @@ end
 inverse_problem_demo()
 
 println("\n" * "=" ^ 60)
-println("🎉 Automatic Differentiation Demo Complete!")
+println(" Automatic Differentiation Demo Complete!")
 println()
 println("Key takeaways:")
 println("• SHTnsKit.jl supports both ForwardDiff.jl and Zygote.jl")
