@@ -1,6 +1,6 @@
 # SHTnsKit.jl
 
-[![Build Status](https://github.com/username/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/username/SHTnsKit.jl/actions)
+[![Build Status](https://github.com/subhk/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/subhk/SHTnsKit.jl/actions)
 
 A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
 
@@ -300,7 +300,7 @@ spat = allocate_spatial(cfg)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/username/SHTnsKit.jl).
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl).
 
 ## Citation
 
