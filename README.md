@@ -312,7 +312,7 @@ If you use SHTnsKit.jl in your research, please cite:
 
 ## License
 
-SHTnsKit.jl is released under the MIT license. The underlying SHTns library is released under the CeCILL License (GPL-compatible).
+SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), the same license family as the underlying SHTns library which uses the CeCILL License (GPL-compatible). This ensures full compatibility and aligns with the open-source philosophy of the SHTns project.
 
 ## References
 
