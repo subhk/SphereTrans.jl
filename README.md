@@ -26,11 +26,6 @@ SHTnsKit.jl provides a complete interface to all SHTns features:
 - **Vectorization**: Support for SSE, AVX, and other SIMD instruction sets
 - **Memory Management**: Efficient allocation and thread-safe operations
 
-### Scientific Applications
-- **Fluid Dynamics**: Vorticity-divergence decomposition, stream function computation
-- **Geophysics**: Gravitational and magnetic field analysis
-- **Astrophysics**: CMB analysis, stellar surface modeling
-- **Climate Science**: Atmospheric and oceanic flow analysis
 
 ## Installation
 
