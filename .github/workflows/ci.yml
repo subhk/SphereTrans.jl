@@ -82,7 +82,12 @@ jobs:
           # Windows dependencies handled by Julia artifacts system
           echo "Windows dependencies managed by artifacts"
       
-      - uses: julia-actions/julia-buildpkg@v1
+      - name: Build package
+        run: |
+          julia --project=. -e '
+            using Pkg
+            Pkg.instantiate()
+            Pkg.precompile()'
         env:
           JULIA_NUM_THREADS: 2
       
