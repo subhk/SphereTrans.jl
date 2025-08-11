@@ -511,9 +511,25 @@ end
 """Create configuration with Gauss-Legendre grid."""
 function create_gauss_config(lmax::Integer, mmax::Integer = lmax; 
                             mres::Integer = 1, flags::UInt32 = UInt32(0))
+    # Validate inputs
+    lmax > 0 || error("lmax must be positive, got $lmax")
+    mmax > 0 || error("mmax must be positive, got $mmax")
+    mmax <= lmax || error("mmax ($mmax) must be <= lmax ($lmax)")
+    
     cfg = create_config(lmax, mmax, mres, flags)
-    nlat = lmax + 1
-    nphi = 2 * mmax + 1
+    
+    # Use larger grid sizes to satisfy SHTns requirements
+    # The error message suggested nlat >= 32, so ensure minimums
+    nlat = max(lmax + 1, 32)
+    nphi = max(2 * mmax + 1, 32)
+    
+    # Debug info
+    @debug "Creating Gauss config" lmax mmax mres nlat nphi
+    
+    # Validate grid dimensions
+    nlat > 0 || error("Calculated nlat is zero: lmax=$lmax -> nlat=$nlat")
+    nphi > 0 || error("Calculated nphi is zero: mmax=$mmax -> nphi=$nphi")
+    
     set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_GAUSS)
     return cfg
 end
@@ -521,9 +537,24 @@ end
 """Create configuration with regular (equiangular) grid."""
 function create_regular_config(lmax::Integer, mmax::Integer = lmax;
                               mres::Integer = 1, flags::UInt32 = UInt32(0))
+    # Validate inputs
+    lmax > 0 || error("lmax must be positive, got $lmax")
+    mmax > 0 || error("mmax must be positive, got $mmax")
+    mmax <= lmax || error("mmax ($mmax) must be <= lmax ($lmax)")
+    
     cfg = create_config(lmax, mmax, mres, flags)
-    nlat = 2 * lmax + 1  
-    nphi = 2 * mmax + 1
+    
+    # Use larger grid sizes to satisfy SHTns requirements  
+    nlat = max(2 * lmax + 1, 32)
+    nphi = max(2 * mmax + 1, 32)
+    
+    # Debug info
+    @debug "Creating regular config" lmax mmax mres nlat nphi
+    
+    # Validate grid dimensions
+    nlat > 0 || error("Calculated nlat is zero: lmax=$lmax -> nlat=$nlat")
+    nphi > 0 || error("Calculated nphi is zero: mmax=$mmax -> nphi=$nphi")
+    
     set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_REGULAR)
     return cfg
 end

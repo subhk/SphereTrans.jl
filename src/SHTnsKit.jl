@@ -6,6 +6,9 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        analyze_gpu, synthesize_gpu,
        enable_native_vec!, is_native_vec_enabled, synthesize_vec!, analyze_vec!,
        grid_latitudes, grid_longitudes,
+       
+       # Platform support functions
+       check_platform_support, get_platform_description, warn_if_problematic_platform,
 
        # Grid and coordinates
        get_theta, get_phi, get_gauss_weights,
@@ -48,9 +51,14 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        # Library path management
        set_library_path, get_library_path, validate_library, find_system_library
 
+    include("platform_support.jl")
     include("api.jl")
     include("highlevel.jl")
-
     include("utils.jl")
+
+    # Warn about platform compatibility issues when the module is loaded
+    function __init__()
+        warn_if_problematic_platform()
+    end
 
 end

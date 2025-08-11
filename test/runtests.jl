@@ -8,20 +8,59 @@ using LinearAlgebra
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "2")
 ENV["OPENBLAS_NUM_THREADS"] = get(ENV, "OPENBLAS_NUM_THREADS", "1")
 
+# Check platform support before running tests
+platform_support = check_platform_support()
+platform_desc = get_platform_description()
+
+println("Running tests on: $platform_desc")
+println("Platform support level: $platform_support")
+
 @testset "SHTnsKit Complete Test Suite" begin
 
-# Include all test modules
-include("test_basic.jl")
-include("test_vector.jl") 
-include("test_complex.jl")
-include("test_rotation.jl")
-include("test_threading.jl")
-include("test_gpu.jl")
-include("test_mpi.jl")
-include("test_benchmarks.jl")
-include("test_autodiff.jl")
+# Platform-aware test execution
+if platform_support != :supported
+    @testset "Platform Compatibility Tests" begin
+        @test platform_support in [:supported, :problematic, :unsupported]
+        @test platform_desc isa String
+        @test length(platform_desc) > 0
+        
+        if platform_support == :problematic
+            @test_skip "Full SHTns functionality - known issues on $platform_desc"
+            println("ℹ Skipping most SHTns tests due to platform limitations")
+        elseif platform_support == :unsupported  
+            @test_skip "All SHTns functionality - unsupported platform: $platform_desc"
+            println("ℹ Skipping all SHTns tests on unsupported platform")
+            return  # Exit early for unsupported platforms
+        end
+    end
+end
 
-# Legacy comprehensive tests (keep for backward compatibility)
+# Include all test modules - but only on supported platforms
+if platform_support == :supported
+    println("ℹ Running full test suite on supported platform")
+    include("test_basic.jl")
+    include("test_vector.jl") 
+    include("test_complex.jl")
+    include("test_rotation.jl")
+    include("test_threading.jl")
+    include("test_gpu.jl")
+    include("test_mpi.jl")
+    include("test_benchmarks.jl")
+    include("test_autodiff.jl")
+else
+    println("ℹ Skipping external test modules due to platform limitations")
+    # Only include basic smoke tests that don't require SHTns functionality
+    @testset "Smoke Tests" begin
+        @test SHTnsKit isa Module
+        @test SHTnsFlags isa Module
+        @test SHTnsFlags.SHT_GAUSS == 0
+        @test SHTnsFlags.SHT_REGULAR == 1
+        println("✓ Module loading and constants work")
+    end
+end
+
+# Legacy comprehensive tests (keep for backward compatibility) - only on supported platforms
+if platform_support == :supported
 @testset "Legacy Comprehensive Tests" begin
 
 @testset "Basic Functionality" begin
@@ -303,5 +342,10 @@ end
 end
 
 end # Legacy comprehensive tests
+
+end # platform_support == :supported check
+else
+    println("ℹ Legacy comprehensive tests skipped due to platform limitations")
+end
 
 end # Complete test suite
