@@ -3,6 +3,7 @@
 using MPI
 using SHTnsKit
 using LinearAlgebra
+using Random
 
 # Avoid oversubscription alongside SHTns/OpenMP in examples
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "1")

@@ -1,3 +1,5 @@
+#!/usr/bin/env julia
+
 """
 Comprehensive SHTnsKit.jl Demo
 ===============================
@@ -14,7 +16,7 @@ This example demonstrates all the major features of SHTnsKit.jl including:
 
 using SHTnsKit
 using LinearAlgebra
-using Plots
+using Printf
 
 println("SHTnsKit.jl Comprehensive Demo")
 println("==============================")
@@ -58,7 +60,7 @@ sh_coeffs = analyze(cfg_gauss, spat_test)
 spat_reconstructed = synthesize(cfg_gauss, sh_coeffs)
 
 error = maximum(abs.(spat_test - spat_reconstructed))
-println("Round-trip error (Gauss grid): $error")
+println("Round-trip error (Gauss grid): $(error)")
 
 # 2. Complex Field Transforms
 println("\n2. Complex Field Transforms")
@@ -67,13 +69,15 @@ println("-" * 27)
 # Create complex test field
 sh_complex = allocate_complex_spectral(cfg_gauss)
 sh_complex[1] = 1.0 + 0.5im  # Set l=0, m=0 mode
-sh_complex[2] = 0.3 + 0.2im  # Set another mode
+if length(sh_complex) > 5
+    sh_complex[6] = 0.3 + 0.2im  # Set another mode safely
+end
 
 spat_complex = synthesize_complex(cfg_gauss, sh_complex)
 sh_complex_recovered = analyze_complex(cfg_gauss, spat_complex)
 
 complex_error = maximum(abs.(sh_complex - sh_complex_recovered))
-println("Complex field round-trip error: $complex_error")
+println("Complex field round-trip error: $(complex_error)")
 
 # 3. Vector Field Transforms
 println("\n3. Vector Field Transforms")
@@ -93,13 +97,13 @@ Slm_recovered, Tlm_recovered = analyze_vector(cfg_gauss, Vt, Vp)
 
 vector_error_S = maximum(abs.(Slm - Slm_recovered))
 vector_error_T = maximum(abs.(Tlm - Tlm_recovered))
-println("Vector transform errors - S: $vector_error_S, T: $vector_error_T")
+println("Vector transform errors - S: $(vector_error_S), T: $(vector_error_T)")
 
 # Test gradient and curl
 Vt_grad, Vp_grad = compute_gradient(cfg_gauss, Slm)
 Vt_curl, Vp_curl = compute_curl(cfg_gauss, Tlm)
-println("Gradient field computed: max|∇S| = $(maximum(sqrt.(Vt_grad.^2 + Vp_grad.^2)))")
-println("Curl field computed: max|∇×T| = $(maximum(sqrt.(Vt_curl.^2 + Vp_curl.^2)))")
+println("Gradient field computed: max|∇S| = $(@sprintf("%.3e", maximum(sqrt.(Vt_grad.^2 + Vp_grad.^2))))")
+println("Curl field computed: max|∇×T| = $(@sprintf("%.3e", maximum(sqrt.(Vt_curl.^2 + Vp_curl.^2))))")
 
 # 4. Field Rotations
 println("\n4. Field Rotations")
@@ -114,7 +118,7 @@ sh_rotated = rotate_field(cfg_gauss, sh_test, alpha, beta, gamma)
 spat_rotated = rotate_spatial_field(cfg_gauss, spat_test, alpha, beta, gamma)
 
 rotation_spectral_diff = norm(sh_test - sh_rotated)
-println("Spectral rotation difference: $rotation_spectral_diff")
+println("Spectral rotation difference: $(rotation_spectral_diff)")
 println("Spatial rotation completed successfully")
 
 # 5. Power Spectrum Analysis
@@ -124,11 +128,14 @@ println("-" * 26)
 # Compute power spectrum
 power = power_spectrum(cfg_gauss, sh_test)
 total_power = sum(power)
-println("Total power: $total_power")
+println("Total power: $(total_power)")
 
 # Find dominant modes
-dominant_modes = findall(x -> x > 0.01 * maximum(power), power)
-println("Dominant modes (l): $(dominant_modes .- 1)")  # Convert to 0-based
+if length(power) > 1
+    threshold = 0.01 * maximum(power)
+    dominant_modes = findall(x -> x > threshold, power)
+    println("Dominant modes (l): $(dominant_modes .- 1)")  # Convert to 0-based
+end
 
 # 6. GPU Acceleration (if available)
 println("\n6. GPU Acceleration")
@@ -154,7 +161,7 @@ try
             
             # Compare results
             gpu_error = maximum(abs.(spat_cpu - Array(spat_gpu)))
-            println("GPU vs CPU error: $gpu_error")
+            println("GPU vs CPU error: $(gpu_error)")
             
             # Cleanup
             cleanup_gpu(verbose=true)
@@ -166,14 +173,12 @@ try
         println("CUDA not functional - skipping GPU tests")
     end
 catch e
-    println("CUDA not available - skipping GPU tests")
+    println("CUDA not available - skipping GPU tests: $(e)")
 end
 
 # 7. Performance Comparison
 println("\n7. Performance Comparison")
 println("-" * 25)
-
-using BenchmarkTools
 
 # Benchmark different transform types
 sh_bench = rand(get_nlm(cfg_gauss))
@@ -182,15 +187,15 @@ spat_bench = allocate_spatial(cfg_gauss)
 println("Benchmarking transforms (lmax=$lmax)...")
 
 # Forward transform benchmark
-@printf "Forward transform:  "
-@btime synthesize!($cfg_gauss, $sh_bench, $spat_bench)
+print("Forward transform:  ")
+@time synthesize!(cfg_gauss, sh_bench, spat_bench)
 
 # Backward transform benchmark
 spat_bench2 = rand(get_nlat(cfg_gauss), get_nphi(cfg_gauss))
 sh_bench2 = allocate_spectral(cfg_gauss)
 
-@printf "Backward transform: "
-@btime analyze!($cfg_gauss, $spat_bench2, $sh_bench2)
+print("Backward transform: ")
+@time analyze!(cfg_gauss, spat_bench2, sh_bench2)
 
 # 8. Cleanup
 println("\n8. Cleanup")
@@ -202,17 +207,15 @@ free_config(cfg_regular)
 println("All configurations freed successfully")
 println("\nDemo completed! 🎉")
 
-# Optional: Create a simple visualization if Plots is available
+# Optional: Create a simple power spectrum output
 try
-    # Plot power spectrum
-    plt = plot(0:lmax, power, 
-               xlabel="Spherical Harmonic Degree l", 
-               ylabel="Power", 
-               title="Power Spectrum",
-               lw=2, marker=:circle)
-    
-    savefig(plt, "power_spectrum.png")
-    println("Power spectrum saved as 'power_spectrum.png'")
+    open("power_spectrum.dat", "w") do f
+        println(f, "# l  Power")
+        for (i, p) in enumerate(power)
+            println(f, "$(i-1)  $p")
+        end
+    end
+    println("Power spectrum saved as 'power_spectrum.dat'")
 catch e
-    println("Visualization skipped (Plots.jl issue): $e")
+    println("Could not save power spectrum: $e")
 end

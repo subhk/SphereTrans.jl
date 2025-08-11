@@ -6,36 +6,48 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
        analyze_gpu, synthesize_gpu,
        enable_native_vec!, is_native_vec_enabled, synthesize_vec!, analyze_vec!,
        grid_latitudes, grid_longitudes,
+
        # Grid and coordinates
        get_theta, get_phi, get_gauss_weights,
+
        # Complex field transforms
        cplx_sh_to_spat, cplx_spat_to_sh,
+
        # Vector transforms  
        SHsphtor_to_spat, spat_to_SHsphtor, SHsph_to_spat, SHtor_to_spat,
+
        # Rotations
        rotation_wigner, rotate_to_grid,
+
        # Multipole analysis
        multipole, power_spectrum,
+
        # On-the-fly transforms
        set_size,
+
        # OpenMP threading
        set_num_threads, get_num_threads, set_optimal_threads,
+
        # GPU acceleration
        gpu_init, gpu_finalize, gpu_sh_to_spat, gpu_spat_to_sh,
        initialize_gpu, cleanup_gpu,
+
        # High-level complex transforms
        allocate_complex_spectral, allocate_complex_spatial,
        synthesize_complex, analyze_complex,
+
        # High-level vector transforms
        synthesize_vector, analyze_vector, compute_gradient, compute_curl,
        # High-level rotation functions
+
        rotate_field, rotate_spatial_field,
        # Utility grid creation functions
+
        create_gauss_config, create_regular_config, create_gpu_config
 
-include("api.jl")
-include("highlevel.jl")
+    include("api.jl")
+    include("highlevel.jl")
 
-include("utils.jl")
+    include("utils.jl")
 
 end

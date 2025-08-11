@@ -165,5 +165,5 @@ function main()
     MPI.Finalize()
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main()
+
 
