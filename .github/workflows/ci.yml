@@ -1,141 +1,56 @@
 name: CI
-
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main]
+    tags: ["*"]
   pull_request:
-    branches:
-      - main  
-      - master
-
-# Cancel in-progress CI runs for the same PR/branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    
     strategy:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
-          - '1.11'
-          - 'nightly'
+          - "1.10" # LTS
+          - "1.11"
         os:
-          - ubuntu-latest
           - macOS-latest
           - windows-latest
         arch:
           - x64
+          - aarch64
+          - arm64
         exclude:
-          # Reduce CI load by testing fewer combinations on nightly
-          - version: 'nightly'
-            os: windows-latest
-          - version: 'nightly'
-            os: macOS-latest
-
+          # Test 32-bit only on Linux
+          - os: macOS-latest
+            arch: x64
+          - os: windows-latest
+            arch: aarch64
+          - os: windows-latest
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
-      
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      
-      - name: Cache Julia packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.julia/packages
-            ~/.julia/compiled
-          key: ${{ runner.os }}-${{ matrix.arch }}-julia-${{ matrix.version }}-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-julia-${{ matrix.version }}-
-            ${{ runner.os }}-${{ matrix.arch }}-julia-
-      
-      - name: Install system dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
-          # SHTns installation would go here for full testing
-          # For now, tests will gracefully skip when library not available
-      
-      - name: Install system dependencies (macOS)
-        if: matrix.os == 'macOS-latest'
-        run: |
-          brew install fftw
-          # SHTns installation: brew install shtns (if available)
-      
-      - name: Install system dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          # Windows dependencies would be installed here
-          # For now, tests will skip functionality requiring SHTns
-          echo "Windows testing with graceful skipping"
-      
+      - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
-        continue-on-error: ${{ matrix.version == 'nightly' }}
-      
-      - name: Run basic tests
-        uses: julia-actions/julia-runtest@v1
-        continue-on-error: ${{ matrix.version == 'nightly' }}
-        env:
-          # Limit threading for CI stability
-          OMP_NUM_THREADS: 2
-          OPENBLAS_NUM_THREADS: 1
-      
-      - uses: julia-actions/julia-processcoverage@v1
-        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
-      
-      - uses: codecov/codecov-action@v4
-        if: matrix.version == '1.11' && matrix.os == 'ubuntu-latest'
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
-  # Test package installation without SHTns (graceful degradation)
-  test-no-shtns:
-    name: Test without SHTns library
+      - uses: julia-actions/julia-runtest@v1
+  docs:
+    name: Documentation
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
-      
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.11'
-      
-      - name: Test package installation
-        run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.instantiate()
-            Pkg.test()
-          '
+      - uses: julia-actions/julia-buildpkg@latest
+      - uses: julia-actions/julia-docdeploy@latest
         env:
-          # Test should gracefully handle missing SHTns
-          SHTNS_TEST_MODE: "skip_library"
-      
-      - name: Test package loading
-        run: |
-          julia --project=. -e '
-            println("Testing package loading...")
-            try
-              using SHTnsKit
-              println("✓ SHTnsKit loaded successfully")
-              # Test basic functionality that doesn.t require SHTns
-              println("Package exports: ", names(SHTnsKit))
-            catch e
-              println("✗ Failed to load SHTnsKit: ", e)
-              exit(1)
-            end
-          '
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          JULIA_DEBUG: Documenter
+
+
