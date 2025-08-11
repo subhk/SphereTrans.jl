@@ -72,6 +72,12 @@ jobs:
             using Pkg
             Pkg.test()
             println("Tests completed!")'
+        env:
+          # Help with SHTns accuracy test issues
+          JULIA_PKG_TEST: "true"
+          # Limit OpenMP threads to avoid oversubscription in CI
+          OMP_NUM_THREADS: 2
+          OPENBLAS_NUM_THREADS: 1
 
   docs:
     name: Documentation

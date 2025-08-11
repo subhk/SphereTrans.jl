@@ -566,10 +566,10 @@ function create_gauss_config(lmax::Integer, mmax::Integer = lmax;
     
     cfg = create_config(lmax, mmax, mres, flags)
     
-    # Use larger grid sizes to satisfy SHTns requirements
-    # The error message suggested nlat >= 32, so ensure minimums
-    nlat = max(lmax + 1, 32)
-    nphi = max(2 * mmax + 1, 32)
+    # Use grid sizes that satisfy SHTns requirements 
+    # Following SHTns.jl: nlat >= 16 for numerical stability
+    nlat = max(lmax + 1, 16)  
+    nphi = max(2 * mmax + 1, 16)
     
     # Debug info
     @debug "Creating Gauss config" lmax mmax mres nlat nphi skip_accuracy_test
@@ -603,9 +603,9 @@ function create_regular_config(lmax::Integer, mmax::Integer = lmax;
     
     cfg = create_config(lmax, mmax, mres, flags)
     
-    # Use larger grid sizes to satisfy SHTns requirements  
-    nlat = max(2 * lmax + 1, 32)
-    nphi = max(2 * mmax + 1, 32)
+    # Use grid sizes that satisfy SHTns requirements  
+    nlat = max(2 * lmax + 1, 16)
+    nphi = max(2 * mmax + 1, 16)
     
     # Debug info
     @debug "Creating regular config" lmax mmax mres nlat nphi
@@ -630,9 +630,9 @@ function create_gpu_config(lmax::Integer, mmax::Integer = lmax;
     flags = UInt32(SHTnsFlags.SHT_ALLOW_GPU)
     cfg = create_config(lmax, mmax, mres, flags)
     
-    # Use larger grid sizes to satisfy SHTns requirements
-    nlat = grid_type == SHTnsFlags.SHT_GAUSS ? max(lmax + 1, 32) : max(2 * lmax + 1, 32)
-    nphi = max(2 * mmax + 1, 32)
+    # Use grid sizes that satisfy SHTns requirements
+    nlat = grid_type == SHTnsFlags.SHT_GAUSS ? max(lmax + 1, 16) : max(2 * lmax + 1, 16)
+    nphi = max(2 * mmax + 1, 16)
     
     @debug "Creating GPU config" lmax mmax mres nlat nphi grid_type
     set_grid(cfg, nlat, nphi, grid_type)
@@ -662,34 +662,41 @@ free_config(cfg)
 ```
 """
 function create_test_config(lmax::Integer, mmax::Integer = lmax)
-    # Use very small values to minimize accuracy requirements
-    lmax_test = min(lmax, 8)  # Limit to small values for testing
+    # Use small but reasonable values following SHTns.jl patterns
+    lmax_test = min(max(lmax, 2), 16)  # Ensure lmax > 1 as SHTns.jl requires
     mmax_test = min(mmax, lmax_test)
     
-    # Use minimal grid sizes
-    nlat = lmax_test + 1
-    nphi = 2 * mmax_test + 1
+    # Use grid sizes that satisfy SHTns requirements better
+    # Following SHTns.jl: nlat >= 16 for better numerical stability
+    nlat = max(lmax_test + 1, 16)  # Ensure nlat >= 16
+    nphi = max(2 * mmax_test + 1, 16)  # Reasonable minimum
     
     @debug "Creating test config" lmax_test mmax_test nlat nphi
     
-    # Try different approaches in order of preference
+    # Try different approaches based on successful SHTns.jl patterns
     approaches = [
-        # 1. Try with QUICK_INIT flag
+        # 1. Try with orthonormal normalization (often more stable)
+        () -> begin
+            cfg = create_config(lmax_test, mmax_test, 1, UInt32(SHTnsFlags.SHT_ORTHONORMAL))
+            set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_GAUSS)
+            cfg
+        end,
+        # 2. Try with QUICK_INIT flag for speed
         () -> begin
             cfg = create_config(lmax_test, mmax_test, 1, UInt32(SHTnsFlags.SHT_QUICK_INIT))
             set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_GAUSS | SHTnsFlags.SHT_QUICK_INIT)
             cfg
         end,
-        # 2. Try regular config with minimal requirements  
+        # 3. Try regular config with minimal requirements  
         () -> begin
             cfg = create_config(lmax_test, mmax_test, 1, UInt32(0))
             set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_GAUSS)
             cfg
         end,
-        # 3. Try with DCT grid type (sometimes more forgiving)
+        # 4. Try with regular grid type
         () -> begin
             cfg = create_config(lmax_test, mmax_test, 1, UInt32(0))
-            set_grid(cfg, nlat, nphi, SHTnsFlags.SHT_DCT)
+            set_grid(cfg, max(2*lmax_test+1, 16), nphi, SHTnsFlags.SHT_REGULAR)
             cfg
         end
     ]

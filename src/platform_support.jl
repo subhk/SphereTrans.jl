@@ -17,15 +17,16 @@ function check_platform_support()
     kernel = Sys.KERNEL
     arch = Sys.ARCH
     
-    # Check for known problematic combinations
+    # Based on successful SHTns.jl CI evidence, all major platforms should be supported
+    # However, SHTns_jll binary distribution may still have issues
     if kernel == :Darwin  # macOS
         if arch == :x86_64 || arch == :aarch64
-            return :problematic
+            return :supported  # SHTns.jl shows this works
         end
     elseif kernel == :Linux
         return :supported
     elseif kernel == :Windows  
-        return :supported  # Assume supported unless proven otherwise
+        return :supported  # SHTns.jl shows this works
     end
     
     return :problematic  # Conservative default for unknown platforms
@@ -64,23 +65,23 @@ function warn_if_problematic_platform()
         @warn """
         Platform compatibility notice for SHTnsKit.jl:
         
-        Your platform ($platform) has known compatibility issues with SHTns_jll.
-        You may encounter "SHTns accuracy test failed" errors.
+        Your platform ($platform) may have compatibility issues with SHTns_jll binaries.
+        However, SHTns functionality should work on all major platforms.
         
-        For reliable operation, consider:
-        1. Using GitHub Actions with 'ubuntu-latest' for CI/CD
-        2. Running in a Linux Docker container
-        3. Compiling SHTns from source and setting SHTNS_LIBRARY_PATH
+        If you encounter "SHTns accuracy test failed" errors, try:
+        1. Using create_test_config() for testing/development
+        2. Compiling SHTns from source and setting SHTNS_LIBRARY_PATH
+        3. Reporting issues to help improve SHTns_jll compatibility
         
-        If you encounter errors, they are likely platform-related, not code issues.
+        Reference: SHTns.jl shows successful CI on macOS and Windows
         """
     elseif support == :unsupported
         platform = get_platform_description()
-        @warn """
-        Unsupported platform detected: $platform
+        @info """
+        Platform: $platform
         
-        SHTnsKit.jl with SHTns_jll has not been tested on this platform.
-        Consider using a Linux environment for reliable operation.
+        SHTnsKit.jl should work on this platform, but testing may be limited.
+        Please report any issues to help improve compatibility.
         """
     end
     

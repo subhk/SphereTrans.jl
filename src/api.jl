@@ -79,6 +79,13 @@ Create a new SHTns configuration. Uses `shtns_create_with_opts` if available, ot
 This function detects and handles known issues with SHTns_jll versions.
 """
 function create_config(lmax::Integer, mmax::Integer, mres::Integer, flags::UInt32=UInt32(0))
+    # Input validation following SHTns.jl patterns
+    lmax >= 2 || error("lmax must be >= 2 (SHTns requirement), got $lmax")
+    mmax >= 0 || error("mmax must be >= 0, got $mmax")
+    mmax <= lmax || error("mmax ($mmax) must be <= lmax ($lmax)")
+    mres >= 1 || error("mres must be >= 1, got $mres")
+    mmax * mres <= lmax || error("mmax*mres ($mmax*$mres = $(mmax*mres)) must be <= lmax ($lmax)")
+    
     # Try shtns_create_with_opts first (newer API)
     handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
     has_with_opts = Libdl.dlsym_e(handle, :shtns_create_with_opts) != C_NULL
@@ -94,7 +101,7 @@ function create_config(lmax::Integer, mmax::Integer, mres::Integer, flags::UInt3
               (Cint, Cint, Cint), lmax, mmax, mres)
     end
     
-    cfg == C_NULL && error("SHTns create function returned NULL")
+    cfg == C_NULL && error("SHTns create function returned NULL. Check parameters: lmax=$lmax, mmax=$mmax, mres=$mres")
     
     return SHTnsConfig(cfg)
 end
