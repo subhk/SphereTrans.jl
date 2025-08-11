@@ -9,7 +9,7 @@ Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 
 [extras]
-Test = "8dfed614-57b6-5c53-8559-9a1b9990f74e"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
