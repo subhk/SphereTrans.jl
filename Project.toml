@@ -31,7 +31,7 @@ Libdl = "1"
 LinearAlgebra = "1"
 MPI = "0.20"
 SHTns_jll = "3.7"
-Zygote = "0.6"
+Zygote = "0.6, 0.7"
 julia = "1.10"
 
 [extras]
