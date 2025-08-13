@@ -2,8 +2,8 @@
 
 *High-performance Julia wrapper for the SHTns C library*
 
-[![Build Status](https://github.com/username/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/username/SHTnsKit.jl/actions)
-[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://username.github.io/SHTnsKit.jl/stable)
+[![Build Status](https://github.com/subhk/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/subhk/SHTnsKit.jl/actions)
+[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://subhk.github.io/SHTnsKit.jl/stable)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 SHTnsKit.jl provides a comprehensive Julia interface to the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library. It enables fast and efficient spherical harmonic transforms for scientific computing applications in fluid dynamics, geophysics, astrophysics, and climate science.
