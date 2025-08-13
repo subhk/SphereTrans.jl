@@ -157,7 +157,7 @@ if get(ENV, "CI", "false") == "true"
     println("Deploying documentation...")
     
     deploydocs(;
-        repo = "github.com/username/SHTnsKit.jl",
+        repo = "github.com/subhk/SHTnsKit.jl",
         devbranch = "main",
         target = "build",
         deps = nothing,
