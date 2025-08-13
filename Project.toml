@@ -4,6 +4,7 @@ authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
 version = "1.0.0"
 
 [deps]
+BinaryBuilder = "12aac903-9f7c-5d81-afc2-d9565ea332ae"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
@@ -23,6 +24,7 @@ SHTnsKitMPIExt = "MPI"
 SHTnsKitZygoteExt = ["Zygote", "ChainRulesCore"]
 
 [compat]
+BinaryBuilder = "0.6.5"
 CUDA = "5"
 ChainRulesCore = "1"
 FFTW = "1.7"
