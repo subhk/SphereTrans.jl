@@ -12,7 +12,7 @@
     </a>
 </p>
 
-A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
+A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transforms) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
 
 ## Features
 
