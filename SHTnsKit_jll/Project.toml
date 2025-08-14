@@ -1,12 +1,17 @@
 name = "SHTnsKit_jll"
-uuid = "12345678-1234-1234-1234-123456789abc"  # Generate a proper UUID
-version = "1.0.0"
+uuid = "a2a897d7-8d05-4c87-9fc0-b339a9d46a9b"
+version = "0.1.0"
 
 [deps]
-Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 JLLWrappers = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
-Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 
 [compat]
-JLLWrappers = "1.2.0"
+JLLWrappers = "1.2"
 julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[targets]
+test = ["Test", "Libdl"]

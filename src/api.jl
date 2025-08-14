@@ -61,7 +61,15 @@ const libshtns = let
         end
     end
     
-    # Use SHTns_jll as the primary library source
+    # Prefer local JLL (SHTnsKit_jll) if available in the environment
+    try
+        import SHTnsKit_jll
+        return SHTnsKit_jll.libshtns_omp
+    catch
+        # ignore and fall back
+    end
+
+    # Use SHTns_jll as the next library source
     try
         import SHTns_jll
         SHTns_jll.LibSHTns

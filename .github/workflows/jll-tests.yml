@@ -1,0 +1,45 @@
+name: JLL Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test-jll:
+    name: Test SHTnsKit_jll on ${{ matrix.os }} Julia ${{ matrix.version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        version: ['1.10']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v1
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Cache Julia Artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-jll-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
+
+      - name: Instantiate and test JLL
+        env:
+          OMP_NUM_THREADS: "2"
+        run: |
+          julia --project=SHTnsKit_jll -e '
+            using Pkg
+            Pkg.instantiate()
+            # show where the artifact is expected
+            println("Artifact path:", joinpath(pwd(), "SHTnsKit_jll", "local_artifacts", "current", "lib"))
+            Pkg.test()'
+

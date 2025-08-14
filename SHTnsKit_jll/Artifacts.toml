@@ -1,0 +1,5 @@
+[SHTnsKit]
+# Local path-based artifact for development
+# Place your libshtns_omp.so into: local_artifacts/current/lib/
+path = "local_artifacts/current"
+
