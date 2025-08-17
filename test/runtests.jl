@@ -31,16 +31,16 @@ explicit_override = get(ENV, "SHTNSKIT_TEST_SHTNS", nothing)
 
 if should_test_by_default
     if explicit_override == "false"
-        println("ℹ️ SHTns testing DISABLED via SHTNSKIT_TEST_SHTNS environment variable")
+        println(" SHTns testing DISABLED via SHTNSKIT_TEST_SHTNS environment variable")
     else
-        println("✅ SHTns testing ENABLED by default on $(Sys.KERNEL)")
+        println(" SHTns testing ENABLED by default on $(Sys.KERNEL)")
         println("   Set SHTNSKIT_TEST_SHTNS=false to disable if issues occur")
     end
 elseif explicit_override == "true"
-    println("⚠️ SHTns testing FORCE ENABLED via SHTNSKIT_TEST_SHTNS environment variable")
+    println(" SHTns testing FORCE ENABLED via SHTNSKIT_TEST_SHTNS environment variable")
     println("   This may cause crashes due to SHTns_jll binary distribution issues on $(Sys.KERNEL)")
 else
-    println("ℹ️ SHTns testing DISABLED by default on $(Sys.KERNEL) due to known SHTns_jll issues")
+    println(" SHTns testing DISABLED by default on $(Sys.KERNEL) due to known SHTns_jll issues")
     println("   Set SHTNSKIT_TEST_SHTNS=true environment variable to force enable (risky)")
 end
 
@@ -66,12 +66,12 @@ end
 
     # Include all test modules - but only on supported platforms AND if SHTns testing is enabled
     if platform_support == :supported && should_test_by_default
-        println("ℹ Running full test suite on supported platform with SHTns testing enabled")
+        println(" Running full test suite on supported platform with SHTns testing enabled")
         try
             include("test_basic.jl")
         catch e
             if occursin("bad SHT accuracy", string(e)) || occursin("undefined symbol", string(e)) || occursin("shtns_get_", string(e)) || occursin("nlat or nphi is zero", string(e)) || occursin("SHTns_jll binary distribution", string(e))
-                println("⚠ SHTns_jll binary issue detected:")
+                println(" SHTns_jll binary issue detected:")
                 if occursin("undefined symbol", string(e))
                     println("  - Missing SHTns symbols in binary distribution")
                 elseif occursin("nlat or nphi is zero", string(e))
@@ -132,7 +132,7 @@ end
             @test_skip "test_autodiff.jl - file not found or error: $e"
         end
     elseif platform_support == :supported && !should_test_by_default
-        println("ℹ Running basic tests only - SHTns testing disabled by default")
+        println(" Running basic tests only - SHTns testing disabled by default")
         # Include only the basic test which has proper SHTns skipping logic
         try
             include("test_basic.jl")
@@ -140,14 +140,14 @@ end
             @test_skip "test_basic.jl - error: $e"
         end
     else
-        println("ℹ Skipping external test modules due to platform limitations")
+        println(" Skipping external test modules due to platform limitations")
         # Only include basic smoke tests that don't require SHTns functionality
         @testset "Smoke Tests" begin
             @test SHTnsKit isa Module
             @test SHTnsFlags isa Module
             @test SHTnsFlags.SHT_GAUSS == 0
             @test SHTnsFlags.SHT_REGULAR == 1
-            println("✓ Module loading and constants work")
+            println(" Module loading and constants work")
         end
     end
 
@@ -275,12 +275,12 @@ end
         end # Legacy Comprehensive Tests
     else
         if platform_support != :supported
-            println("ℹ Legacy comprehensive tests skipped due to platform limitations")
+            println(" Legacy comprehensive tests skipped due to platform limitations")
         else
             if should_test_by_default
-                println("ℹ Legacy comprehensive tests skipped via SHTNSKIT_TEST_SHTNS=false")
+                println(" Legacy comprehensive tests skipped via SHTNSKIT_TEST_SHTNS=false")
             else
-                println("ℹ Legacy comprehensive tests skipped - SHTns testing disabled by default on $(Sys.KERNEL)")
+                println(" Legacy comprehensive tests skipped - SHTns testing disabled by default on $(Sys.KERNEL)")
                 println("   Set SHTNSKIT_TEST_SHTNS=true to enable (risky)")
             end
         end
