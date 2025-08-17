@@ -572,6 +572,62 @@ function SHtor_to_spat(cfg::SHTnsConfig,
     return Vt, Vp
 end
 
+# === 3D VECTOR TRANSFORMS ===
+
+"""
+    spat_to_SHqst(cfg, Vr, Vt, Vp, Qlm, Slm, Tlm)
+
+Transform 3D vector field from spherical coordinates (Vr, Vt, Vp) to 
+radial-spheroidal-toroidal spectral components (Qlm, Slm, Tlm) using `shtns_spat_to_SHqst`.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Vr::AbstractVector{Float64}`: Radial component (spatial)
+- `Vt::AbstractVector{Float64}`: Theta component (spatial)  
+- `Vp::AbstractVector{Float64}`: Phi component (spatial)
+- `Qlm::AbstractVector{Float64}`: Radial spectral coefficients (output)
+- `Slm::AbstractVector{Float64}`: Spheroidal spectral coefficients (output)
+- `Tlm::AbstractVector{Float64}`: Toroidal spectral coefficients (output)
+
+All arrays must be pre-allocated with appropriate sizes.
+"""
+function spat_to_SHqst(cfg::SHTnsConfig,
+                       Vr::AbstractVector{Float64}, Vt::AbstractVector{Float64}, Vp::AbstractVector{Float64},
+                       Qlm::AbstractVector{Float64}, Slm::AbstractVector{Float64}, Tlm::AbstractVector{Float64})
+    ccall((:shtns_spat_to_SHqst, libshtns), Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, Vr), Base.unsafe_convert(Ptr{Float64}, Vt), Base.unsafe_convert(Ptr{Float64}, Vp),
+          Base.unsafe_convert(Ptr{Float64}, Qlm), Base.unsafe_convert(Ptr{Float64}, Slm), Base.unsafe_convert(Ptr{Float64}, Tlm))
+    return Qlm, Slm, Tlm
+end
+
+"""
+    SHqst_to_spat(cfg, Qlm, Slm, Tlm, Vr, Vt, Vp)
+
+Transform radial-spheroidal-toroidal spectral components (Qlm, Slm, Tlm) to 
+3D vector field in spherical coordinates (Vr, Vt, Vp) using `shtns_SHqst_to_spat`.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{Float64}`: Radial spectral coefficients
+- `Slm::AbstractVector{Float64}`: Spheroidal spectral coefficients
+- `Tlm::AbstractVector{Float64}`: Toroidal spectral coefficients
+- `Vr::AbstractVector{Float64}`: Radial component (output, spatial)
+- `Vt::AbstractVector{Float64}`: Theta component (output, spatial)
+- `Vp::AbstractVector{Float64}`: Phi component (output, spatial)
+
+All arrays must be pre-allocated with appropriate sizes.
+"""
+function SHqst_to_spat(cfg::SHTnsConfig,
+                       Qlm::AbstractVector{Float64}, Slm::AbstractVector{Float64}, Tlm::AbstractVector{Float64},
+                       Vr::AbstractVector{Float64}, Vt::AbstractVector{Float64}, Vp::AbstractVector{Float64})
+    ccall((:shtns_SHqst_to_spat, libshtns), Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, Qlm), Base.unsafe_convert(Ptr{Float64}, Slm), Base.unsafe_convert(Ptr{Float64}, Tlm),
+          Base.unsafe_convert(Ptr{Float64}, Vr), Base.unsafe_convert(Ptr{Float64}, Vt), Base.unsafe_convert(Ptr{Float64}, Vp))
+    return Vr, Vt, Vp
+end
+
 # === ROTATIONS ===
 
 """Rotate spherical harmonic coefficients using `shtns_rotation_wigner`."""
