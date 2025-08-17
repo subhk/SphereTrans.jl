@@ -3,15 +3,15 @@
 
 A Julia interface to the SHTns (Spherical Harmonic Transforms) library for fast spherical harmonic transforms.
 
-## ⚠️ Important: SHTns_jll Binary Issues
+## Important: SHTns_jll Binary Issues
 
 **SHTns_jll version 3.7.0 has confirmed runtime issues** that cause "nlat or nphi is zero!" 
 errors, terminating Julia processes across all platforms (Linux, macOS, Windows).
 
 ### Current Status
-- ❌ **SHTns_jll 3.7.0**: Known to crash with "nlat or nphi is zero!" error
-- ✅ **SHTnsKit.jl**: Provides safe fallback and graceful degradation
-- ✅ **Alternative approaches**: Multiple working solutions available
+- **SHTns_jll 3.7.0**: Known to crash with "nlat or nphi is zero!" error
+- **SHTnsKit.jl**: Provides safe fallback and graceful degradation
+- **Alternative approaches**: Multiple working solutions available
 
 ### Testing SHTns Functionality
 
@@ -22,7 +22,7 @@ ENV["SHTNSKIT_TEST_SHTNS"] = "true"  # May crash Julia!
 using Pkg; Pkg.test("SHTnsKit")
 ```
 
-### ✅ Working Solutions for Production
+### Working Solutions for Production
 
 #### Option 1: Use Conda SHTns (Recommended)
 ```bash
@@ -157,7 +157,7 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
         create_gauss_config, create_regular_config, create_gpu_config, create_test_config,
        
         # Helper functions for automatic differentiation
-       get_lm_from_index, get_index_from_lm,
+       index_to_lm, lm_to_index,
        
        # Library path management
        set_library_path, get_library_path, validate_library, find_system_library

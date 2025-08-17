@@ -546,11 +546,10 @@ function analyze_3d_vector(cfg::SHTnsConfig,
     Vt64 = Vt isa Matrix{Float64} ? Vt : Float64.(Vt)
     Vp64 = Vp isa Matrix{Float64} ? Vp : Float64.(Vp)
     
-    # Allocate output arrays
-    nlm = get_nlm(cfg)
-    Qlm = Vector{Float64}(undef, nlm)
-    Slm = Vector{Float64}(undef, nlm)
-    Tlm = Vector{Float64}(undef, nlm)
+    # Allocate output arrays using standard allocation functions
+    Qlm = allocate_spectral(cfg; T=Float64)
+    Slm = allocate_spectral(cfg; T=Float64)
+    Tlm = allocate_spectral(cfg; T=Float64)
     
     # Perform transform
     spat_to_SHqst(cfg, reshape(Vr64, :), reshape(Vt64, :), reshape(Vp64, :), Qlm, Slm, Tlm)
@@ -601,11 +600,10 @@ function synthesize_3d_vector(cfg::SHTnsConfig,
     Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
     Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
     
-    # Allocate output arrays
-    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
-    Vr = Matrix{Float64}(undef, nlat, nphi)
-    Vt = Matrix{Float64}(undef, nlat, nphi)
-    Vp = Matrix{Float64}(undef, nlat, nphi)
+    # Allocate output arrays using standard allocation functions
+    Vr = allocate_spatial(cfg; T=Float64)
+    Vt = allocate_spatial(cfg; T=Float64)
+    Vp = allocate_spatial(cfg; T=Float64)
     
     # Perform transform
     SHqst_to_spat(cfg, Qlm64, Slm64, Tlm64, reshape(Vr, :), reshape(Vt, :), reshape(Vp, :))
@@ -643,9 +641,9 @@ value_equator = evaluate_at_point(cfg, sh, π/2, 0.0)
 ```
 """
 function evaluate_at_point(cfg::SHTnsConfig, sh::AbstractVector{<:Real}, theta::Real, phi::Real)
-    # Input validation
-    0.0 <= theta <= π || error("theta must be in range [0, π], got $theta")
-    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    # Comprehensive input validation
+    validate_config(cfg)
+    validate_angle_range(theta, phi)
     
     # Convert to cost = cos(theta)
     cost = cos(Float64(theta))
@@ -738,10 +736,9 @@ function compute_gradient_direct(cfg::SHTnsConfig, sh::AbstractVector{<:Real})
     cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
     sh64 = sh isa Vector{Float64} ? sh : Float64.(sh)
     
-    # Allocate output arrays
-    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
-    grad_theta = Matrix{Float64}(undef, nlat, nphi)
-    grad_phi = Matrix{Float64}(undef, nlat, nphi)
+    # Allocate output arrays using standard allocation functions
+    grad_theta = allocate_spatial(cfg; T=Float64)
+    grad_phi = allocate_spatial(cfg; T=Float64)
     
     # Compute gradient
     SH_to_grad_spat(cfg, sh64, reshape(grad_theta, :), reshape(grad_phi, :))
@@ -788,8 +785,9 @@ Vr_30n, Vt_30n, Vp_30n = extract_latitude_slice(cfg, Qlm, Slm, Tlm, π/6)
 function extract_latitude_slice(cfg::SHTnsConfig,
                                Qlm::AbstractVector{<:Real}, Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real},
                                latitude::Real)
-    # Input validation
-    -π/2 <= latitude <= π/2 || error("latitude must be in range [-π/2, π/2], got $latitude")
+    # Comprehensive input validation
+    validate_config(cfg)
+    validate_latitude_range(latitude)
     
     # Convert latitude to colatitude: θ = π/2 - lat
     theta = π/2 - Float64(latitude)
@@ -803,7 +801,7 @@ function extract_latitude_slice(cfg::SHTnsConfig,
     # Allocate output arrays
     nphi = get_nphi(cfg)
     Vr = Vector{Float64}(undef, nphi)
-    Vt = Vector{Float64}(undef, nphi)
+    Vt = Vector{Float64}(undef, nphi)  
     Vp = Vector{Float64}(undef, nphi)
     
     # Extract latitude slice

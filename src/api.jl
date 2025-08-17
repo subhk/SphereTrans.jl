@@ -31,6 +31,151 @@ struct SHTnsConfig
     ptr::Ptr{Cvoid}
 end
 
+# === CONSISTENT ERROR HANDLING HELPERS ===
+
+"""
+    safe_ccall_with_fallback(symbol, return_type, arg_types, args...; fallback_value=nothing, context="")
+
+Safely call a SHTns function with consistent error handling for missing symbols.
+Returns fallback_value if the symbol is missing and fallback is provided, otherwise rethrows.
+"""
+function safe_ccall_with_fallback(symbol::Symbol, return_type, arg_types, args...; 
+                                  fallback_value=nothing, context::String="")
+    try
+        return ccall((symbol, libshtns), return_type, arg_types, args...)
+    catch e
+        if (occursin(string(symbol), string(e)) || 
+            occursin("undefined symbol", string(e)) || 
+            occursin("symbol not found", string(e))) && 
+           fallback_value !== nothing
+            
+            @debug "Symbol $symbol missing - using fallback value" context fallback_value
+            return fallback_value
+        else
+            rethrow(e)
+        end
+    end
+end
+
+"""
+    require_symbol(symbol::Symbol, context::String="")
+
+Require that a SHTns symbol exists, throwing a descriptive error if missing.
+"""
+function require_symbol(symbol::Symbol, context::String="")
+    try
+        handle = Libdl.dlopen(libshtns, Libdl.RTLD_LAZY)
+        has_symbol = Libdl.dlsym_e(handle, symbol) != C_NULL
+        Libdl.dlclose(handle)
+        
+        if !has_symbol
+            error("Required SHTns symbol $symbol not found. $context")
+        end
+        return true
+    catch e
+        error("Failed to check for SHTns symbol $symbol: $e. $context")
+    end
+end
+
+# === TYPE-SAFE POINTER OPERATIONS ===
+
+"""
+    safe_pointer(arr::AbstractArray{T}, expected_length::Integer=0) -> Ptr{T}
+
+Safely convert an array to a pointer with bounds checking.
+"""
+function safe_pointer(arr::AbstractArray{T}, expected_length::Integer=0) where T
+    if expected_length > 0 && length(arr) != expected_length
+        error("Array length mismatch: expected $expected_length, got $(length(arr))")
+    end
+    
+    if !isconcretetype(T)
+        error("Cannot safely convert array with abstract element type $T to pointer")
+    end
+    
+    return Base.unsafe_convert(Ptr{T}, arr)
+end
+
+"""
+    validate_spatial_array(arr::AbstractMatrix, nlat::Integer, nphi::Integer)
+
+Validate that a spatial array has the correct dimensions.
+"""
+function validate_spatial_array(arr::AbstractMatrix, nlat::Integer, nphi::Integer)
+    if size(arr) != (nlat, nphi)
+        error("Spatial array must have size ($nlat, $nphi), got $(size(arr))")
+    end
+    return true
+end
+
+"""
+    validate_spectral_array(arr::AbstractVector, nlm::Integer)
+
+Validate that a spectral array has the correct length.
+"""
+function validate_spectral_array(arr::AbstractVector, nlm::Integer)
+    if length(arr) != nlm
+        error("Spectral array must have length $nlm, got $(length(arr))")
+    end
+    return true
+end
+
+"""
+    validate_config(cfg::SHTnsConfig)
+
+Validate that a SHTns configuration is valid and ready for use.
+"""
+function validate_config(cfg::SHTnsConfig)
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    
+    # Try to get basic parameters to verify the config is functional
+    try
+        nlm = get_nlm(cfg)
+        nlat = get_nlat(cfg)  
+        nphi = get_nphi(cfg)
+        
+        nlm > 0 || error("Invalid configuration: nlm = $nlm")
+        nlat > 0 || error("Invalid configuration: nlat = $nlat")
+        nphi > 0 || error("Invalid configuration: nphi = $nphi")
+    catch e
+        error("Configuration validation failed: $e")
+    end
+    
+    return true
+end
+
+"""
+    validate_coordinate_range(cost::Real, phi::Real)
+
+Validate coordinate ranges for point evaluation functions.
+"""
+function validate_coordinate_range(cost::Real, phi::Real)
+    -1.0 ≤ cost ≤ 1.0 || error("cos(theta) must be in range [-1, 1], got $cost")
+    0.0 ≤ phi ≤ 2π || error("phi must be in range [0, 2π], got $phi")
+    return true
+end
+
+"""
+    validate_angle_range(theta::Real, phi::Real) 
+
+Validate angle ranges for spherical coordinates.
+"""
+function validate_angle_range(theta::Real, phi::Real)
+    0.0 ≤ theta ≤ π || error("theta must be in range [0, π], got $theta")
+    0.0 ≤ phi ≤ 2π || error("phi must be in range [0, 2π], got $phi")
+    return true
+end
+
+"""
+    validate_latitude_range(latitude::Real)
+
+Validate latitude range for geographic coordinates.
+"""
+function validate_latitude_range(latitude::Real) 
+    -π/2 ≤ latitude ≤ π/2 || error("latitude must be in range [-π/2, π/2], got $latitude")
+    return true
+end
+
 # Name/handle of the shared library. Prefer custom path, then SHTns_jll if available.
 const libshtns = let
     # Check for user-specified custom library path first
@@ -330,10 +475,19 @@ Perform a synthesis (spectral to spatial) transform using `shtns_sh_to_spat`.
 The arrays `sh` and `spat` must be pre-allocated.
 """
 function sh_to_spat(cfg::SHTnsConfig, sh::AbstractVector{Float64}, spat::AbstractVector{Float64})
+    # Input validation with type safety
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    nlm = get_nlm(cfg)
+    nlat = get_nlat(cfg) 
+    nphi = get_nphi(cfg)
+    
+    validate_spectral_array(sh, nlm)
+    validate_spectral_array(spat, nlat * nphi)  # Spatial data as linear array
+    
     ccall((:shtns_sh_to_spat, libshtns), Cvoid,
           (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
-          Base.unsafe_convert(Ptr{Float64}, sh),
-          Base.unsafe_convert(Ptr{Float64}, spat))
+          safe_pointer(sh, nlm),
+          safe_pointer(spat, nlat * nphi))
     return spat
 end
 
@@ -344,10 +498,19 @@ Perform an analysis (spatial to spectral) transform using `shtns_spat_to_sh`.
 The arrays `spat` and `sh` must be pre-allocated.
 """
 function spat_to_sh(cfg::SHTnsConfig, spat::AbstractVector{Float64}, sh::AbstractVector{Float64})
+    # Input validation with type safety
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    nlm = get_nlm(cfg)
+    nlat = get_nlat(cfg)
+    nphi = get_nphi(cfg)
+    
+    validate_spectral_array(spat, nlat * nphi)  # Spatial data as linear array
+    validate_spectral_array(sh, nlm)
+    
     ccall((:shtns_spat_to_sh, libshtns), Cvoid,
           (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
-          Base.unsafe_convert(Ptr{Float64}, spat),
-          Base.unsafe_convert(Ptr{Float64}, sh))
+          safe_pointer(spat, nlat * nphi),
+          safe_pointer(sh, nlm))
     return sh
 end
 
@@ -358,17 +521,9 @@ Return the maximum spherical harmonic degree associated with `cfg` using
 `shtns_get_lmax`. For SHTns_jll versions missing this symbol, returns a safe fallback.
 """
 function get_lmax(cfg::SHTnsConfig)
-    try
-        return ccall((:shtns_get_lmax, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
-    catch e
-        if occursin("shtns_get_lmax", string(e)) || occursin("symbol not found", string(e))
-            @debug "shtns_get_lmax symbol missing - returning fallback value"
-            # Return a reasonable fallback for test configs
-            return 2  # Minimum lmax used in our test configs
-        else
-            rethrow(e)
-        end
-    end
+    return safe_ccall_with_fallback(:shtns_get_lmax, Cint, (Ptr{Cvoid},), cfg.ptr;
+                                   fallback_value=2, 
+                                   context="get_lmax: using minimum test config value")
 end
 
 """
@@ -378,17 +533,9 @@ Return the maximum order associated with `cfg` using `shtns_get_mmax`.
 For SHTns_jll versions missing this symbol, returns a safe fallback.
 """
 function get_mmax(cfg::SHTnsConfig)
-    try
-        return ccall((:shtns_get_mmax, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
-    catch e
-        if occursin("shtns_get_mmax", string(e)) || occursin("symbol not found", string(e))
-            @debug "shtns_get_mmax symbol missing - returning fallback value"
-            # Return a reasonable fallback for test configs  
-            return 2  # Minimum mmax used in our test configs
-        else
-            rethrow(e)
-        end
-    end
+    return safe_ccall_with_fallback(:shtns_get_mmax, Cint, (Ptr{Cvoid},), cfg.ptr;
+                                   fallback_value=2,
+                                   context="get_mmax: using minimum test config value")
 end
 
 """
@@ -398,18 +545,9 @@ Retrieve the number of latitudinal grid points set for `cfg` using
 `shtns_get_nlat`. For SHTns_jll versions missing this symbol, returns a safe fallback.
 """
 function get_nlat(cfg::SHTnsConfig)
-    try
-        return ccall((:shtns_get_nlat, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
-    catch e
-        if occursin("shtns_get_nlat", string(e)) || occursin("symbol not found", string(e))
-            @debug "shtns_get_nlat symbol missing - returning fallback value"
-            # Return a reasonable fallback for testing/basic usage
-            # This is not ideal but allows basic functionality to work
-            return 16  # Minimum valid nlat for most SHTns operations
-        else
-            rethrow(e)
-        end
-    end
+    return safe_ccall_with_fallback(:shtns_get_nlat, Cint, (Ptr{Cvoid},), cfg.ptr;
+                                   fallback_value=16,
+                                   context="get_nlat: using minimum valid grid size")
 end
 
 """
@@ -419,17 +557,9 @@ Retrieve the number of longitudinal grid points set for `cfg` using
 `shtns_get_nphi`. For SHTns_jll versions missing this symbol, returns a safe fallback.
 """
 function get_nphi(cfg::SHTnsConfig)
-    try
-        return ccall((:shtns_get_nphi, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
-    catch e
-        if occursin("shtns_get_nphi", string(e)) || occursin("symbol not found", string(e))
-            @debug "shtns_get_nphi symbol missing - returning fallback value"
-            # Return a reasonable fallback for testing/basic usage
-            return 17  # Minimum valid nphi > 16 for most SHTns operations
-        else
-            rethrow(e)
-        end
-    end
+    return safe_ccall_with_fallback(:shtns_get_nphi, Cint, (Ptr{Cvoid},), cfg.ptr;
+                                   fallback_value=17,
+                                   context="get_nphi: using minimum valid grid size")
 end
 
 """
@@ -439,36 +569,36 @@ Return the number of spherical harmonic coefficients using `shtns_get_nlm`.
 For SHTns_jll versions missing this symbol, computes a safe fallback.
 """
 function get_nlm(cfg::SHTnsConfig)
-    try
-        return ccall((:shtns_get_nlm, libshtns), Cint, (Ptr{Cvoid},), cfg.ptr)
-    catch e
-        if occursin("shtns_get_nlm", string(e)) || occursin("symbol not found", string(e))
-            @debug "shtns_get_nlm symbol missing - computing fallback value"
-            # Compute nlm from lmax and mmax
-            # For the fallback case, we need to make assumptions about the config
-            # Standard SHTns formula: nlm = (lmax+1)*(lmax+2)/2 for mmax=lmax
-            # For a minimal config created in our fallback, we use safe estimates
-            lmax = get_lmax(cfg)  # This may also use fallback
-            if lmax == -1  # Our sentinel value for missing lmax
-                # Use a safe estimate for minimal test configs
-                return 9  # (lmax=2): (2+1)*(2+2)/2 = 6, add some buffer -> 9
-            else
-                # Standard formula for nlm when mmax = lmax
-                return div((lmax + 1) * (lmax + 2), 2)
-            end
-        else
-            rethrow(e)
-        end
+    # Try direct call first
+    nlm = safe_ccall_with_fallback(:shtns_get_nlm, Cint, (Ptr{Cvoid},), cfg.ptr;
+                                  fallback_value=nothing,
+                                  context="get_nlm: computing from lmax/mmax")
+    
+    if nlm !== nothing
+        return nlm
     end
+    
+    # Compute from lmax and mmax as fallback
+    lmax = get_lmax(cfg)  # This may also use fallback
+    mmax = get_mmax(cfg)  # This may also use fallback
+    
+    # Use nlm_calc for consistent computation
+    return nlm_calc(lmax, mmax, 1)  # Assume standard mres=1 for fallback
 end
 
 """
     lmidx(cfg, l, m) -> Int
 
 Return the packed index corresponding to the spherical harmonic degree `l` and
-order `m` using `shtns_lmidx`.
+order `m` using `shtns_lmidx`. If the symbol is missing, throws a descriptive error.
 """
 function lmidx(cfg::SHTnsConfig, l::Integer, m::Integer)
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    
+    # This function is required for basic functionality, so no fallback
+    require_symbol(:shtns_lmidx, "lmidx is essential for SHTns indexing operations")
+    
     return ccall((:shtns_lmidx, libshtns), Cint,
                  (Ptr{Cvoid}, Cint, Cint), cfg.ptr, l, m)
 end
@@ -682,11 +812,10 @@ value = SH_to_point(cfg, sh, 1.0, 0.0)
 ```
 """
 function SH_to_point(cfg::SHTnsConfig, Qlm::AbstractVector{Float64}, cost::Float64, phi::Float64)
-    # Input validation
-    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
-    length(Qlm) == get_nlm(cfg) || error("Qlm must have length $(get_nlm(cfg)), got $(length(Qlm))")
-    -1.0 <= cost <= 1.0 || error("cost must be in range [-1, 1], got $cost")
-    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    # Comprehensive input validation
+    validate_config(cfg)
+    validate_spectral_array(Qlm, get_nlm(cfg))
+    validate_coordinate_range(cost, phi)
     
     return ccall((:shtns_SH_to_point, libshtns), Float64,
                  (Ptr{Cvoid}, Ptr{Float64}, Float64, Float64), cfg.ptr,
@@ -913,10 +1042,21 @@ function nlm_calc(lmax::Integer, mmax::Integer, mres::Integer)
     
     nlm = 0
     for l in 0:lmax
-        # Number of m modes for this l: min(l+1, floor(mmax/mres)+1)
-        # This accounts for both the natural limit (m ≤ l) and the truncation limit
-        max_m_for_l = min(l, mmax ÷ mres)  # Integer division
-        nlm += max_m_for_l + 1  # +1 because m goes from 0 to max_m_for_l
+        # For each l, count valid m values: m = 0, mres, 2*mres, ..., up to min(l, mmax)
+        # This follows the SHTns convention for azimuthal resolution
+        max_m_for_l = min(l, mmax)
+        if mres == 1
+            # Standard case: all m from 0 to max_m_for_l
+            nlm += max_m_for_l + 1
+        else
+            # With azimuthal resolution: count m = 0, mres, 2*mres, ...
+            nlm += 1  # Always include m = 0
+            m = mres
+            while m <= max_m_for_l
+                nlm += 1
+                m += mres
+            end
+        end
     end
     
     return nlm
@@ -1029,7 +1169,7 @@ end
 # === HELPER FUNCTIONS FOR AD ===
 
 """
-    get_lm_from_index(cfg::SHTnsConfig, idx::Int) -> (l::Int, m::Int)
+    index_to_lm(cfg::SHTnsConfig, idx::Int) -> (l::Int, m::Int)
 
 Get the spherical harmonic degree l and order m for a given linear index.
 This is needed for automatic differentiation rules that need to know
@@ -1037,7 +1177,7 @@ which (l,m) mode corresponds to each spectral coefficient.
 
 This function uses SHTns internal indexing by searching through all valid (l,m) pairs.
 """
-function get_lm_from_index(cfg::SHTnsConfig, idx::Int)
+function index_to_lm(cfg::SHTnsConfig, idx::Int)
     lmax = get_lmax(cfg)
     nlm = get_nlm(cfg)
     @assert 1 <= idx <= nlm "Index must be between 1 and nlm"
@@ -1055,14 +1195,14 @@ function get_lm_from_index(cfg::SHTnsConfig, idx::Int)
 end
 
 """
-    get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int) -> Int
+    lm_to_index(cfg::SHTnsConfig, l::Int, m::Int) -> Int
 
 Get the linear index for spherical harmonic degree l and order m.
-This is the inverse of get_lm_from_index.
+This is the inverse of index_to_lm.
 
 This function uses the SHTns library's built-in indexing via lmidx.
 """
-function get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int)
+function lm_to_index(cfg::SHTnsConfig, l::Int, m::Int)
     lmax = get_lmax(cfg)
     @assert 0 <= l <= lmax "l must be between 0 and lmax"
     @assert -l <= m <= l "m must be between -l and l"
