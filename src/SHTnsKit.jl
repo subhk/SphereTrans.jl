@@ -137,6 +137,19 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
 
        # High-level vector transforms
        synthesize_vector, analyze_vector, compute_gradient, compute_curl,
+       
+       # High-level 3D vector transforms
+       analyze_3d_vector, synthesize_3d_vector,
+       
+       # High-level point evaluation
+       evaluate_at_point, evaluate_vector_at_point,
+       
+       # High-level gradient computation
+       compute_gradient_direct,
+       
+       # High-level latitude extraction
+       extract_latitude_slice,
+       
        # High-level rotation functions
        rotate_field, rotate_spatial_field,
 
