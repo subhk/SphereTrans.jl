@@ -45,7 +45,7 @@ using LinearAlgebra
         @test_throws Exception nlm_calc(5, -1, 1)  # Negative mmax
         @test_throws Exception nlm_calc(5, 5, 0)   # Zero mres
         
-        println("✅ nlm_calc function working correctly")
+        println(" nlm_calc function working correctly")
     end
     
     # Only test SHTns-dependent functions if SHTns is available
