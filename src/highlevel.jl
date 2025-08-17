@@ -501,6 +501,317 @@ function rotate_spatial_field(cfg::SHTnsConfig, spat::AbstractMatrix{<:Real},
     return spat_out
 end
 
+# === HIGH-LEVEL 3D VECTOR TRANSFORMS ===
+
+"""
+    analyze_3d_vector(cfg, Vr, Vt, Vp) -> (Qlm, Slm, Tlm)
+
+Analyze 3D vector field (Vr, Vt, Vp) into radial-spheroidal-toroidal spectral components.
+Allocates output arrays automatically.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Vr::AbstractMatrix{<:Real}`: Radial component (nlat × nphi)
+- `Vt::AbstractMatrix{<:Real}`: Theta component (nlat × nphi)
+- `Vp::AbstractMatrix{<:Real}`: Phi component (nlat × nphi)
+
+# Returns
+- `(Qlm, Slm, Tlm)`: Tuple of spectral coefficients (radial, spheroidal, toroidal)
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+
+# Create sample 3D vector field
+Vr = rand(nlat, nphi)
+Vt = rand(nlat, nphi) 
+Vp = rand(nlat, nphi)
+
+# Decompose into spectral components
+Qlm, Slm, Tlm = analyze_3d_vector(cfg, Vr, Vt, Vp)
+```
+"""
+function analyze_3d_vector(cfg::SHTnsConfig,
+                          Vr::AbstractMatrix{<:Real}, Vt::AbstractMatrix{<:Real}, Vp::AbstractMatrix{<:Real})
+    # Input validation and type promotion
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_size = (get_nlat(cfg), get_nphi(cfg))
+    size(Vr) == expected_size || error("Vr must have size $expected_size, got $(size(Vr))")
+    size(Vt) == expected_size || error("Vt must have size $expected_size, got $(size(Vt))")
+    size(Vp) == expected_size || error("Vp must have size $expected_size, got $(size(Vp))")
+    
+    # Type promotion to Float64
+    Vr64 = Vr isa Matrix{Float64} ? Vr : Float64.(Vr)
+    Vt64 = Vt isa Matrix{Float64} ? Vt : Float64.(Vt)
+    Vp64 = Vp isa Matrix{Float64} ? Vp : Float64.(Vp)
+    
+    # Allocate output arrays
+    nlm = get_nlm(cfg)
+    Qlm = Vector{Float64}(undef, nlm)
+    Slm = Vector{Float64}(undef, nlm)
+    Tlm = Vector{Float64}(undef, nlm)
+    
+    # Perform transform
+    spat_to_SHqst(cfg, reshape(Vr64, :), reshape(Vt64, :), reshape(Vp64, :), Qlm, Slm, Tlm)
+    
+    return Qlm, Slm, Tlm
+end
+
+"""
+    synthesize_3d_vector(cfg, Qlm, Slm, Tlm) -> (Vr, Vt, Vp)
+
+Synthesize 3D vector field from radial-spheroidal-toroidal spectral components.
+Allocates output arrays automatically.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{<:Real}`: Radial spectral coefficients
+- `Slm::AbstractVector{<:Real}`: Spheroidal spectral coefficients
+- `Tlm::AbstractVector{<:Real}`: Toroidal spectral coefficients
+
+# Returns
+- `(Vr, Vt, Vp)`: Tuple of spatial vector components (nlat × nphi matrices)
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+nlm = get_nlm(cfg)
+
+# Create sample spectral coefficients
+Qlm = rand(nlm)
+Slm = rand(nlm)
+Tlm = rand(nlm)
+
+# Synthesize to spatial domain
+Vr, Vt, Vp = synthesize_3d_vector(cfg, Qlm, Slm, Tlm)
+```
+"""
+function synthesize_3d_vector(cfg::SHTnsConfig,
+                             Qlm::AbstractVector{<:Real}, Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real})
+    # Input validation and type promotion
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_nlm = get_nlm(cfg)
+    length(Qlm) == expected_nlm || error("Qlm must have length $expected_nlm, got $(length(Qlm))")
+    length(Slm) == expected_nlm || error("Slm must have length $expected_nlm, got $(length(Slm))")
+    length(Tlm) == expected_nlm || error("Tlm must have length $expected_nlm, got $(length(Tlm))")
+    
+    # Type promotion to Float64
+    Qlm64 = Qlm isa Vector{Float64} ? Qlm : Float64.(Qlm)
+    Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
+    Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
+    
+    # Allocate output arrays
+    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+    Vr = Matrix{Float64}(undef, nlat, nphi)
+    Vt = Matrix{Float64}(undef, nlat, nphi)
+    Vp = Matrix{Float64}(undef, nlat, nphi)
+    
+    # Perform transform
+    SHqst_to_spat(cfg, Qlm64, Slm64, Tlm64, reshape(Vr, :), reshape(Vt, :), reshape(Vp, :))
+    
+    return Vr, Vt, Vp
+end
+
+# === HIGH-LEVEL POINT EVALUATION ===
+
+"""
+    evaluate_at_point(cfg, sh, theta, phi) -> Float64
+
+Evaluate scalar spherical harmonic field at a specific point on the sphere.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `sh::AbstractVector{<:Real}`: Spherical harmonic coefficients
+- `theta::Real`: Colatitude in radians [0, π]
+- `phi::Real`: Longitude in radians [0, 2π]
+
+# Returns
+- `Float64`: Field value at the specified point
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+sh = allocate_spectral(cfg)
+sh[1] = 1.0  # Y_0^0 component
+
+# Evaluate at north pole
+value_north = evaluate_at_point(cfg, sh, 0.0, 0.0)
+
+# Evaluate at equator
+value_equator = evaluate_at_point(cfg, sh, π/2, 0.0)
+```
+"""
+function evaluate_at_point(cfg::SHTnsConfig, sh::AbstractVector{<:Real}, theta::Real, phi::Real)
+    # Input validation
+    0.0 <= theta <= π || error("theta must be in range [0, π], got $theta")
+    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    
+    # Convert to cost = cos(theta)
+    cost = cos(Float64(theta))
+    phi64 = Float64(phi)
+    
+    # Type promotion
+    sh64 = sh isa Vector{Float64} ? sh : Float64.(sh)
+    
+    return SH_to_point(cfg, sh64, cost, phi64)
+end
+
+"""
+    evaluate_vector_at_point(cfg, Qlm, Slm, Tlm, theta, phi) -> (Vr, Vt, Vp)
+
+Evaluate vector spherical harmonic field at a specific point on the sphere.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{<:Real}`: Radial spectral coefficients
+- `Slm::AbstractVector{<:Real}`: Spheroidal spectral coefficients
+- `Tlm::AbstractVector{<:Real}`: Toroidal spectral coefficients
+- `theta::Real`: Colatitude in radians [0, π]
+- `phi::Real`: Longitude in radians [0, 2π]
+
+# Returns
+- `(Vr, Vt, Vp)`: Vector field components at the specified point
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+Qlm = allocate_spectral(cfg)
+Slm = allocate_spectral(cfg)
+Tlm = allocate_spectral(cfg)
+# ... set coefficients ...
+
+# Evaluate at specific location
+Vr, Vt, Vp = evaluate_vector_at_point(cfg, Qlm, Slm, Tlm, π/4, π/3)
+```
+"""
+function evaluate_vector_at_point(cfg::SHTnsConfig,
+                                 Qlm::AbstractVector{<:Real}, Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real},
+                                 theta::Real, phi::Real)
+    # Input validation
+    0.0 <= theta <= π || error("theta must be in range [0, π], got $theta")
+    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    
+    # Convert to cost = cos(theta)
+    cost = cos(Float64(theta))
+    phi64 = Float64(phi)
+    
+    # Type promotion
+    Qlm64 = Qlm isa Vector{Float64} ? Qlm : Float64.(Qlm)
+    Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
+    Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
+    
+    return SHqst_to_point(cfg, Qlm64, Slm64, Tlm64, cost, phi64)
+end
+
+# === HIGH-LEVEL GRADIENT COMPUTATION ===
+
+"""
+    compute_gradient_direct(cfg, sh) -> (grad_theta, grad_phi)
+
+Compute the gradient of a scalar spherical harmonic field directly and efficiently.
+Returns gradient components as matrices.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration  
+- `sh::AbstractVector{<:Real}`: Spherical harmonic coefficients
+
+# Returns
+- `(grad_theta, grad_phi)`: Tuple of gradient component matrices (nlat × nphi)
+
+# Notes
+- More efficient than `compute_gradient` for pure gradient computation
+- Returns ∇Q = (1/r)(∂Q/∂θ êθ + 1/sin(θ) ∂Q/∂φ êφ)
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+sh = allocate_spectral(cfg)
+sh[2] = 1.0  # Y_1^0 component
+
+# Compute gradient directly
+grad_theta, grad_phi = compute_gradient_direct(cfg, sh)
+```
+"""
+function compute_gradient_direct(cfg::SHTnsConfig, sh::AbstractVector{<:Real})
+    # Input validation and type promotion
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    sh64 = sh isa Vector{Float64} ? sh : Float64.(sh)
+    
+    # Allocate output arrays
+    nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+    grad_theta = Matrix{Float64}(undef, nlat, nphi)
+    grad_phi = Matrix{Float64}(undef, nlat, nphi)
+    
+    # Compute gradient
+    SH_to_grad_spat(cfg, sh64, reshape(grad_theta, :), reshape(grad_phi, :))
+    
+    return grad_theta, grad_phi
+end
+
+# === HIGH-LEVEL LATITUDE EXTRACTION ===
+
+"""
+    extract_latitude_slice(cfg, Qlm, Slm, Tlm, latitude) -> (Vr, Vt, Vp)
+
+Extract vector field data at a specific latitude efficiently.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{<:Real}`: Radial spectral coefficients
+- `Slm::AbstractVector{<:Real}`: Spheroidal spectral coefficients  
+- `Tlm::AbstractVector{<:Real}`: Toroidal spectral coefficients
+- `latitude::Real`: Latitude in radians [-π/2, π/2] (positive = north)
+
+# Returns
+- `(Vr, Vt, Vp)`: Vector components at all longitudes for the specified latitude
+
+# Notes
+- More efficient than full 3D synthesis when you only need one latitude
+- Latitude is converted to colatitude internally: θ = π/2 - latitude
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+Qlm = allocate_spectral(cfg)
+Slm = allocate_spectral(cfg)
+Tlm = allocate_spectral(cfg)
+# ... set coefficients ...
+
+# Extract equatorial slice
+Vr_eq, Vt_eq, Vp_eq = extract_latitude_slice(cfg, Qlm, Slm, Tlm, 0.0)
+
+# Extract 30°N slice
+Vr_30n, Vt_30n, Vp_30n = extract_latitude_slice(cfg, Qlm, Slm, Tlm, π/6)
+```
+"""
+function extract_latitude_slice(cfg::SHTnsConfig,
+                               Qlm::AbstractVector{<:Real}, Slm::AbstractVector{<:Real}, Tlm::AbstractVector{<:Real},
+                               latitude::Real)
+    # Input validation
+    -π/2 <= latitude <= π/2 || error("latitude must be in range [-π/2, π/2], got $latitude")
+    
+    # Convert latitude to colatitude: θ = π/2 - lat
+    theta = π/2 - Float64(latitude)
+    cost = cos(theta)
+    
+    # Type promotion
+    Qlm64 = Qlm isa Vector{Float64} ? Qlm : Float64.(Qlm)
+    Slm64 = Slm isa Vector{Float64} ? Slm : Float64.(Slm)
+    Tlm64 = Tlm isa Vector{Float64} ? Tlm : Float64.(Tlm)
+    
+    # Allocate output arrays
+    nphi = get_nphi(cfg)
+    Vr = Vector{Float64}(undef, nphi)
+    Vt = Vector{Float64}(undef, nphi)
+    Vp = Vector{Float64}(undef, nphi)
+    
+    # Extract latitude slice
+    SHqst_to_lat(cfg, Qlm64, Slm64, Tlm64, cost, Vr, Vt, Vp)
+    
+    return Vr, Vt, Vp
+end
+
 # === HIGH-LEVEL THREADING CONTROL ===
 
 """
