@@ -10,7 +10,7 @@ using LinearAlgebra
         @test SHTnsFlags isa Module
         @test SHTnsFlags.SHT_GAUSS == 0
         @test SHTnsFlags.SHT_REGULAR == 1
-        println("✅ Package structure and exports working")
+        println(" Package structure and exports working")
     end
     
     # Check if SHTns testing should be enabled based on platform and configuration
@@ -31,7 +31,7 @@ using LinearAlgebra
         end
         
         @test_skip "SHTns-dependent tests - $reason"
-        println("⚠️ Skipping SHTns tests: $reason")
+        println(" Skipping SHTns tests: $reason")
         
         if !should_test_by_default
             println("   SHTns testing disabled by default due to widespread SHTns_jll binary issues")
@@ -42,7 +42,7 @@ using LinearAlgebra
         return
     end
     
-    println("✅ SHTns testing ENABLED on $(Sys.KERNEL) $(Sys.ARCH)")
+    println(" SHTns testing ENABLED on $(Sys.KERNEL) $(Sys.ARCH)")
     if !should_test_by_default
         println("   (explicitly enabled via SHTNSKIT_TEST_SHTNS environment variable)")
     end
