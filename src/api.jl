@@ -747,6 +747,181 @@ function SHqst_to_point(cfg::SHTnsConfig,
     return Vr[], Vt[], Vp[]
 end
 
+# === GRADIENT COMPUTATION ===
+
+"""
+    SH_to_grad_spat(cfg, Qlm, Vt, Vp)
+
+Compute spatial representation of the gradient of a scalar spherical harmonic field Qlm
+using `shtns_SH_to_grad_spat`. This directly computes ∇Q on the sphere.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{Float64}`: Input spherical harmonic coefficients
+- `Vt::AbstractVector{Float64}`: Output theta component of gradient (spatial, pre-allocated)
+- `Vp::AbstractVector{Float64}`: Output phi component of gradient (spatial, pre-allocated)
+
+# Returns
+- `(Vt, Vp)`: Tuple of theta and phi components of the gradient
+
+# Notes
+- This function computes the surface gradient on the sphere: ∇Q = (1/r)(∂Q/∂θ êθ + 1/sin(θ) ∂Q/∂φ êφ)
+- For a field with units [U], the gradient has units [U/length]
+- More efficient than using `SHsph_to_spat` for gradient computation
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+sh = allocate_spectral(cfg)
+sh[2] = 1.0  # Set Y_1^0 component
+
+nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+grad_theta = Vector{Float64}(undef, nlat * nphi)
+grad_phi = Vector{Float64}(undef, nlat * nphi)
+
+# Compute gradient directly
+SH_to_grad_spat(cfg, sh, grad_theta, grad_phi)
+```
+"""
+function SH_to_grad_spat(cfg::SHTnsConfig, 
+                         Qlm::AbstractVector{Float64},
+                         Vt::AbstractVector{Float64}, Vp::AbstractVector{Float64})
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_nlm = get_nlm(cfg)
+    expected_spat = get_nlat(cfg) * get_nphi(cfg)
+    
+    length(Qlm) == expected_nlm || error("Qlm must have length $expected_nlm, got $(length(Qlm))")
+    length(Vt) == expected_spat || error("Vt must have length $expected_spat, got $(length(Vt))")
+    length(Vp) == expected_spat || error("Vp must have length $expected_spat, got $(length(Vp))")
+    
+    ccall((:shtns_SH_to_grad_spat, libshtns), Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, Qlm),
+          Base.unsafe_convert(Ptr{Float64}, Vt), Base.unsafe_convert(Ptr{Float64}, Vp))
+    
+    return Vt, Vp
+end
+
+# === LATITUDE-SPECIFIC TRANSFORMS ===
+
+"""
+    SHqst_to_lat(cfg, Qlm, Slm, Tlm, cost, Vr, Vt, Vp)
+
+Perform vector spherical harmonic synthesis at a given latitude (defined by cost = cos(θ))
+on nphi equispaced longitude points using `shtns_SHqst_to_lat`.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{Float64}`: Radial spectral coefficients
+- `Slm::AbstractVector{Float64}`: Spheroidal spectral coefficients
+- `Tlm::AbstractVector{Float64}`: Toroidal spectral coefficients  
+- `cost::Float64`: cos(theta) where theta is colatitude, range [-1, 1]
+- `Vr::AbstractVector{Float64}`: Output radial component at the latitude (pre-allocated, length nphi)
+- `Vt::AbstractVector{Float64}`: Output theta component at the latitude (pre-allocated, length nphi)
+- `Vp::AbstractVector{Float64}`: Output phi component at the latitude (pre-allocated, length nphi)
+
+# Returns
+- `(Vr, Vt, Vp)`: Tuple of vector components at all longitudes for the specified latitude
+
+# Notes
+- This is more efficient than computing the full 3D transform when you only need one latitude
+- Useful for extracting data along specific latitudes (e.g., equator, tropics)
+- The longitude points are equispaced: φⱼ = 2π(j-1)/nphi for j = 1, ..., nphi
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+Qlm = allocate_spectral(cfg)
+Slm = allocate_spectral(cfg)
+Tlm = allocate_spectral(cfg)
+# ... set coefficients ...
+
+nphi = get_nphi(cfg)
+Vr_eq = Vector{Float64}(undef, nphi)
+Vt_eq = Vector{Float64}(undef, nphi) 
+Vp_eq = Vector{Float64}(undef, nphi)
+
+# Compute vector field at equator (cost = 0)
+SHqst_to_lat(cfg, Qlm, Slm, Tlm, 0.0, Vr_eq, Vt_eq, Vp_eq)
+```
+"""
+function SHqst_to_lat(cfg::SHTnsConfig,
+                      Qlm::AbstractVector{Float64}, Slm::AbstractVector{Float64}, Tlm::AbstractVector{Float64},
+                      cost::Float64,
+                      Vr::AbstractVector{Float64}, Vt::AbstractVector{Float64}, Vp::AbstractVector{Float64})
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_nlm = get_nlm(cfg)
+    expected_nphi = get_nphi(cfg)
+    
+    length(Qlm) == expected_nlm || error("Qlm must have length $expected_nlm, got $(length(Qlm))")
+    length(Slm) == expected_nlm || error("Slm must have length $expected_nlm, got $(length(Slm))")
+    length(Tlm) == expected_nlm || error("Tlm must have length $expected_nlm, got $(length(Tlm))")
+    length(Vr) == expected_nphi || error("Vr must have length $expected_nphi, got $(length(Vr))")
+    length(Vt) == expected_nphi || error("Vt must have length $expected_nphi, got $(length(Vt))")
+    length(Vp) == expected_nphi || error("Vp must have length $expected_nphi, got $(length(Vp))")
+    -1.0 <= cost <= 1.0 || error("cost must be in range [-1, 1], got $cost")
+    
+    ccall((:shtns_SHqst_to_lat, libshtns), Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Float64, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, Qlm), Base.unsafe_convert(Ptr{Float64}, Slm), Base.unsafe_convert(Ptr{Float64}, Tlm),
+          cost,
+          Base.unsafe_convert(Ptr{Float64}, Vr), Base.unsafe_convert(Ptr{Float64}, Vt), Base.unsafe_convert(Ptr{Float64}, Vp))
+    
+    return Vr, Vt, Vp
+end
+
+# === UTILITY FUNCTIONS ===
+
+"""
+    nlm_calc(lmax, mmax, mres) -> Int
+
+Compute the number of spherical harmonic modes (l,m) for given size parameters
+using the same formula as SHTns `nlm_calc` function.
+
+# Arguments
+- `lmax::Integer`: Maximum spherical harmonic degree
+- `mmax::Integer`: Maximum spherical harmonic order  
+- `mres::Integer`: Azimuthal resolution parameter
+
+# Returns
+- `Int`: Number of (l,m) modes in the truncated spherical harmonic series
+
+# Notes
+- This computes the total number of spectral coefficients needed
+- Formula accounts for SHTns truncation: nlm = Σₗ₌₀ˡᵐᵃˣ min(l+1, floor(mmax/mres)+1)
+- Useful for pre-allocating spectral arrays without needing a full SHTns configuration
+
+# Examples
+```julia
+# Standard triangular truncation (mmax = lmax, mres = 1)
+nlm_tri = nlm_calc(15, 15, 1)  # Returns (15+1)*(15+2)/2 = 136
+
+# Rhomboidal truncation (mmax < lmax)  
+nlm_rhomb = nlm_calc(20, 10, 1)  # Different from triangular
+
+# With azimuthal resolution
+nlm_res = nlm_calc(30, 20, 2)  # Every 2nd azimuthal mode
+```
+"""
+function nlm_calc(lmax::Integer, mmax::Integer, mres::Integer)
+    # Input validation
+    lmax >= 0 || error("lmax must be non-negative, got $lmax")
+    mmax >= 0 || error("mmax must be non-negative, got $mmax")
+    mres > 0 || error("mres must be positive, got $mres")
+    
+    nlm = 0
+    for l in 0:lmax
+        # Number of m modes for this l: min(l+1, floor(mmax/mres)+1)
+        # This accounts for both the natural limit (m ≤ l) and the truncation limit
+        max_m_for_l = min(l, mmax ÷ mres)  # Integer division
+        nlm += max_m_for_l + 1  # +1 because m goes from 0 to max_m_for_l
+    end
+    
+    return nlm
+end
+
 # === MULTIPOLE ANALYSIS ===
 
 """Compute multipole expansion coefficients using `shtns_multipole`."""
