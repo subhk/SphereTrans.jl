@@ -99,6 +99,21 @@ export SHTnsConfig, SHTnsFlags, create_config, set_grid, sh_to_spat, spat_to_sh,
 
        # Vector transforms  
        SHsphtor_to_spat, spat_to_SHsphtor, SHsph_to_spat, SHtor_to_spat,
+       
+       # 3D vector transforms
+       spat_to_SHqst, SHqst_to_spat,
+       
+       # Point evaluation
+       SH_to_point, SHqst_to_point,
+       
+       # Gradient computation
+       SH_to_grad_spat,
+       
+       # Latitude-specific transforms
+       SHqst_to_lat,
+       
+       # Utility functions
+       nlm_calc,
 
        # Rotations
        rotation_wigner, rotate_to_grid,
