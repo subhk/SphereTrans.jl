@@ -654,6 +654,99 @@ function rotate_to_grid(cfg::SHTnsConfig,
     return spat_out
 end
 
+# === POINT EVALUATION ===
+
+"""
+    SH_to_point(cfg, Qlm, cost, phi) -> Float64
+
+Evaluate scalar spherical harmonic representation Qlm at a single point 
+defined by cost = cos(theta) and phi using `shtns_SH_to_point`.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{Float64}`: Spherical harmonic coefficients
+- `cost::Float64`: cos(theta) where theta is colatitude, range [-1, 1]
+- `phi::Float64`: Longitude in radians, range [0, 2π]
+
+# Returns
+- `Float64`: Value of the field at the specified point
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+sh = allocate_spectral(cfg)
+sh[1] = 1.0  # Set Y_0^0 component
+
+# Evaluate at north pole (theta=0, so cost=1, phi=0)
+value = SH_to_point(cfg, sh, 1.0, 0.0)
+```
+"""
+function SH_to_point(cfg::SHTnsConfig, Qlm::AbstractVector{Float64}, cost::Float64, phi::Float64)
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    length(Qlm) == get_nlm(cfg) || error("Qlm must have length $(get_nlm(cfg)), got $(length(Qlm))")
+    -1.0 <= cost <= 1.0 || error("cost must be in range [-1, 1], got $cost")
+    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    
+    return ccall((:shtns_SH_to_point, libshtns), Float64,
+                 (Ptr{Cvoid}, Ptr{Float64}, Float64, Float64), cfg.ptr,
+                 Base.unsafe_convert(Ptr{Float64}, Qlm), cost, phi)
+end
+
+"""
+    SHqst_to_point(cfg, Qlm, Slm, Tlm, cost, phi) -> (Vr, Vt, Vp)
+
+Evaluate vector spherical harmonic representation (Qlm, Slm, Tlm) at a single point
+defined by cost = cos(theta) and phi using `shtns_SHqst_to_point`.
+
+# Arguments
+- `cfg::SHTnsConfig`: SHTns configuration
+- `Qlm::AbstractVector{Float64}`: Radial spectral coefficients
+- `Slm::AbstractVector{Float64}`: Spheroidal spectral coefficients  
+- `Tlm::AbstractVector{Float64}`: Toroidal spectral coefficients
+- `cost::Float64`: cos(theta) where theta is colatitude, range [-1, 1]
+- `phi::Float64`: Longitude in radians, range [0, 2π]
+
+# Returns
+- `(Vr, Vt, Vp)`: Tuple of vector components at the specified point
+
+# Examples
+```julia
+cfg = create_gauss_config(16, 16)
+Qlm = allocate_spectral(cfg)
+Slm = allocate_spectral(cfg) 
+Tlm = allocate_spectral(cfg)
+# ... set coefficients ...
+
+# Evaluate at equator (theta=π/2, so cost=0, phi=0)
+Vr, Vt, Vp = SHqst_to_point(cfg, Qlm, Slm, Tlm, 0.0, 0.0)
+```
+"""
+function SHqst_to_point(cfg::SHTnsConfig, 
+                        Qlm::AbstractVector{Float64}, Slm::AbstractVector{Float64}, Tlm::AbstractVector{Float64},
+                        cost::Float64, phi::Float64)
+    # Input validation
+    cfg.ptr != C_NULL || error("Invalid SHTns configuration (NULL pointer)")
+    expected_nlm = get_nlm(cfg)
+    length(Qlm) == expected_nlm || error("Qlm must have length $expected_nlm, got $(length(Qlm))")
+    length(Slm) == expected_nlm || error("Slm must have length $expected_nlm, got $(length(Slm))")
+    length(Tlm) == expected_nlm || error("Tlm must have length $expected_nlm, got $(length(Tlm))")
+    -1.0 <= cost <= 1.0 || error("cost must be in range [-1, 1], got $cost")
+    0.0 <= phi <= 2π || error("phi must be in range [0, 2π], got $phi")
+    
+    # Allocate output variables
+    Vr = Ref{Float64}(0.0)
+    Vt = Ref{Float64}(0.0) 
+    Vp = Ref{Float64}(0.0)
+    
+    ccall((:shtns_SHqst_to_point, libshtns), Cvoid,
+          (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Float64, Float64, Ref{Float64}, Ref{Float64}, Ref{Float64}), cfg.ptr,
+          Base.unsafe_convert(Ptr{Float64}, Qlm), Base.unsafe_convert(Ptr{Float64}, Slm), Base.unsafe_convert(Ptr{Float64}, Tlm),
+          cost, phi, Vr, Vt, Vp)
+    
+    return Vr[], Vt[], Vp[]
+end
+
 # === MULTIPOLE ANALYSIS ===
 
 """Compute multipole expansion coefficients using `shtns_multipole`."""
