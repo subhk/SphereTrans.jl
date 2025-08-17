@@ -95,31 +95,31 @@ julia test_simple.jl  # Verify syntax without running tests
 
 The test suite covers:
 
-✅ **Core SHTns Features:**
+**Core SHTns Features:**
 - Forward/backward scalar transforms
 - Multiple grid types (Gauss, regular)
 - Configuration management
 - Memory allocation
 
-✅ **Advanced Features:**
+**Advanced Features:**
 - Complex field transforms
 - Vector field transforms (spheroidal-toroidal)
 - Field rotations (Wigner D-matrices)
 - Power spectrum analysis
 - Gradient and curl operations
 
-✅ **Performance Optimizations:**
+**Performance Optimizations:**
 - OpenMP multi-threading
 - GPU acceleration (CUDA)
 - Memory management efficiency
 - Numerical accuracy standards
 
-✅ **Distributed Computing:**
+**Distributed Computing:**
 - MPI support and fallbacks
 - Thread safety
 - Error handling
 
-✅ **Quality Assurance:**
+**Quality Assurance:**
 - Performance benchmarks
 - Stress testing
 - Edge case handling
