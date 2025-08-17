@@ -55,10 +55,10 @@ end
             
             if platform_support == :problematic
                 @test_skip "Full SHTns functionality - known issues on $platform_desc"
-                println("ℹ Skipping most SHTns tests due to platform limitations")
+                println(" Skipping most SHTns tests due to platform limitations")
             elseif platform_support == :unsupported  
                 @test_skip "All SHTns functionality - unsupported platform: $platform_desc"
-                println("ℹ Skipping all SHTns tests on unsupported platform")
+                println(" Skipping all SHTns tests on unsupported platform")
                 return  # Exit early for unsupported platforms
             end
         end
