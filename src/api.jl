@@ -209,7 +209,16 @@ const libshtns = let
     # Prefer local JLL (SHTnsKit_jll) if available in the environment
     try
         import SHTnsKit_jll
-        return SHTnsKit_jll.libshtns_omp
+        # Prefer OpenMP build when present; otherwise, fall back to non-OMP
+        # Try to load the OMP library handle; if it fails, use the non-OMP handle
+        try
+            tmp = SHTnsKit_jll.libshtns_omp
+            h = Libdl.dlopen(tmp, Libdl.RTLD_LAZY)
+            Libdl.dlclose(h)
+            return tmp
+        catch
+            return SHTnsKit_jll.libshtns
+        end
     catch
         # ignore and fall back
     end
