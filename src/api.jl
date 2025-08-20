@@ -39,23 +39,44 @@ end
 Safely call a SHTns function with consistent error handling for missing symbols.
 Returns fallback_value if the symbol is missing and fallback is provided, otherwise rethrows.
 """
-@generated function safe_ccall_with_fallback(symbol::Symbol, ::Type{R}, ::Type{Tuple{A...}}, args...; 
-                                             fallback_value=nothing, context::String="") where {R,A...}
-    # Build a literal tuple of argument types for ccall at compile-time
-    argtypes_expr = Expr(:tuple, A...)
-    return quote
-        try
-            return ccall((symbol, libshtns), R, $(argtypes_expr), args...)
-        catch e
-            if (occursin(string(symbol), string(e)) || 
-                occursin("undefined symbol", string(e)) || 
-                occursin("symbol not found", string(e))) && 
-               fallback_value !== nothing
-                @debug "Symbol $symbol missing - using fallback value" context fallback_value
-                return fallback_value
-            else
-                rethrow(e)
-            end
+@generated function _ccall_typed(symbol::Symbol, ::Type{R}, ::Type{TT}, args...) where {R, TT<:Tuple}
+    # Construct a literal tuple of argument types at compile-time
+    argtypes = TT.parameters
+    return :(ccall((symbol, libshtns), R, $(Expr(:tuple, argtypes...)), args...))
+end
+
+"""
+    safe_ccall_with_fallback(symbol, return_type, arg_types, args...; fallback_value=nothing, context="")
+
+Safely call a SHTns function with consistent error handling for missing symbols.
+`arg_types` may be a single Type, a Tuple of Types, a Vector of Types, or a Tuple type (e.g. `Tuple{Ptr{Cvoid}}`).
+Returns `fallback_value` if the symbol is missing and a fallback is provided; otherwise rethrows.
+"""
+function safe_ccall_with_fallback(symbol::Symbol, return_type, arg_types, args...; 
+                                  fallback_value=nothing, context::String = "")
+    # Normalize to a Tuple type for the generated helper
+    ttype = if arg_types isa Type && arg_types <: Tuple
+        arg_types
+    elseif arg_types isa Tuple
+        Core.apply_type(Tuple, arg_types...)
+    elseif arg_types isa AbstractVector{<:Type}
+        Core.apply_type(Tuple, (arg_types...)...)
+    elseif arg_types isa Type
+        Core.apply_type(Tuple, arg_types)
+    else
+        error("arg_types must be Types or a tuple/vector of Types, got: $(typeof(arg_types))")
+    end
+    try
+        return _ccall_typed(symbol, return_type, ttype, args...)
+    catch e
+        if (occursin(string(symbol), string(e)) || 
+            occursin("undefined symbol", string(e)) || 
+            occursin("symbol not found", string(e))) && 
+           fallback_value !== nothing
+            @debug "Symbol $symbol missing - using fallback value" context fallback_value
+            return fallback_value
+        else
+            rethrow(e)
         end
     end
 end
