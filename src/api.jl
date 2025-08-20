@@ -39,30 +39,23 @@ end
 Safely call a SHTns function with consistent error handling for missing symbols.
 Returns fallback_value if the symbol is missing and fallback is provided, otherwise rethrows.
 """
-function safe_ccall_with_fallback(symbol::Symbol, return_type, arg_types, args...; 
-                                  fallback_value=nothing, context::String = "")
-    # Normalize arg_types to a Tuple of Types
-    at = if arg_types isa Tuple
-        arg_types
-    elseif arg_types isa Type
-        (arg_types,)
-    elseif arg_types isa AbstractVector{<:Type}
-        Tuple(arg_types)
-    else
-        error("arg_types must be a Tuple of Types (or a single Type), got: $(typeof(arg_types))")
-    end
-    try
-        return ccall((symbol, libshtns), return_type, at, args...)
-    catch e
-        if (occursin(string(symbol), string(e)) || 
-            occursin("undefined symbol", string(e)) || 
-            occursin("symbol not found", string(e))) && 
-           fallback_value !== nothing
-            
-            @debug "Symbol $symbol missing - using fallback value" context fallback_value
-            return fallback_value
-        else
-            rethrow(e)
+@generated function safe_ccall_with_fallback(symbol::Symbol, ::Type{R}, ::Type{Tuple{A...}}, args...; 
+                                             fallback_value=nothing, context::String="") where {R,A...}
+    # Build a literal tuple of argument types for ccall at compile-time
+    argtypes_expr = Expr(:tuple, A...)
+    return quote
+        try
+            return ccall((symbol, libshtns), R, $(argtypes_expr), args...)
+        catch e
+            if (occursin(string(symbol), string(e)) || 
+                occursin("undefined symbol", string(e)) || 
+                occursin("symbol not found", string(e))) && 
+               fallback_value !== nothing
+                @debug "Symbol $symbol missing - using fallback value" context fallback_value
+                return fallback_value
+            else
+                rethrow(e)
+            end
         end
     end
 end
