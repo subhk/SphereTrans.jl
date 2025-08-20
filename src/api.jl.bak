@@ -40,19 +40,9 @@ Safely call a SHTns function with consistent error handling for missing symbols.
 Returns fallback_value if the symbol is missing and fallback is provided, otherwise rethrows.
 """
 function safe_ccall_with_fallback(symbol::Symbol, return_type, arg_types, args...; 
-                                  fallback_value=nothing, context::String = "")
-    # Normalize arg_types to a Tuple of Types
-    at = if arg_types isa Tuple
-        arg_types
-    elseif arg_types isa Type
-        (arg_types,)
-    elseif arg_types isa AbstractVector{<:Type}
-        Tuple(arg_types)
-    else
-        error("arg_types must be a Tuple of Types (or a single Type), got: $(typeof(arg_types))")
-    end
+                                  fallback_value=nothing, context::String="")
     try
-        return ccall((symbol, libshtns), return_type, at, args...)
+        return ccall((symbol, libshtns), return_type, arg_types, args...)
     catch e
         if (occursin(string(symbol), string(e)) || 
             occursin("undefined symbol", string(e)) || 
