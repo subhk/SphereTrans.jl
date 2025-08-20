@@ -1,0 +1,4 @@
+┌ Warning: No artifact configured for this platform
+│   arch = :x86_64
+│   os = :Darwin
+└ @ Main ~/Documents/GitHub/subhk.github.io/SHTnsKit_jll/deps/build.jl:21
