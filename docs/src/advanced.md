@@ -12,29 +12,25 @@ using SHTnsKit
 # Create a factory for consistent configuration creation
 struct SHTnsConfigFactory
     default_lmax::Int
-    default_flags::UInt32
     cache::Dict{Tuple{Int,Int}, SHTnsConfig}
 end
 
 function SHTnsConfigFactory(lmax::Int=64)
-    flags = SHTnsFlags.SHT_GAUSS | SHTnsFlags.SHT_REAL_NORM
-    SHTnsConfigFactory(lmax, flags, Dict())
+    SHTnsConfigFactory(lmax, Dict())
 end
 
 function get_config(factory::SHTnsConfigFactory, lmax::Int, mmax::Int)
     key = (lmax, mmax)
     if !haskey(factory.cache, key)
-        factory.cache[key] = create_config(lmax, mmax, 
-                                          2*lmax + 1, 
-                                          factory.default_flags)
-        set_grid(factory.cache[key], lmax+1, 2*mmax+1, SHTnsFlags.SHT_GAUSS)
+        cfg = create_gauss_config(lmax, mmax)
+        factory.cache[key] = cfg
     end
     return factory.cache[key]
 end
 
 function cleanup!(factory::SHTnsConfigFactory)
     for cfg in values(factory.cache)
-        free_config(cfg)
+        destroy_config(cfg)
     end
     empty!(factory.cache)
 end
@@ -105,7 +101,7 @@ end
 
 function cleanup!(transform::AdaptiveSpectralTransform)
     for cfg in values(transform.configs)
-        free_config(cfg)
+        destroy_config(cfg)
     end
     empty!(transform.configs)
 end
@@ -128,7 +124,7 @@ function create_spectral_filter(lmax::Int;
     cfg_temp = create_gauss_config(lmax, lmax)
     
     for i in 1:length(filter)
-        l, m = get_lm_from_index(cfg_temp, i)
+        l, m = lm_from_index(cfg_temp, i)
         
         if low_pass !== nothing && l > low_pass
             filter[i] = 0.0
@@ -142,7 +138,7 @@ function create_spectral_filter(lmax::Int;
         end
     end
     
-    free_config(cfg_temp)
+    destroy_config(cfg_temp)
     return filter
 end
 
@@ -162,7 +158,7 @@ lowpass_filter = create_spectral_filter(64, low_pass=20)
 apply_spectral_filter!(sh, lowpass_filter)
 smooth_field = synthesize(cfg, sh)
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Spectral Derivative Operations
@@ -175,7 +171,7 @@ function spectral_laplacian(cfg::SHTnsConfig, sh::Vector{Float64})
     laplacian_sh = copy(sh)
     
     for i in 1:length(sh)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         laplacian_sh[i] *= -l * (l + 1)
     end
     
@@ -191,7 +187,7 @@ function spectral_horizontal_gradient(cfg::SHTnsConfig, sh::Vector{Float64})
     # For now, use spatial domain computation
     
     spatial = synthesize(cfg, sh)
-    θ, φ = get_coordinates(cfg)
+    θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
     
     # Finite differences (not optimal, but illustrative)
     dθ = θ[2,1] - θ[1,1]
@@ -213,7 +209,7 @@ end
 
 # Example: Compute and analyze gradients
 cfg = create_gauss_config(32, 32)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 test_field = @. sin(3θ) * cos(2φ)
 
 sh = analyze(cfg, test_field)
@@ -223,7 +219,7 @@ println("Gradient magnitudes:")
 println("  ∂f/∂θ: ", extrema(∂f_∂θ))
 println("  ∂f/∂φ: ", extrema(∂f_∂φ))
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Multi-Field Processing Patterns
@@ -271,7 +267,7 @@ function process(pipeline::SpectralPipeline, input_field::Matrix{Float64})
 end
 
 function cleanup!(pipeline::SpectralPipeline)
-    free_config(pipeline.cfg)
+    destroy_config(pipeline.cfg)
 end
 
 # Example pipeline: smooth -> amplify low modes -> threshold
@@ -281,7 +277,7 @@ pipeline = SpectralPipeline(32, 32)
 add_stage!(pipeline, function(cfg, buffers)
     sh = buffers[:sh_temp]
     for i in 1:length(sh)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         if l > 16
             sh[i] = 0.0
         end
@@ -292,7 +288,7 @@ end)
 add_stage!(pipeline, function(cfg, buffers)
     sh = buffers[:sh_temp]
     for i in 1:length(sh)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         if l <= 8
             sh[i] *= 2.0
         end
@@ -381,7 +377,7 @@ end
 
 function cleanup!(manager::BatchTransformManager)
     for cfg in values(manager.configs)
-        free_config(cfg)
+        destroy_config(cfg)
     end
     empty!(manager.configs)
 end
@@ -396,7 +392,7 @@ test_fields = [rand(65, 129) for _ in 1:100]
 function lowpass_filter(cfg, sh)
     result = copy(sh)
     for i in 1:length(result)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         if l > 20
             result[i] = 0.0
         end
@@ -460,7 +456,7 @@ end
 
 # Example analysis
 cfg = create_gauss_config(48, 48)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Create test vector field with known properties
 u = @. 10 * sin(2θ) * cos(φ)    # Mostly divergent
@@ -473,7 +469,7 @@ for (key, value) in properties
     println("  $key: $value")
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Enstrophy and Energy Cascade Analysis
@@ -492,7 +488,7 @@ function compute_enstrophy_spectrum(cfg::SHTnsConfig, u::Matrix{Float64}, v::Mat
     enstrophy = zeros(lmax + 1)
     
     for i in 1:length(T_lm)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         enstrophy[l + 1] += l * (l + 1) * abs2(T_lm[i])
     end
     
@@ -508,7 +504,7 @@ function compute_energy_spectrum(cfg::SHTnsConfig, u::Matrix{Float64}, v::Matrix
     energy = zeros(lmax + 1)
     
     for i in 1:length(S_lm)
-        l, m = get_lm_from_index(cfg, i)
+        l, m = lm_from_index(cfg, i)
         energy[l + 1] += abs2(S_lm[i]) + abs2(T_lm[i])
     end
     
@@ -596,7 +592,7 @@ end
 
 function temporal_power_spectrum(sts::SpectralTimeSeries, l::Int, m::Int)
     # Get time evolution of specific (l,m) mode
-    idx = get_index(sts.cfg, l, m)
+    idx = lmidx(sts.cfg, l, m)
     
     mode_evolution = [sh[idx] for sh in sts.time_series]
     
@@ -645,7 +641,7 @@ function dominant_mode_evolution(sts::SpectralTimeSeries, n_modes::Int=10)
     # Extract evolution
     evolutions = []
     for idx in dominant_indices
-        l, m = get_lm_from_index(sts.cfg, idx)
+        l, m = lm_from_index(sts.cfg, idx)
         evolution = [sh[idx] for sh in sts.time_series]
         push!(evolutions, (l=l, m=m, evolution=evolution, mean_energy=mean_energies[idx]))
     end
@@ -660,7 +656,7 @@ sts = SpectralTimeSeries(cfg)
 # Generate synthetic time series (e.g., decaying turbulence)
 for t in 0:0.1:10.0
     # Synthetic field with time evolution
-    θ, φ = get_coordinates(cfg)
+    θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
     decay_factor = exp(-0.1 * t)
     field = decay_factor * (
         sin(3θ) .* cos(2φ) +
@@ -684,7 +680,7 @@ if length(dominant_modes) > 0
     println("Temporal spectrum computed for mode ($l, $m)")
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Custom Interpolation and Remapping
@@ -731,8 +727,8 @@ function interpolate_to_refined_region!(mesh::AdaptiveMesh, region_idx::Int)
     base_spatial = synthesize(mesh.base_cfg, mesh.global_field)
     
     # Extract region from global field (simplified interpolation)
-    θ_global, φ_global = get_coordinates(mesh.base_cfg)
-    θ_local, φ_local = get_coordinates(region[:cfg])
+    θ_global, φ_global = SHTnsKit.create_coordinate_matrices(mesh.base_cfg)
+    θ_local, φ_local = SHTnsKit.create_coordinate_matrices(region[:cfg])
     
     # Simple nearest-neighbor interpolation (in practice, use proper interpolation)
     local_spatial = zeros(size(θ_local))
@@ -767,8 +763,8 @@ function project_refined_to_global!(mesh::AdaptiveMesh, region_idx::Int)
     θ_center, φ_center = region[:center]
     radius = region[:radius]
     
-    θ_global, φ_global = get_coordinates(mesh.base_cfg)
-    θ_local, φ_local = get_coordinates(region[:cfg])
+    θ_global, φ_global = SHTnsKit.create_coordinate_matrices(mesh.base_cfg)
+    θ_local, φ_local = SHTnsKit.create_coordinate_matrices(region[:cfg])
     
     # Apply refined solution in the local region
     # (Proper implementation would use overlap integrals)
@@ -777,9 +773,9 @@ function project_refined_to_global!(mesh::AdaptiveMesh, region_idx::Int)
 end
 
 function cleanup!(mesh::AdaptiveMesh)
-    free_config(mesh.base_cfg)
+    destroy_config(mesh.base_cfg)
     for region in mesh.refined_regions
-        free_config(region[:cfg])
+        destroy_config(region[:cfg])
     end
 end
 ```
@@ -897,7 +893,7 @@ end
 # mean_spec, std_spec = compute_temporal_statistics(mmsd)
 
 # cleanup!(mmsd)
-# free_config(cfg)
+# destroy_config(cfg)
 ```
 
 ## Integration with External Libraries
@@ -984,7 +980,7 @@ end
 # variance_spectrum = sum([(sp - mean_spectrum).^2 for sp in ensemble]) / (n_members - 1)
 
 # println("Ensemble analysis complete")
-# free_config(cfg)
+# destroy_config(cfg)
 ```
 
 ## Automatic Differentiation Integration
@@ -1024,7 +1020,7 @@ params₀ = rand(10)
 # Use gradient for optimization
 params₁ = params₀ - 0.01 * ∇f
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Zygote.jl Support (Reverse-Mode AD)
@@ -1060,7 +1056,7 @@ spatial₀ = randn(get_nlat(cfg), get_nphi(cfg))
 # Update field
 spatial₁ = spatial₀ - 0.01 * ∇L
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Advanced AD Patterns
@@ -1104,7 +1100,7 @@ for i in 1:10
     println("Iteration $i: Energy = $energy")
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 #### Differentiable Field Rotations
@@ -1143,7 +1139,7 @@ for i in 1:20
     println("Iteration $i: Objective = $obj, Angles = $angles₀")
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 #### Neural Differential Equations on the Sphere
@@ -1217,7 +1213,7 @@ end
 # This version is more memory efficient
 grad = ForwardDiff.gradient(p -> efficient_objective(p, buffers), rand(10))
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 #### Choosing Between Forward and Reverse Mode
@@ -1252,7 +1248,7 @@ else
     @btime Zygote.gradient($test_objective, $params)
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Applications in Scientific Computing
