@@ -420,6 +420,34 @@ export SHTNSKIT_AUTO_THREADS=on
 julia --project -e 'using SHTnsKit; @show SHTnsKit.get_threading(); @show SHTnsKit.get_fft_threads()'
 ```
 
+### Quick threading benchmark
+
+```julia
+using SHTnsKit
+using Base.Threads
+
+cfg = create_gauss_config(32, 32)
+
+# single-thread style
+set_threading!(false)
+set_fft_threads(1)
+t1 = @elapsed cplx_spat_to_sh(cfg, cplx_sh_to_spat(cfg, allocate_complex_spectral(cfg)))
+
+# multi-thread style
+set_threading!(true)
+set_fft_threads(nthreads())
+t2 = @elapsed cplx_spat_to_sh(cfg, cplx_sh_to_spat(cfg, allocate_complex_spectral(cfg)))
+
+println("speedup ≈ ", round(t1/max(t2,1e-12), digits=2), "x (Nthreads=", nthreads(), ")")
+destroy_config(cfg)
+```
+
+For a more thorough comparison, run:
+
+```bash
+julia --project examples/benchmark_threading.jl
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues).
