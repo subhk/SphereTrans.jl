@@ -99,6 +99,77 @@ function spatial_variance(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T}) 
 end
 
 """
+    spatial_divergence(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) -> Matrix{T}
+
+Compute the horizontal divergence of a tangential vector field on the unit sphere.
+Uses exact FFT in φ and centered finite differences in θ.
+Formula: div = (1/sinθ) ∂(sinθ u_θ)/∂θ + (1/sinθ) ∂u_φ/∂φ.
+"""
+function spatial_divergence(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    size(u_theta) == (nlat, nphi) || error("u_theta size mismatch")
+    size(u_phi) == (nlat, nphi) || error("u_phi size mismatch")
+    # φ-derivative via FFT
+    duphi_dphi = spatial_derivative_phi(cfg, u_phi)
+    # θ-derivative via centered differences on sinθ uθ
+    result = Matrix{T}(undef, nlat, nphi)
+    for i in 1:nlat
+        θ = cfg.theta_grid[i]
+        sθ = sin(θ)
+        inv_sθ = sθ > 1e-12 ? one(T)/sθ : zero(T)
+        for j in 1:nphi
+            if 1 < i < nlat
+                d_suθ_dθ = ((sin(cfg.theta_grid[i+1]) * u_theta[i+1, j]) - (sin(cfg.theta_grid[i-1]) * u_theta[i-1, j])) /
+                            (cfg.theta_grid[i+1] - cfg.theta_grid[i-1])
+            elseif i == 1
+                d_suθ_dθ = ((sin(cfg.theta_grid[i+1]) * u_theta[i+1, j]) - (sin(cfg.theta_grid[i]) * u_theta[i, j])) /
+                            (cfg.theta_grid[i+1] - cfg.theta_grid[i])
+            else
+                d_suθ_dθ = ((sin(cfg.theta_grid[i]) * u_theta[i, j]) - (sin(cfg.theta_grid[i-1]) * u_theta[i-1, j])) /
+                            (cfg.theta_grid[i] - cfg.theta_grid[i-1])
+            end
+            result[i, j] = inv_sθ * (d_suθ_dθ + duphi_dphi[i, j])
+        end
+    end
+    return result
+end
+
+"""
+    spatial_vorticity(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) -> Matrix{T}
+
+Compute the vertical component (radial) of curl for a tangential vector field on the unit sphere:
+ζ = (1/sinθ) ∂(u_φ sinθ)/∂θ - (1/sinθ) ∂u_θ/∂φ.
+"""
+function spatial_vorticity(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    size(u_theta) == (nlat, nphi) || error("u_theta size mismatch")
+    size(u_phi) == (nlat, nphi) || error("u_phi size mismatch")
+    # φ-derivative via FFT
+    dutheta_dphi = spatial_derivative_phi(cfg, u_theta)
+    # θ-derivative via centered differences on uφ sinθ
+    result = Matrix{T}(undef, nlat, nphi)
+    for i in 1:nlat
+        θ = cfg.theta_grid[i]
+        sθ = sin(θ)
+        inv_sθ = sθ > 1e-12 ? one(T)/sθ : zero(T)
+        for j in 1:nphi
+            if 1 < i < nlat
+                d_uφs_dθ = ((u_phi[i+1, j] * sin(cfg.theta_grid[i+1])) - (u_phi[i-1, j] * sin(cfg.theta_grid[i-1]))) /
+                           (cfg.theta_grid[i+1] - cfg.theta_grid[i-1])
+            elseif i == 1
+                d_uφs_dθ = ((u_phi[i+1, j] * sin(cfg.theta_grid[i+1])) - (u_phi[i, j] * sin(cfg.theta_grid[i]))) /
+                           (cfg.theta_grid[i+1] - cfg.theta_grid[i])
+            else
+                d_uφs_dθ = ((u_phi[i, j] * sin(cfg.theta_grid[i])) - (u_phi[i-1, j] * sin(cfg.theta_grid[i-1]))) /
+                           (cfg.theta_grid[i] - cfg.theta_grid[i-1])
+            end
+            result[i, j] = inv_sθ * (d_uφs_dθ - dutheta_dphi[i, j])
+        end
+    end
+    return result
+end
+
+"""
     create_coordinate_matrices(cfg::SHTnsConfig{T}) -> (Matrix{T}, Matrix{T})
 
 Create matrices of theta and phi coordinates for each grid point.
