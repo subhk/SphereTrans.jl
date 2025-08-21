@@ -139,7 +139,7 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
 end
 
 """
-    extract_fourier_mode!(fourier_coeffs::AbstractVector{Complex{T}}, m::Int, 
+    extract_fourier_mode!(fourier_coeffs::AbstractMatrix{Complex{T}}, m::Int, 
                          output::AbstractVector{Complex{T}}, nlat::Int) where T
 
 Extract Fourier mode m from azimuthal FFT coefficients for all latitudes.
@@ -160,12 +160,12 @@ function extract_fourier_mode!(fourier_coeffs::AbstractMatrix{Complex{T}}, m::In
     m_idx = m + 1  # Convert to 1-based indexing
     
     if m_idx <= nphi_half
-        for i in 1:nlat
+        @inbounds for i in 1:nlat
             output[i] = fourier_coeffs[i, m_idx]
         end
     else
         # Mode m is beyond Nyquist frequency, set to zero
-        output[1:nlat] .= zero(Complex{T})
+        @inbounds output[1:nlat] .= zero(Complex{T})
     end
     
     return nothing
@@ -193,7 +193,7 @@ function insert_fourier_mode!(output::AbstractMatrix{Complex{T}}, m::Int,
     m_idx = m + 1  # Convert to 1-based indexing
     
     if m_idx <= nphi_half
-        for i in 1:nlat
+        @inbounds for i in 1:nlat
             output[i, m_idx] = mode_coeffs[i]
         end
     end
@@ -207,7 +207,7 @@ end
                                         cfg::SHTnsConfig{T}) where T
 
 Transform spatial grid data to Fourier coefficients in the azimuthal direction.
-This operates on all latitudes simultaneously.
+This operates on all latitudes simultaneously with optional threading.
 
 # Arguments
 - `spatial_data`: Spatial field on grid (nlat × nphi)
@@ -225,9 +225,15 @@ function compute_fourier_coefficients_spatial(spatial_data::AbstractMatrix{T},
     nphi_modes = nphi ÷ 2 + 1
     fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
     
-    # Transform each latitude row
-    for i in 1:nlat
-        azimuthal_fft_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
+    # Transform each latitude row with optional threading
+    if SHTnsKit.get_threading() && nlat > 32
+        @threads for i in 1:nlat
+            azimuthal_fft_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
+        end
+    else
+        @inbounds for i in 1:nlat
+            azimuthal_fft_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
+        end
     end
     
     return fourier_coeffs
@@ -237,7 +243,7 @@ end
     compute_spatial_from_fourier(fourier_coeffs::AbstractMatrix{Complex{T}},
                                 cfg::SHTnsConfig{T}) where T
 
-Transform Fourier coefficients back to spatial grid data.
+Transform Fourier coefficients back to spatial grid data with optional threading.
 
 # Arguments  
 - `fourier_coeffs`: Complex Fourier coefficients (nlat × nphi_modes)
@@ -255,9 +261,15 @@ function compute_spatial_from_fourier(fourier_coeffs::AbstractMatrix{Complex{T}}
     
     spatial_data = Matrix{T}(undef, nlat, cfg.nphi)
     
-    # Transform each latitude row
-    for i in 1:nlat
-        azimuthal_fft_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
+    # Transform each latitude row with optional threading
+    if SHTnsKit.get_threading() && nlat > 32
+        @threads for i in 1:nlat
+            azimuthal_fft_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
+        end
+    else
+        @inbounds for i in 1:nlat
+            azimuthal_fft_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
+        end
     end
     
     return spatial_data

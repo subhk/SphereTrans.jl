@@ -278,21 +278,24 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
             mode_data = Vector{Complex{T}}(undef, nlat)
             extract_fourier_mode!(fourier_coeffs, m, mode_data, nlat)
             
-            # Integrate over latitude using quadrature
+            # Integrate over latitude using Gaussian quadrature
+            # ∫ f(θ) P_l^m(cos θ) sin θ dθ = ∫ f(θ) P_l^m(cos θ) d(cos θ)
             integral = zero(Complex{T})
             for i in 1:nlat
                 plm_val = cfg.plm_cache[i, coeff_idx]
                 weight = cfg.gauss_weights[i]
+                
+                # For Gauss-Legendre quadrature, weights already include the measure
                 integral += mode_data[i] * plm_val * weight
             end
             
-            # Store result (real part for real transforms)
-            if m == 0
-                sh_coeffs[coeff_idx] = real(integral)
-            else
-                # For m > 0, need to handle complex coefficients properly
-                # This is a simplification - full implementation needs more care
-                sh_coeffs[coeff_idx] = real(integral) * 2  # Factor of 2 for m > 0
+            # For real spherical harmonics, store the real part
+            # The imaginary part should be zero for real input fields
+            sh_coeffs[coeff_idx] = real(integral)
+            
+            # Verify that imaginary part is small for real fields
+            if abs(imag(integral)) > 1e-12 * abs(real(integral))
+                @warn "Large imaginary component in real SH coefficient: $(imag(integral))"
             end
         end
     end
