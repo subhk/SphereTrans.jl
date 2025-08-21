@@ -141,7 +141,20 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
     length(spatial_row) == nphi || error("spatial_row length must equal nphi")
     
     ifft_plan = cfg.fft_plans[:c2c_backward]
-    spatial_row .= ifft_plan * fourier_coeffs[1:nphi]
+    
+    # Ensure contiguous arrays for FFTW
+    if fourier_coeffs isa SubArray
+        temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:nphi])
+        result = ifft_plan * temp_coeffs
+        if spatial_row isa SubArray
+            spatial_row .= result
+        else
+            spatial_row .= result
+        end
+    else
+        result = ifft_plan * fourier_coeffs[1:nphi]
+        spatial_row .= result
+    end
     
     return nothing
 end
