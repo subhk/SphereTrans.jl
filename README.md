@@ -295,6 +295,7 @@ All major SHTnsKit functions support automatic differentiation:
 - `spatial_integral`, `spatial_mean` - Spatial operations
 
 See `docs/automatic_differentiation.md` for comprehensive examples and `examples/differentiation_examples.jl` for runnable code.
+Additional runnable examples are provided in `examples/ad_examples.jl` showing both Zygote and ForwardDiff on small problems.
 
 ## Thread Safety
 
