@@ -31,7 +31,7 @@ function benchmark_transforms(lmax_values)
         backward_time = @belapsed analyze($cfg, $spatial)
         
         push!(results, (lmax=lmax, forward=forward_time, backward=backward_time))
-        free_config(cfg)
+        destroy_config(cfg)
     end
     
     return results
@@ -146,7 +146,7 @@ function process_many_fields_naive(field_generator, n_fields)
     return results
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Memory Layout Optimization
@@ -178,7 +178,7 @@ end
     end
 end
 
-free_config(cfg)
+    destroy_config(cfg)
 ```
 
 ### Large Problem Memory Management
@@ -299,8 +299,8 @@ function compare_grid_types(lmax=32)
     println("Regular time: $(regular_time/50)s")
     println("Gauss is $(regular_time/gauss_time)x faster")
     
-    free_config(cfg_gauss)
-    free_config(cfg_regular)
+    destroy_config(cfg_gauss)
+    destroy_config(cfg_regular)
 end
 
 compare_grid_types()
@@ -359,34 +359,10 @@ function benchmark_vector_vs_scalar()
 end
 
 benchmark_vector_vs_scalar()
-free_config(cfg)
+destroy_config(cfg)
 ```
 
-## Distributed Computing Performance
-
-### MPI Scaling
-
-```julia
-using SHTnsKit
-# using MPI  # Uncomment if MPI is available
-
-function mpi_scaling_example()
-    # This would run across multiple nodes
-    # Pseudo-code for illustration
-    
-    println("MPI Performance Considerations:")
-    println("- Communication overhead increases with more processes")
-    println("- Optimal process count depends on problem size")  
-    println("- Network topology affects scaling")
-    println("- Load balancing crucial for irregular problems")
-end
-
-# MPI performance best practices:
-# 1. Minimize communication
-# 2. Overlap computation and communication  
-# 3. Use appropriate process topology
-# 4. Consider hybrid MPI+OpenMP
-```
+<!-- Distributed/MPI performance guidance omitted for this package. -->
 
 ## Performance Monitoring and Profiling
 
@@ -434,7 +410,7 @@ function profile_detailed()
     Profile.print()
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Custom Performance Metrics
@@ -483,7 +459,7 @@ end
 
 cfg = create_gauss_config(32, 32)
 performance_report(cfg)
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Optimization Checklist
@@ -511,10 +487,7 @@ free_config(cfg)
 - [ ] Batch operations when possible
 - [ ] Cache frequently used configurations
 
-### GPU Optimization (if applicable)
-- [ ] Verify CUDA functionality
-- [ ] Manage GPU memory carefully
-- [ ] Minimize CPU-GPU data transfers
+<!-- GPU optimization checklist removed -->
 - [ ] Use appropriate batch sizes
 
 ### System-Level Optimization
@@ -535,7 +508,6 @@ free_config(cfg)
 2. **Memory Allocation**: Repeated allocation in inner loops
 3. **Wrong Grid Type**: Regular grids when Gauss would suffice
 4. **Unnecessary Transforms**: Computing both directions when only one needed
-5. **GPU Overhead**: Using GPU for small problems where setup cost dominates
-6. **MPI Communication**: Excessive communication for small local problems
+5. Performance pitfalls: array allocations in hot loops, oversubscription of threads
 
 Following these guidelines will help you achieve optimal performance for your specific SHTnsKit.jl applications.

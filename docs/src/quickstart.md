@@ -210,7 +210,7 @@ println("Forward transform timing:")
     synthesize(cfg, sh)
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## GPU Acceleration
@@ -262,7 +262,7 @@ for i in 1:n_fields
 end
 
 println("Mean of field means: ", mean(results))
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Error Handling
@@ -285,7 +285,7 @@ sh = rand(get_nlm(cfg))
 spatial = synthesize(cfg, sh)
 println("Successful transform with proper size")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Next Steps

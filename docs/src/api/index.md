@@ -366,90 +366,14 @@ set_fft_threads(4)
 println(get_fft_threads())
 ```
 
-## GPU Support (CUDA Extension)
-
-GPU functions are available when CUDA.jl is loaded and functional.
-
-### GPU Memory Management
-
-```julia
-initialize_gpu(device_id::Int=0; verbose::Bool=true) → Bool
-```
-Initialize GPU for SHTns operations.
-
-**Arguments:**
-- `device_id::Int`: GPU device ID
-- `verbose::Bool`: Print initialization messages
-
-**Returns:** `true` if successful
-
----
-
-```julia
-cleanup_gpu(; verbose::Bool=true) → Bool
-```
-Clean up GPU resources.
-
-### GPU Transforms
-
-```julia
-synthesize_gpu(cfg::SHTnsConfig, sh_gpu::CuArray) → CuArray
-```
-GPU-accelerated synthesis.
-
-**Arguments:**
-- `sh_gpu::CuArray{Float64}`: Spectral coefficients on GPU
-
-**Returns:** Spatial field on GPU
-
----
-
-```julia
-analyze_gpu(cfg::SHTnsConfig, spatial_gpu::CuArray) → CuArray
-```
-GPU-accelerated analysis.
-
-**Example:**
-```julia
-using CUDA
-if CUDA.functional()
-    cfg = create_gpu_config(32, 32)
-    sh = rand(get_nlm(cfg))
-    sh_gpu = CuArray(sh)
-    
-    spatial_gpu = synthesize_gpu(cfg, sh_gpu)
-    spatial_cpu = Array(spatial_gpu)  # Copy back to CPU
-    
-    free_config(cfg)
-end
-```
-
-## MPI Support (MPI Extension)
-
-MPI functions are available when MPI.jl is loaded.
-
-### MPI Configuration
-
-```julia
-create_mpi_config(lmax::Int, mmax::Int, comm=MPI.COMM_WORLD) → SHTnsConfig
-```
-Create MPI-distributed configuration.
-
-**Arguments:**
-- `lmax, mmax::Int`: Maximum degree and order
-- `comm`: MPI communicator
-
-**Returns:** MPI-enabled configuration
-
-<!-- MPI and SHTnsFlags are not applicable in this pure-Julia implementation. -->
+<!-- GPU and MPI extensions are not applicable in this pure-Julia implementation. -->
 
 ## Error Handling
 
 ### Common Errors
 
 - **`BoundsError`**: Invalid lmax/mmax values
-- **`AssertionError`**: Array size mismatches
-- **`LoadError`**: SHTns library not found
+- **`AssertionError` / `DimensionMismatch`**: Array size mismatches
 
 ### Best Practices
 
