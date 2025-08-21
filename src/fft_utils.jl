@@ -44,15 +44,26 @@ function azimuthal_fft_forward!(cfg::SHTnsConfig{T},
                                spatial_row::AbstractVector{T},
                                fourier_coeffs::AbstractVector{Complex{T}}) where T
     nphi = cfg.nphi
-    length(spatial_row) == nphi || error("spatial_row length must equal nphi")
+    length(spatial_row) == nphi || throw(DimensionMismatch("spatial_row length $(length(spatial_row)) must equal nphi $nphi"))
     expected_fc_length = nphi ÷ 2 + 1
-    length(fourier_coeffs) >= expected_fc_length || error("fourier_coeffs too short")
+    length(fourier_coeffs) >= expected_fc_length || throw(DimensionMismatch("fourier_coeffs length $(length(fourier_coeffs)) must be >= $expected_fc_length"))
     
-    # Use cached FFT plan (ensure contiguous array)
+    # Use cached FFT plan with type-stable access
     fft_plan = cfg.fft_plans[:r2c]
+    
+    # Pre-allocate temp workspace in config to avoid repeated allocations
+    temp_key = :temp_spatial_row
     if spatial_row isa SubArray
-        # Copy to contiguous array for FFTW
-        temp_row = Vector{T}(spatial_row)
+        if haskey(cfg.fft_plans, temp_key)
+            temp_row = cfg.fft_plans[temp_key]::Vector{T}
+            if length(temp_row) != nphi
+                resize!(temp_row, nphi)
+            end
+        else
+            temp_row = Vector{T}(undef, nphi)
+            cfg.fft_plans[temp_key] = temp_row
+        end
+        copyto!(temp_row, spatial_row)
         fourier_coeffs .= fft_plan * temp_row
     else
         fourier_coeffs .= fft_plan * spatial_row
@@ -78,22 +89,29 @@ function azimuthal_fft_backward!(cfg::SHTnsConfig{T},
                                 spatial_row::AbstractVector{T}) where T
     nphi = cfg.nphi
     expected_fc_length = nphi ÷ 2 + 1
-    length(fourier_coeffs) >= expected_fc_length || error("fourier_coeffs too short")
-    length(spatial_row) == nphi || error("spatial_row length must equal nphi")
+    length(fourier_coeffs) >= expected_fc_length || throw(DimensionMismatch("fourier_coeffs length $(length(fourier_coeffs)) must be >= $expected_fc_length"))
+    length(spatial_row) == nphi || throw(DimensionMismatch("spatial_row length $(length(spatial_row)) must equal nphi $nphi"))
     
-    # Use cached FFT plan (ensure contiguous array)
+    # Use cached FFT plan with type-stable access and workspace reuse
     ifft_plan = cfg.fft_plans[:c2r]
+    
     if fourier_coeffs isa SubArray
-        # Copy to contiguous array for FFTW
-        temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:expected_fc_length])
-        result = ifft_plan * temp_coeffs
-        if spatial_row isa SubArray
-            spatial_row .= result
+        # Pre-allocate temp workspace in config
+        temp_coeffs_key = :temp_fourier_coeffs
+        if haskey(cfg.fft_plans, temp_coeffs_key)
+            temp_coeffs = cfg.fft_plans[temp_coeffs_key]::Vector{Complex{T}}
+            if length(temp_coeffs) != expected_fc_length
+                resize!(temp_coeffs, expected_fc_length)
+            end
         else
-            spatial_row .= result
+            temp_coeffs = Vector{Complex{T}}(undef, expected_fc_length)
+            cfg.fft_plans[temp_coeffs_key] = temp_coeffs
         end
+        copyto!(temp_coeffs, view(fourier_coeffs, 1:expected_fc_length))
+        result = ifft_plan * temp_coeffs
+        spatial_row .= result
     else
-        result = ifft_plan * fourier_coeffs[1:expected_fc_length]
+        result = ifft_plan * view(fourier_coeffs, 1:expected_fc_length)
         spatial_row .= result
     end
     
@@ -115,9 +133,19 @@ function azimuthal_fft_complex_forward!(cfg::SHTnsConfig{T},
     
     fft_plan = cfg.fft_plans[:c2c_forward]
     
-    # Ensure contiguous arrays for FFTW
+    # Reuse workspace for contiguous arrays
     if spatial_row isa SubArray
-        temp_row = Vector{Complex{T}}(spatial_row)
+        temp_key = :temp_complex_row
+        if haskey(cfg.fft_plans, temp_key)
+            temp_row = cfg.fft_plans[temp_key]::Vector{Complex{T}}
+            if length(temp_row) != nphi
+                resize!(temp_row, nphi)
+            end
+        else
+            temp_row = Vector{Complex{T}}(undef, nphi)
+            cfg.fft_plans[temp_key] = temp_row
+        end
+        copyto!(temp_row, spatial_row)
         result = fft_plan * temp_row
         fourier_coeffs[1:nphi] .= result
     else
@@ -142,17 +170,23 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
     
     ifft_plan = cfg.fft_plans[:c2c_backward]
     
-    # Ensure contiguous arrays for FFTW
+    # Reuse workspace for contiguous arrays
     if fourier_coeffs isa SubArray
-        temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:nphi])
-        result = ifft_plan * temp_coeffs
-        if spatial_row isa SubArray
-            spatial_row .= result
+        temp_key = :temp_complex_coeffs_full
+        if haskey(cfg.fft_plans, temp_key)
+            temp_coeffs = cfg.fft_plans[temp_key]::Vector{Complex{T}}
+            if length(temp_coeffs) != nphi
+                resize!(temp_coeffs, nphi)
+            end
         else
-            spatial_row .= result
+            temp_coeffs = Vector{Complex{T}}(undef, nphi)
+            cfg.fft_plans[temp_key] = temp_coeffs
         end
+        copyto!(temp_coeffs, view(fourier_coeffs, 1:nphi))
+        result = ifft_plan * temp_coeffs
+        spatial_row .= result
     else
-        result = ifft_plan * fourier_coeffs[1:nphi]
+        result = ifft_plan * view(fourier_coeffs, 1:nphi)
         spatial_row .= result
     end
     
@@ -181,12 +215,14 @@ function extract_fourier_mode!(fourier_coeffs::AbstractMatrix{Complex{T}}, m::In
     m_idx = m + 1  # Convert to 1-based indexing
     
     if m_idx <= nphi_half
-        @inbounds for i in 1:nlat
+        @inbounds @simd for i in 1:nlat
             output[i] = fourier_coeffs[i, m_idx]
         end
     else
         # Mode m is beyond Nyquist frequency, set to zero
-        @inbounds output[1:nlat] .= zero(Complex{T})
+        @inbounds @simd for i in 1:nlat
+            output[i] = zero(Complex{T})
+        end
     end
     
     return nothing
@@ -214,7 +250,7 @@ function insert_fourier_mode!(output::AbstractMatrix{Complex{T}}, m::Int,
     m_idx = m + 1  # Convert to 1-based indexing
     
     if m_idx <= nphi_half
-        @inbounds for i in 1:nlat
+        @inbounds @simd for i in 1:nlat
             output[i, m_idx] = mode_coeffs[i]
         end
     end

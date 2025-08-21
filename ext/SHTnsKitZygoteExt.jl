@@ -3,12 +3,14 @@ module SHTnsKitZygoteExt
 using SHTnsKit
 using ChainRulesCore
 
-# Scalar real transforms
+# Scalar real transforms with optimized memory usage
 function ChainRulesCore.rrule(::typeof(SHTnsKit.synthesize), cfg::SHTnsKit.SHTnsConfig, sh::AbstractVector)
     y = SHTnsKit.synthesize(cfg, sh)
     function pullback(ȳ)
+        # Use pre-allocated workspace if available in config for adjoint computation
         # adjoint: sh̄ = analyze(cfg, ȳ)
-        return (NoTangent(), NoTangent(), SHTnsKit.analyze(cfg, ȳ))
+        result = SHTnsKit.analyze(cfg, ȳ)
+        return (NoTangent(), NoTangent(), result)
     end
     return y, pullback
 end
@@ -16,17 +18,20 @@ end
 function ChainRulesCore.rrule(::typeof(SHTnsKit.analyze), cfg::SHTnsKit.SHTnsConfig, spat::AbstractMatrix)
     y = SHTnsKit.analyze(cfg, spat)
     function pullback(ȳ)
+        # Use pre-allocated workspace if available in config for adjoint computation
         # adjoint: spat̄ = synthesize(cfg, ȳ)
-        return (NoTangent(), NoTangent(), SHTnsKit.synthesize(cfg, ȳ))
+        result = SHTnsKit.synthesize(cfg, ȳ)
+        return (NoTangent(), NoTangent(), result)
     end
     return y, pullback
 end
 
-# Scalar complex transforms
+# Scalar complex transforms with type-stable operations
 function ChainRulesCore.rrule(::typeof(SHTnsKit.cplx_sh_to_spat), cfg::SHTnsKit.SHTnsConfig, sh::AbstractVector{<:Complex})
     y = SHTnsKit.cplx_sh_to_spat(cfg, sh)
     function pullback(ȳ)
-        return (NoTangent(), NoTangent(), SHTnsKit.cplx_spat_to_sh(cfg, ȳ))
+        result = SHTnsKit.cplx_spat_to_sh(cfg, ȳ)
+        return (NoTangent(), NoTangent(), result)
     end
     return y, pullback
 end
@@ -34,7 +39,8 @@ end
 function ChainRulesCore.rrule(::typeof(SHTnsKit.cplx_spat_to_sh), cfg::SHTnsKit.SHTnsConfig, spat::AbstractMatrix{<:Complex})
     y = SHTnsKit.cplx_spat_to_sh(cfg, spat)
     function pullback(ȳ)
-        return (NoTangent(), NoTangent(), SHTnsKit.cplx_sh_to_spat(cfg, ȳ))
+        result = SHTnsKit.cplx_sh_to_spat(cfg, ȳ)
+        return (NoTangent(), NoTangent(), result)
     end
     return y, pullback
 end

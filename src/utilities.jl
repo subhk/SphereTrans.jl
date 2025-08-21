@@ -392,15 +392,17 @@ end
 
 # Internal: fast lookup for (l, m) -> plm column index using config-local cache
 function find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)::Int
-    # Use config-local cache to avoid global dictionary overhead
+    # Use config-local cache with type-stable access
     cache_key = :plm_index_cache
-    cache = get!(cfg.fft_plans, cache_key) do
-        d = Dict{Tuple{Int,Int}, Int}()
+    if haskey(cfg.fft_plans, cache_key)
+        cache = cfg.fft_plans[cache_key]::Dict{Tuple{Int,Int}, Int}
+    else
+        cache = Dict{Tuple{Int,Int}, Int}()
         @inbounds for (k, lm) in enumerate(cfg.lm_indices)
-            d[lm] = k
+            cache[lm] = k
         end
-        d
-    end::Dict{Tuple{Int,Int}, Int}
+        cfg.fft_plans[cache_key] = cache
+    end
     
     idx = get(cache, (l, m), 0)
     idx != 0 && return idx

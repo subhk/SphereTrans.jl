@@ -47,14 +47,18 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
             p0, p1 = T(1), x
             dp0, dp1 = T(0), T(1)
             
-            for j in 2:n
-                # Standard recurrence for Legendre polynomials
+            @inbounds for j in 2:n
+                # Standard recurrence for Legendre polynomials with optimized arithmetic
                 # P_j(x) = ((2j-1)*x*P_{j-1}(x) - (j-1)*P_{j-2}(x)) / j
-                p2 = ((2*j - 1) * x * p1 - (j - 1) * p0) / j
+                two_j_minus_1 = 2*j - 1
+                j_minus_1 = j - 1
+                inv_j = one(T) / j
                 
-                # Derivative recurrence
+                p2 = (two_j_minus_1 * x * p1 - j_minus_1 * p0) * inv_j
+                
+                # Derivative recurrence with precomputed factors
                 # j*P_j'(x) = (2j-1)*(P_{j-1}(x) + x*P_{j-1}'(x)) - (j-1)*P_{j-2}'(x)
-                dp2 = ((2*j - 1) * (p1 + x * dp1) - (j - 1) * dp0) / j
+                dp2 = (two_j_minus_1 * (p1 + x * dp1) - j_minus_1 * dp0) * inv_j
                 
                 p0, p1 = p1, p2
                 dp0, dp1 = dp1, dp2
@@ -82,8 +86,8 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
         weights[i] = T(2) / ((T(1) - x^2) * final_derivative^2)
     end
     
-    # Fill in the negative nodes and weights using symmetry
-    for i in 1:m
+    # Fill in the negative nodes and weights using symmetry with SIMD
+    @inbounds @simd for i in 1:m
         if n + 1 - i != i  # Avoid overwriting middle node for odd n
             nodes[n + 1 - i] = -nodes[i]
             weights[n + 1 - i] = weights[i]
@@ -132,7 +136,8 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     
     # Starting values for associated Legendre polynomials
     # P_0^0 = 1 (normalized according to convention)
-    idx = lmidx(0, 0) + 1
+    # For m=0, l=0 case - it's always the first coefficient (index 1)
+    idx = 1
     if norm == SHT_ORTHONORMAL
         plm[idx] = T(1) / sqrt(T(4π))  # Y_0^0 normalization
     elseif norm == SHT_FOURPI

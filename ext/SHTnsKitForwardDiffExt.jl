@@ -11,10 +11,14 @@ function _dft_full(row)
     N = length(row)
     T = eltype(row)
     out = Vector{Complex{T}}(undef, N)
-    for k in 0:N-1
+    # Precompute common values for better performance
+    inv_N = one(real(T)) / N
+    @inbounds for k in 0:N-1
         acc = zero(Complex{T})
-        for n in 0:N-1
-            acc += row[n+1] * cis(-π2 * k * n / N)
+        # Use @simd for vectorization when possible
+        @simd for n in 0:N-1
+            phase = -π2 * k * n * inv_N
+            acc += row[n+1] * cis(phase)
         end
         out[k+1] = acc
     end
@@ -25,12 +29,15 @@ function _idft_full(spectrum)
     N = length(spectrum)
     T = eltype(spectrum)
     out = Vector{Complex{T}}(undef, N)
-    for n in 0:N-1
+    # Precompute common values
+    inv_N = one(real(T)) / N
+    @inbounds for n in 0:N-1
         acc = zero(Complex{T})
-        for k in 0:N-1
-            acc += spectrum[k+1] * cis(π2 * k * n / N)
+        @simd for k in 0:N-1
+            phase = π2 * k * n * inv_N
+            acc += spectrum[k+1] * cis(phase)
         end
-        out[n+1] = acc / N
+        out[n+1] = acc * inv_N
     end
     return out
 end
@@ -46,13 +53,20 @@ end
 function _irfft_naive(half, N::Int)
     K = length(half)
     full = Vector{eltype(half)}(undef, N)
-    full[1:K] = half
-    for k in 2:K-1
+    # Use copyto! for better performance
+    copyto!(full, 1, half, 1, K)
+    # Use @inbounds for the symmetry loop
+    @inbounds for k in 2:K-1
         full[N - (k - 2)] = conj(half[k])
     end
     # Nyquist for even N already implied
     time = _idft_full(full)
-    return real.(time)
+    # Use @simd for vectorized real extraction
+    result = Vector{real(eltype(half))}(undef, N)
+    @inbounds @simd for i in 1:N
+        result[i] = real(time[i])
+    end
+    return result
 end
 
 # Complex C2C forward/backward
@@ -70,9 +84,17 @@ function SHTnsKit.compute_fourier_coefficients_spatial(spatial_data::AbstractMat
     nlat, nphi = size(spatial_data)
     nphi_modes = nphi ÷ 2 + 1
     fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
-    for i in 1:nlat
-        row = view(spatial_data, i, :)
-        fourier[i, :] = _rfft_naive(row)
+    # Process rows with potential threading for large grids
+    if nlat > 32 && SHTnsKit.get_threading()
+        Threads.@threads for i in 1:nlat
+            @inbounds row = view(spatial_data, i, :)
+            @inbounds fourier[i, :] = _rfft_naive(row)
+        end
+    else
+        @inbounds for i in 1:nlat
+            row = view(spatial_data, i, :)
+            fourier[i, :] = _rfft_naive(row)
+        end
     end
     return fourier
 end
@@ -81,22 +103,32 @@ function SHTnsKit.compute_spatial_from_fourier(fourier_coeffs::AbstractMatrix{Co
     nlat, nphi_modes = size(fourier_coeffs)
     N = cfg.nphi
     spatial = Matrix{T}(undef, nlat, N)
-    for i in 1:nlat
-        half = view(fourier_coeffs, i, :)
-        spatial[i, :] = _irfft_naive(half, N)
+    # Process rows with potential threading for large grids
+    if nlat > 32 && SHTnsKit.get_threading()
+        Threads.@threads for i in 1:nlat
+            @inbounds half = view(fourier_coeffs, i, :)
+            @inbounds spatial[i, :] = _irfft_naive(half, N)
+        end
+    else
+        @inbounds for i in 1:nlat
+            half = view(fourier_coeffs, i, :)
+            spatial[i, :] = _irfft_naive(half, N)
+        end
     end
     return spatial
 end
 
 function SHTnsKit.azimuthal_fft_complex_forward!(cfg::SHTnsKit.SHTnsConfig{T}, spatial_row::AbstractVector{Complex{T}}, fourier_coeffs::AbstractVector{Complex{T}}) where {T<:ForwardDiff.Dual}
     full = _cfft_naive(spatial_row)
-    fourier_coeffs[1:length(full)] .= full
+    # Use copyto! for better performance
+    copyto!(fourier_coeffs, 1, full, 1, length(full))
     return nothing
 end
 
 function SHTnsKit.azimuthal_fft_complex_backward!(cfg::SHTnsKit.SHTnsConfig{T}, fourier_coeffs::AbstractVector{Complex{T}}, spatial_row::AbstractVector{Complex{T}}) where {T<:ForwardDiff.Dual}
     time = _icfft_naive(fourier_coeffs)
-    spatial_row[1:length(time)] .= time
+    # Use copyto! for better performance
+    copyto!(spatial_row, 1, time, 1, length(time))
     return nothing
 end
 

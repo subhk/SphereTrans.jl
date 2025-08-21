@@ -147,8 +147,8 @@ This is the fundamental backward transform: spectral → spatial.
 function sh_to_spat!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     spatial_data::AbstractMatrix{T}) where T
     validate_config(cfg)
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
-    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
+    length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
+    size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
     
     lock(cfg.lock) do
         _sh_to_spat_impl!(cfg, sh_coeffs, spatial_data)
@@ -172,8 +172,8 @@ This is the fundamental forward transform: spatial → spectral.
 function spat_to_sh!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                     sh_coeffs::AbstractVector{T}) where T
     validate_config(cfg)
-    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch") 
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
+    length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
     
     lock(cfg.lock) do
         _spat_to_sh_impl!(cfg, spatial_data, sh_coeffs)
@@ -235,17 +235,28 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     nlat, nphi = cfg.nlat, cfg.nphi
     nphi_modes = nphi ÷ 2 + 1
     
-    # Use pre-allocated workspace if available, otherwise allocate
-    fourier_coeffs = get!(() -> Matrix{Complex{T}}(undef, nlat, nphi_modes), 
-                         cfg.fft_plans, :workspace_fourier_coeffs)
-    if size(fourier_coeffs) != (nlat, nphi_modes)
+    # Use pre-allocated workspace with type-stable access
+    workspace_key = :workspace_fourier_coeffs
+    if haskey(cfg.fft_plans, workspace_key)
+        fourier_coeffs = cfg.fft_plans[workspace_key]::Matrix{Complex{T}}
+        if size(fourier_coeffs) != (nlat, nphi_modes)
+            fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+            cfg.fft_plans[workspace_key] = fourier_coeffs
+        end
+    else
         fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
-        cfg.fft_plans[:workspace_fourier_coeffs] = fourier_coeffs
+        cfg.fft_plans[workspace_key] = fourier_coeffs
     end
     fill!(fourier_coeffs, zero(Complex{T}))
     
-    # Pre-compute m-coefficient mapping for efficiency
-    m_indices = get!(() -> _build_m_coefficient_mapping(cfg), cfg.fft_plans, :m_coefficient_mapping)
+    # Pre-compute m-coefficient mapping with type-stable access
+    mapping_key = :m_coefficient_mapping
+    if haskey(cfg.fft_plans, mapping_key)
+        m_indices = cfg.fft_plans[mapping_key]::Dict{Int, Vector{Int}}
+    else
+        m_indices = _build_m_coefficient_mapping(cfg)
+        cfg.fft_plans[mapping_key] = m_indices
+    end
     
     # For each azimuthal mode m (only m >= 0)
     @inbounds for m in 0:min(cfg.mmax, nphi÷2)
@@ -256,23 +267,32 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
         coeff_indices = get(m_indices, m, Int[])
         isempty(coeff_indices) && continue
         
-        # Direct computation without temporary array allocation
+        # Direct computation without temporary array allocation with SIMD optimization
         m_col = m + 1  # Convert to 1-based indexing
         if m_col <= nphi_modes
-            @simd for i in 1:nlat
-                value = zero(Complex{T})
-                @simd for coeff_idx in coeff_indices
-                    plm_val = cfg.plm_cache[i, coeff_idx]
-                    coeff_val = sh_coeffs[coeff_idx]
-                    
-                    # Optimized scaling
-                    if m == 0
+            if m == 0
+                # Optimized path for m=0 (no scaling needed)
+                @inbounds @simd for i in 1:nlat
+                    value = zero(Complex{T})
+                    @simd for coeff_idx in coeff_indices
+                        plm_val = cfg.plm_cache[i, coeff_idx]
+                        coeff_val = sh_coeffs[coeff_idx]
                         value += coeff_val * plm_val
-                    else
-                        value += (coeff_val * T(0.5)) * plm_val
                     end
+                    fourier_coeffs[i, m_col] = value
                 end
-                fourier_coeffs[i, m_col] = value
+            else
+                # Optimized path for m>0 with precomputed scaling
+                scale_factor = T(0.5)
+                @inbounds @simd for i in 1:nlat
+                    value = zero(Complex{T})
+                    @simd for coeff_idx in coeff_indices
+                        plm_val = cfg.plm_cache[i, coeff_idx]
+                        coeff_val = sh_coeffs[coeff_idx]
+                        value += (coeff_val * scale_factor) * plm_val
+                    end
+                    fourier_coeffs[i, m_col] = value
+                end
             end
         end
     end
@@ -302,11 +322,16 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
     # For each (l,m) coefficient (only m >= 0 stored)
     fill!(sh_coeffs, zero(T))
     
-    # Pre-allocate workspace for mode extraction
-    mode_data = get!(() -> Vector{Complex{T}}(undef, nlat), 
-                    cfg.fft_plans, :workspace_mode_data)
-    if length(mode_data) != nlat
-        resize!(mode_data, nlat)
+    # Pre-allocate workspace for mode extraction with type-stable access
+    mode_workspace_key = :workspace_mode_data
+    if haskey(cfg.fft_plans, mode_workspace_key)
+        mode_data = cfg.fft_plans[mode_workspace_key]::Vector{Complex{T}}
+        if length(mode_data) != nlat
+            resize!(mode_data, nlat)
+        end
+    else
+        mode_data = Vector{Complex{T}}(undef, nlat)
+        cfg.fft_plans[mode_workspace_key] = mode_data
     end
     
     # Precompute normalization factor
@@ -317,9 +342,9 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
         if m <= nphi ÷ 2
             extract_fourier_mode!(fourier_coeffs, m, mode_data, nlat)
             
-            # Integrate over latitude using Gaussian quadrature
+            # Integrate over latitude using Gaussian quadrature with SIMD
             integral = zero(Complex{T})
-            @simd for i in 1:nlat
+            @inbounds @simd for i in 1:nlat
                 plm_val = cfg.plm_cache[i, coeff_idx]
                 weight = cfg.gauss_weights[i]
                 integral += mode_data[i] * plm_val * weight

@@ -5,6 +5,61 @@ coefficient sets for m ∈ [-min(l,mmax), ..., 0, ..., +min(l,mmax)].
 """
 
 """
+Allocate array for complex spherical harmonic coefficients.
+"""
+function allocate_spectral_complex(cfg::SHTnsConfig{T}) where T
+    return Vector{Complex{T}}(undef, _cplx_nlm(cfg))
+end
+
+"""
+Allocate array for complex spatial field.
+"""
+function allocate_spatial_complex(cfg::SHTnsConfig{T}) where T
+    return Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
+end
+
+"""
+Number of complex coefficients for the configuration.
+For complex transforms, we store coefficients for both positive and negative m.
+"""
+function _cplx_nlm(cfg::SHTnsConfig)::Int
+    total = 0
+    @inbounds for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # m = 0: 1 coefficient
+        total += 1
+        # m = ±1, ±2, ..., ±maxm (only count positive m, negative implied)
+        for m in 1:maxm
+            if m % cfg.mres == 0
+                total += 2  # +m and -m
+            end
+        end
+    end
+    return total
+end
+
+"""
+Generate (l,m) index mapping for complex coefficients.
+Includes both positive and negative m values.
+"""
+function _cplx_lm_indices(cfg::SHTnsConfig)
+    indices = Tuple{Int,Int}[]
+    @inbounds for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # m = 0
+        push!(indices, (l, 0))
+        # m > 0 and m < 0
+        for m in 1:maxm
+            if m % cfg.mres == 0
+                push!(indices, (l, m))
+                push!(indices, (l, -m))
+            end
+        end
+    end
+    return indices
+end
+
+"""
     cplx_sh_to_spat!(cfg::SHTnsConfig{T}, 
                     sh_coeffs::AbstractVector{Complex{T}},
                     spatial_data::AbstractMatrix{Complex{T}}) where T
@@ -94,8 +149,18 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
                                sh_coeffs::AbstractVector{Complex{T}},
                                spatial_data::AbstractMatrix{Complex{T}}) where T
     nlat, nphi = cfg.nlat, cfg.nphi
-    # Allocate working array for complex Fourier coefficients
-    fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
+    # Use pre-allocated workspace for complex Fourier coefficients
+    workspace_key = :workspace_complex_fourier_coeffs
+    if haskey(cfg.fft_plans, workspace_key)
+        fourier_coeffs = cfg.fft_plans[workspace_key]::Matrix{Complex{T}}
+        if size(fourier_coeffs) != (nlat, nphi)
+            fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
+            cfg.fft_plans[workspace_key] = fourier_coeffs
+        end
+    else
+        fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
+        cfg.fft_plans[workspace_key] = fourier_coeffs
+    end
     fill!(fourier_coeffs, zero(Complex{T}))
 
     # For each azimuthal mode m (including negative)
