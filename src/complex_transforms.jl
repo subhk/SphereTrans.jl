@@ -205,6 +205,114 @@ function allocate_complex_spectral(cfg::SHTnsConfig{T}) where T
 end
 
 """
+    rotate_complex!(cfg, coeffs; alpha=0.0, beta=0.0, gamma=0.0)
+
+Rotate complex spherical harmonic coefficients by ZYZ Euler angles (α, β, γ).
+Requires `cfg.mres == 1`. Operates in-place on `coeffs`.
+"""
+function rotate_complex!(cfg::SHTnsConfig{T}, coeffs::AbstractVector{Complex{T}};
+                         alpha::T=zero(T), beta::T=zero(T), gamma::T=zero(T)) where T
+    length(coeffs) == _cplx_nlm(cfg) || error("coeffs length mismatch")
+    cfg.mres == 1 || error("rotate_complex! requires mres == 1")
+    # Precompute half-angle terms
+    cb = cos(beta/2)
+    sb = sin(beta/2)
+    # For each l, build rotate block
+    idx_list = _cplx_lm_indices(cfg)
+    # Helper to get indices for this l over m=-l..l
+    offset = 1
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # Collect indices for m from -maxm..maxm
+        inds = Vector{Int}()
+        ms = Int[]
+        for m in -maxm:maxm
+            # find complex index for (l,m)
+            for (k, (ll, mm)) in enumerate(idx_list)
+                if ll == l && mm == m
+                    push!(inds, k)
+                    push!(ms, m)
+                    break
+                end
+            end
+        end
+        isempty(inds) && continue
+        # Build d^l(m, mp)
+        L = length(ms)
+        d = Matrix{T}(undef, L, L)
+        for i in 1:L
+            m = ms[i]
+            for j in 1:L
+                mp = ms[j]
+                d[i,j] = _wigner_d_element(l, m, mp, cb, sb)
+            end
+        end
+        # Apply D = e^{-i m α} d^l e^{-i m' γ}
+        cblock = coeffs[inds]
+        # Right multiply by diag(e^{-i m' γ})
+        phase_right = [cis(-gamma*mp) for mp in ms]
+        tmp = Vector{Complex{T}}(undef, L)
+        # y = d * (phase_right .* cblock)
+        vec_r = phase_right .* cblock
+        for i in 1:L
+            acc = zero(Complex{T})
+            @inbounds for j in 1:L
+                acc += d[i,j] * vec_r[j]
+            end
+            tmp[i] = acc
+        end
+        # Left multiply by diag(e^{-i m α})
+        for i in 1:L
+            coeffs[inds[i]] = cis(-alpha*ms[i]) * tmp[i]
+        end
+    end
+    return coeffs
+end
+
+"""
+    rotate_real!(cfg, real_coeffs; alpha=0.0, beta=0.0, gamma=0.0)
+
+Rotate real-basis coefficients by converting to complex, rotating, then converting back.
+"""
+function rotate_real!(cfg::SHTnsConfig{T}, real_coeffs::AbstractVector{T};
+                      alpha::T=zero(T), beta::T=zero(T), gamma::T=zero(T)) where T
+    c = real_to_complex_coeffs(cfg, real_coeffs)
+    rotate_complex!(cfg, c; alpha=alpha, beta=beta, gamma=gamma)
+    real_coeffs .= complex_to_real_coeffs(cfg, c)
+    return real_coeffs
+end
+
+# Wigner-d element using factorial formula; inputs cb=cos(β/2), sb=sin(β/2)
+function _wigner_d_element(l::Int, m::Int, mp::Int, cb, sb)
+    # Sum over k with valid factorial arguments
+    # Using logarithms for stability
+    acc = 0.0
+    # precompute constant factor sqrt((l+mp)!(l-mp)!(l+m)!(l-m)!)
+    const_term = exp(0.5*(logfactorial(l+mp) + logfactorial(l-mp) + logfactorial(l+m) + logfactorial(l-m)))
+    # k bounds
+    kmin = max(0, m-mp)
+    kmax = min(l+ m, l - mp)
+    for k in kmin:kmax
+        a = l + m - k
+        b = k
+        c = mp - m + k
+        d = l - mp - k
+        if a < 0 || b < 0 || c < 0 || d < 0
+            continue
+        end
+        sign = (-1.0)^(k + mp - m)
+        denom = exp(logfactorial(a) + logfactorial(b) + logfactorial(c) + logfactorial(d))
+        pow_cb = 2l + m - mp - 2k
+        pow_sb = mp - m + 2k
+        term = sign * const_term/denom * (cb^pow_cb) * (sb^pow_sb)
+        acc += term
+    end
+    return acc
+end
+
+logfactorial(n::Int) = lgamma(n+1)
+
+"""
     allocate_complex_spatial(cfg::SHTnsConfig{T}) -> Matrix{Complex{T}}
 
 Allocate array for complex spatial field.
