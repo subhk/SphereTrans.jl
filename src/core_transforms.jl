@@ -238,12 +238,12 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     plm_val = cfg.plm_cache[i, coeff_idx]
                     coeff_val = sh_coeffs[coeff_idx]
                     
-                    # For m > 0, the real coefficient represents the cosine component
+                    # For synthesis, we need to convert back from the analysis representation
                     if m == 0
                         value += coeff_val * plm_val
                     else
-                        # For m > 0, we have real harmonics stored
-                        # Need to convert back to complex representation for FFT
+                        # For m > 0, we stored the coefficient with factor of 2
+                        # So we need to divide by 2 to get back the complex amplitude
                         value += (coeff_val / 2) * plm_val
                     end
                 end
@@ -256,7 +256,12 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     end
     
     # Transform from Fourier coefficients to spatial domain
-    spatial_data .= compute_spatial_from_fourier(fourier_coeffs, cfg)
+    # Need to apply inverse φ normalization
+    spatial_temp = compute_spatial_from_fourier(fourier_coeffs, cfg)
+    
+    # The synthesis needs the inverse normalization factor
+    phi_normalization_inv = T(cfg.nphi) / T(2π)
+    spatial_data .= spatial_temp .* phi_normalization_inv
     
     return nothing
 end
@@ -291,13 +296,18 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                 integral += mode_data[i] * plm_val * weight
             end
             
+            # Apply proper normalization for φ integration
+            # FFT gives sum over nphi points, but we need integral over [0,2π]
+            phi_normalization = T(2π) / nphi
+            integral *= phi_normalization
+            
             # For real fields, extract appropriate part
             if m == 0
                 # m=0: coefficient is real
                 sh_coeffs[coeff_idx] = real(integral)
             else
-                # m>0: for real fields, use real part and account for normalization
-                # The real harmonic coefficient corresponds to the cosine component
+                # m>0: for real fields, use real part and account for m>0 normalization
+                # The factor of 2 accounts for the ±m symmetry in real representation
                 sh_coeffs[coeff_idx] = real(integral) * 2
             end
         end
