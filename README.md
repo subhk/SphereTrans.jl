@@ -448,6 +448,22 @@ For a more thorough comparison, run:
 julia --project examples/benchmark_threading.jl
 ```
 
+### Benchmark Results (fill with your numbers)
+
+You can generate a Markdown table of timings with:
+
+```bash
+julia --project examples/record_benchmarks.jl
+```
+
+Then copy the output here for reference. A table template:
+
+| lmax=mmax | Nthreads | synth ST (s) | synth MT (s) | speedup | analyze(syn) ST (s) | analyze(syn) MT (s) | speedup |
+|-----------|----------|--------------|--------------|---------|---------------------|---------------------|---------|
+| 24        |          |              |              |         |                     |                     |         |
+| 32        |          |              |              |         |                     |                     |         |
+| 40        |          |              |              |         |                     |                     |         |
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues).
