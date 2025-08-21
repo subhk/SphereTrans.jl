@@ -631,19 +631,20 @@ function _cplx_nlm(cfg::SHTnsConfig)
     return total
 end
 
-# Cache of per-m mode groups: m => [(complex_idx, plm_k, l)]
-const _cplx_groups_cache = IdDict{SHTnsConfig, Dict{Int, Vector{NTuple{3,Int}}}}()
+# Cache of per-m mode groups: stored as an array of length (2*mmax+1),
+# index = m + mmax + 1, each entry: Vector{(complex_idx, plm_k, l)}
+const _cplx_groups_cache = IdDict{SHTnsConfig, Vector{Vector{NTuple{3,Int}}}}()
 
-function _cplx_mode_groups(cfg::SHTnsConfig)
+function _cplx_mode_groups_arr(cfg::SHTnsConfig)
     groups = get!(_cplx_groups_cache, cfg) do
-        d = Dict{Int, Vector{NTuple{3,Int}}}()
+        mmax = cfg.mmax
+        arr = [NTuple{3,Int}[] for _ in 1:(2*mmax + 1)]
         idx_list = _cplx_lm_indices(cfg)
         for (idx, (l, m)) in enumerate(idx_list)
             k = SHTnsKit.find_plm_index(cfg, l, abs(m))
-            v = get!(d, m, NTuple{3,Int}[])
-            push!(v, (idx, k, l))
+            push!(arr[m + mmax + 1], (idx, k, l))
         end
-        d
+        arr
     end
     return groups
 end
