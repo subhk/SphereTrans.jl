@@ -404,6 +404,22 @@ set_optimal_threads!()            # convenience helper
 
 Note: OpenMP is not used directly; threading is pure Julia + FFTW. Avoid multiple concurrent transforms on the same `cfg` from different tasks.
 
+Environment variables (optional):
+
+- `SHTNSKIT_THREADS` = `1|true|yes|on` or `0|false|no|off` to enable/disable loop threading at startup.
+- `SHTNSKIT_FFT_THREADS` = integer to set FFTW thread count at startup.
+- `SHTNSKIT_AUTO_THREADS` = `1|true|yes|on` to call `set_optimal_threads!()` at startup.
+
+Example (bash):
+
+```bash
+export JULIA_NUM_THREADS=$(nproc)
+export SHTNSKIT_THREADS=on
+export SHTNSKIT_FFT_THREADS=$(nproc)
+export SHTNSKIT_AUTO_THREADS=on
+julia --project -e 'using SHTnsKit; @show SHTnsKit.get_threading(); @show SHTnsKit.get_fft_threads()'
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues).
