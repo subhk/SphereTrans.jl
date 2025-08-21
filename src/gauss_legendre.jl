@@ -31,7 +31,7 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
     m = (n + 1) ÷ 2
     
     # Tolerances for Newton-Raphson iteration
-    eps = 10 * eps(T)
+    tolerance = 10 * eps(T)
     max_iter = 100
     
     for i in 1:m
@@ -72,7 +72,7 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
             x += dx
             
             # Check convergence
-            abs(dx) < eps && break
+            abs(dx) < tolerance && break
             
             if iter == max_iter
                 @warn "Gauss-Legendre iteration did not converge for i=$i"
