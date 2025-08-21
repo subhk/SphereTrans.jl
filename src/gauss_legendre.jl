@@ -138,7 +138,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     plm = zeros(T, nlm)
     
     # P_0^0 = 1 (properly normalized)
-    idx = lmidx(0, 0) + 1  # Convert to 1-based indexing
+    idx = lmidx(0, 0)
     if norm == SHT_ORTHONORMAL
         plm[idx] = T(1) / sqrt(T(4π))
     elseif norm == SHT_FOURPI
@@ -152,7 +152,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     end
     
     # P_1^0 = x (with normalization)
-    idx = lmidx(1, 0) + 1
+    idx = lmidx(1, 0)
     if norm == SHT_ORTHONORMAL
         plm[idx] = x * sqrt(T(3)) / sqrt(T(4π))
     elseif norm == SHT_FOURPI  
@@ -163,7 +163,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     
     # P_1^1 = -sin(θ) (with normalization)
     if sint > 0  # Avoid division by zero at poles
-        idx = lmidx(1, 1) + 1
+        idx = lmidx(1, 1)
         if norm == SHT_ORTHONORMAL
             plm[idx] = -sint * sqrt(T(3) / T(2)) / sqrt(T(4π))
         elseif norm == SHT_FOURPI
