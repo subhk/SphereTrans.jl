@@ -76,17 +76,17 @@ This package does not depend on a system `libshtns` and does not call into C.
 ```julia
 using SHTnsKit
 
+using SHTnsKit
+
 # Create a spherical harmonic configuration
 lmax = 16              # Maximum spherical harmonic degree
 cfg = create_gauss_config(lmax, lmax)
 
-# Create test data
-nlm = get_nlm(cfg)     # Number of spectral coefficients
-sh_coeffs = rand(nlm)  # Random spectral coefficients
-
-# Forward transform: spectral → spatial (real-basis API)
-rcoeffs = analyze_real(cfg, rand(get_nlat(cfg), get_nphi(cfg)))
-spatial_field = synthesize_real(cfg, rcoeffs)
+# Parity-accurate real-basis API
+spatial = rand(get_nlat(cfg), get_nphi(cfg))
+rcoeffs = analyze_real(cfg, spatial)
+spatial_rt = synthesize_real(cfg, rcoeffs)
+println("Real roundtrip rel. error = ", maximum(abs.(spatial - spatial_rt)) / (maximum(abs.(spatial)) + eps()))
 
 # Complex API (canonical)
 sh_cplx = allocate_complex_spectral(cfg)
@@ -193,6 +193,13 @@ rotate_complex!(cfg, coeffs; alpha=0.2, beta=0.3, gamma=0.1)
 # Real-basis rotation
 r = analyze_real(cfg, rand(get_nlat(cfg), get_nphi(cfg)))
 rotate_real!(cfg, r; alpha=0.2, beta=0.3, gamma=0.1)
+
+# End-to-end rotation workflow
+spat = rand(get_nlat(cfg), get_nphi(cfg))
+c = cplx_spat_to_sh(cfg, ComplexF64.(spat))
+rotate_complex!(cfg, c; alpha=0.1, beta=0.2, gamma=0.3)
+spat_rot = cplx_sh_to_spat(cfg, c)
+println("Rotated field stats: ", (minimum(real.(spat_rot)), maximum(real.(spat_rot))))
 ```
 
 ## Automatic Differentiation
