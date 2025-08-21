@@ -69,7 +69,10 @@ export
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,
     
     # Grid creation helpers
-    create_gauss_config, create_regular_config
+    create_gauss_config, create_regular_config,
+    
+    # Threading controls
+    set_threading!, get_threading, set_fft_threads, get_fft_threads, set_optimal_threads!
 
 include("types.jl")
 include("gauss_legendre.jl") 
@@ -79,6 +82,7 @@ include("vector_transforms.jl")
 include("complex_transforms.jl")
 include("utilities.jl")
 include("grid_utils.jl")
+include("threading.jl")
 
 
 end # module SHTnsKit
