@@ -243,6 +243,124 @@ function analyze_complex(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{Compl
 end
 
 """
+    cplx_spectral_derivative_phi(cfg, sh_coeffs)
+
+Compute spectral φ-derivative for complex coefficients: (∂/∂φ) maps c_{l,m} -> i*m*c_{l,m}.
+Returns a new coefficient vector of the same length.
+"""
+function cplx_spectral_derivative_phi(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}}) where T
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("length mismatch for complex coefficients")
+    out = similar(sh_coeffs)
+    for (idx, (l, m)) in enumerate(_cplx_lm_indices(cfg))
+        out[idx] = Complex{T}(0, m) * sh_coeffs[idx]
+    end
+    return out
+end
+
+"""
+    cplx_spectral_laplacian(cfg, sh_coeffs)
+
+Apply surface Laplacian (Δ_S) in spectral domain for complex coefficients.
+For unit sphere: Δ_S Y_l^m = -l(l+1) Y_l^m.
+"""
+function cplx_spectral_laplacian(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}}) where T
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("length mismatch for complex coefficients")
+    out = similar(sh_coeffs)
+    for (idx, (l, m)) in enumerate(_cplx_lm_indices(cfg))
+        out[idx] = -T(l*(l+1)) * sh_coeffs[idx]
+    end
+    return out
+end
+
+"""
+    cplx_spatial_derivatives(cfg, sh_coeffs)
+
+Compute spatial derivatives (∂θ f, ∂φ f) from complex spectral coefficients.
+Uses analytical θ-derivatives (via associated Legendre recurrences) and exact φ FFT factors.
+Returns two matrices (nlat × nphi): (dθ, dφ).
+"""
+function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("length mismatch for complex coefficients")
+
+    # Build Fourier arrays for dθ and f
+    dtheta_fourier = Matrix{Complex{T}}(undef, nlat, nphi)
+    fill!(dtheta_fourier, zero(Complex{T}))
+    fourier_f = Matrix{Complex{T}}(undef, nlat, nphi)
+    fill!(fourier_f, zero(Complex{T}))
+
+    idx_list = _cplx_lm_indices(cfg)
+    # Accumulate over m
+    for m in -cfg.mmax:cfg.mmax
+        abs(m) <= nphi ÷ 2 || continue
+        (m == 0 || abs(m) % cfg.mres == 0) || continue
+        m_idx = m >= 0 ? m + 1 : nphi + m + 1
+        for i in 1:nlat
+            val_f = zero(Complex{T})
+            val_dt = zero(Complex{T})
+            theta = cfg.theta_grid[i]
+            for (idx, (l, mm)) in enumerate(idx_list)
+                if mm == m && l >= abs(m)
+                    # Index for (l, |m|) in plm cache
+                    k_plm = _find_plm_index(cfg, l, abs(m))
+                    plm = cfg.plm_cache[i, k_plm]
+                    dplm = _plm_dtheta(cfg, l, m, theta, i)
+                    c = sh_coeffs[idx]
+                    val_f += c * plm
+                    val_dt += c * dplm
+                end
+            end
+            dtheta_fourier[i, m_idx] = val_dt
+            fourier_f[i, m_idx] = val_f
+        end
+    end
+
+    # Build dφ via multiplying Fourier by i*m and inverse FFT
+    dphi_fourier = similar(fourier_f)
+    for m in 0:(nphi-1)
+        # Map to signed m for factor; but fourier_f uses full C2C indexing
+        signed_m = m <= nphi÷2 ? m : m - nphi
+        factor = Complex{T}(0, signed_m)
+        @inbounds dphi_fourier[:, m+1] .= factor .* fourier_f[:, m+1]
+    end
+
+    # Inverse FFTs to spatial
+    dtheta_spatial = Matrix{Complex{T}}(undef, nlat, nphi)
+    dphi_spatial = Matrix{Complex{T}}(undef, nlat, nphi)
+    for i in 1:nlat
+        azimuthal_fft_complex_backward!(cfg, view(dtheta_fourier, i, :), view(dtheta_spatial, i, :))
+        azimuthal_fft_complex_backward!(cfg, view(dphi_fourier, i, :), view(dphi_spatial, i, :))
+    end
+    return dtheta_spatial, dphi_spatial
+end
+
+# Local helpers for derivative evaluation
+function _find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
+    @inbounds for (k, (ll, mm)) in enumerate(cfg.lm_indices)
+        if ll == l && mm == m
+            return k
+        end
+    end
+    error("plm index not found for (l=$l, m=$m)")
+end
+
+function _plm_dtheta(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int) where T
+    if l == 0
+        return zero(T)
+    end
+    k_lm = _find_plm_index(cfg, l, abs(m))
+    k_lm1 = l-1 >= 0 ? _find_plm_index(cfg, l-1, abs(m)) : 0
+    Plm = cfg.plm_cache[lat_idx, k_lm]
+    Plm1 = k_lm1 == 0 ? zero(T) : cfg.plm_cache[lat_idx, k_lm1]
+    x = cos(theta)
+    s = sin(theta)
+    if abs(s) < T(1e-12)
+        return zero(T)
+    end
+    return (l * x * Plm - (l + abs(m)) * Plm1) / s
+end
+
+"""
     create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) -> Matrix{Complex{T}}
 
 Create a test complex field consisting of a single spherical harmonic Y_l^m.

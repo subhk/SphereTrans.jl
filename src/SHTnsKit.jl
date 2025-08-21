@@ -47,12 +47,16 @@ export
     # Analysis functions
     evaluate_at_point, power_spectrum, total_power,
     spatial_integral, spatial_mean,
+    spatial_divergence, spatial_vorticity,
     
     # Vector transforms
     synthesize_vector, analyze_vector,
     
     # Complex transforms  
     synthesize_complex, analyze_complex,
+    
+    # Complex spectral ops
+    cplx_spectral_derivative_phi, cplx_spectral_laplacian, cplx_spatial_derivatives,
     
     # Internal functions (for testing)
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,
