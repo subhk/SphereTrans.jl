@@ -20,62 +20,7 @@ Pkg.add("SHTnsKit")
 
 ### Required Dependencies
 
-SHTnsKit.jl requires the **SHTns C library** to be installed on your system. This is the most critical dependency.
-
-## Installing SHTns C Library
-
-### Option 1: Package Manager (Recommended)
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install libshtns-dev
-```
-
-**macOS (Homebrew):**
-```bash
-brew install shtns
-```
-
-**Arch Linux:**
-```bash
-yay -S shtns
-```
-
-### Option 2: Build from Source
-
-If package managers don't work or you need the latest version:
-
-```bash
-# Download and extract SHTns
-wget https://bitbucket.org/nschaeff/shtns/downloads/shtns-3.7.tar.gz
-tar -xzf shtns-3.7.tar.gz
-cd shtns-3.7
-
-# Configure and build
-./configure --enable-openmp --enable-python
-make
-sudo make install
-
-# Update library path (Linux)
-sudo ldconfig
-```
-
-**Configuration Options:**
-- `--enable-openmp`: Enable OpenMP multi-threading
-- `--enable-python`: Build Python interface (optional)
-- `--enable-cuda`: Enable CUDA GPU support (if NVIDIA GPU available)
-- `--enable-ishioka`: Enable Ishioka optimization for high-degree transforms
-
-### Verify SHTns Installation
-
-```bash
-# Check if library is found
-ldconfig -p | grep shtns
-
-# Or check specific location
-ls -la /usr/local/lib/libshtns*
-```
+SHTnsKit.jl is pure Julia and does not require an external C library. The only runtime dependencies are Julia’s standard libraries and FFTW.jl (installed automatically).
 
 ## Installing SHTnsKit.jl
 
@@ -104,46 +49,7 @@ Pkg.develop(path="/path/to/SHTnsKit.jl")
 
 ## Optional Dependencies
 
-### GPU Support (CUDA)
-
-For GPU acceleration:
-
-```julia
-using Pkg
-Pkg.add("CUDA")
-```
-
-**System Requirements:**
-- NVIDIA GPU with CUDA Compute Capability 6.0+
-- CUDA Toolkit 11.0+ installed
-- cuFFT library available
-
-**Verify CUDA Setup:**
-```julia
-using CUDA
-CUDA.functional()  # Should return true
-```
-
-### MPI Distributed Computing
-
-For multi-node parallelization:
-
-```julia
-using Pkg
-Pkg.add("MPI")
-```
-
-**System Requirements:**
-- MPI implementation (OpenMPI, MPICH, Intel MPI)
-- Configured MPI environment
-
-**Verify MPI Setup:**
-```bash
-mpirun --version
-which mpirun
-```
-
-### Additional Performance Dependencies
+### Additional Performance Utilities
 
 ```julia
 using Pkg
@@ -170,7 +76,7 @@ sh = rand(get_nlm(cfg))
 spat = synthesize(cfg, sh)
 println("Transform successful: ", size(spat))
 
-free_config(cfg)
+destroy_config(cfg)
 println("✓ SHTnsKit.jl installation verified!")
 ```
 
@@ -187,11 +93,11 @@ using SHTnsKit, Test
     sh2 = analyze(cfg, spat)
     @test norm(sh - sh2) < 1e-12
     
-    # Threading
-    @test get_num_threads() >= 1
+    # Threading (FFTW thread setting available)
+    @test get_fft_threads() >= 1
     
     # Memory management
-    free_config(cfg)
+    destroy_config(cfg)
     @test true  # No crash
 end
 ```
@@ -200,37 +106,14 @@ end
 
 ### Common Issues
 
-**1. SHTns library not found:**
+**1. Array size mismatch:**
 ```
-ERROR: could not load library "libshtns"
-```
-
-**Solutions:**
-- Verify SHTns installation: `ldconfig -p | grep shtns`
-- Set `LD_LIBRARY_PATH`: `export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH`
-- Rebuild Julia packages: `Pkg.build("SHTnsKit")`
-
-**2. OpenMP issues:**
-```
-WARNING: OpenMP not available
+ERROR: DimensionMismatch: spatial_data size (X, Y) must be (nlat, nphi)
 ```
 
-**Solutions:**
-- Install OpenMP: `sudo apt install libomp-dev` (Ubuntu)
-- Rebuild SHTns with `--enable-openmp`
-- Set thread count: `export OMP_NUM_THREADS=4`
+**Fix:** Ensure `length(sh) == get_nlm(cfg)` and `size(spatial) == (get_nlat(cfg), get_nphi(cfg))`.
 
-**3. CUDA not functional:**
-```
-ERROR: CUDA not functional
-```
-
-**Solutions:**
-- Check NVIDIA drivers: `nvidia-smi`
-- Verify CUDA installation: `nvcc --version`
-- Rebuild CUDA.jl: `Pkg.build("CUDA")`
-
-**4. Memory issues:**
+**2. Memory issues:**
 ```
 ERROR: Out of memory
 ```
@@ -238,29 +121,9 @@ ERROR: Out of memory
 **Solutions:**
 - Reduce problem size (lmax, mmax)
 - Increase system swap space
-- Use GPU offloading for large problems
+ - Reuse allocations with in‑place APIs (`synthesize!`, `analyze!`)
 
 ### Advanced Debugging
-
-**Check library symbols:**
-```bash
-nm -D /usr/local/lib/libshtns.so | grep shtns_
-```
-
-**Test SHTns directly:**
-```c
-// test_shtns.c
-#include <shtns.h>
-int main() {
-    printf("SHTns version: %s\n", shtns_version());
-    return 0;
-}
-```
-
-```bash
-gcc test_shtns.c -lshtns -lm -o test_shtns
-./test_shtns
-```
 
 **Julia environment check:**
 ```julia
@@ -272,21 +135,14 @@ println(Libdl.dllist())  # List all loaded libraries
 
 ### System-Level Optimizations
 
-**CPU Affinity:**
-```bash
-export OMP_PROC_BIND=close
-export OMP_PLACES=cores
-```
+Threading and memory tips:
+```julia
+# Enable SHTnsKit internal threading and FFTW threads
+set_optimal_threads!()
+println((threads=get_threading(), fft_threads=get_fft_threads()))
 
-**Memory:**
-```bash
-export OMP_NUM_THREADS=4  # Match physical cores
-export OPENBLAS_NUM_THREADS=1  # Avoid oversubscription
-```
-
-**NUMA:**
-```bash
-numactl --interleave=all julia script.jl
+# Prevent oversubscription with BLAS/FFTW (optional)
+ENV["OPENBLAS_NUM_THREADS"] = "1"
 ```
 
 ### Julia-Specific
@@ -294,7 +150,7 @@ numactl --interleave=all julia script.jl
 **Precompilation:**
 ```julia
 using PackageCompiler
-create_sysimage([:SHTnsKit, :CUDA, :MPI]; sysimage_path="shtns_sysimage.so")
+create_sysimage([:SHTnsKit]; sysimage_path="shtns_sysimage.so")
 ```
 
 **Memory:**
@@ -309,24 +165,15 @@ For containerized environments:
 ```dockerfile
 FROM julia:1.11
 
-# Install SHTns dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    libfftw3-dev \
-    libshtns-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install Julia packages
-RUN julia -e 'using Pkg; Pkg.add(["SHTnsKit", "CUDA", "MPI"])'
+RUN julia -e 'using Pkg; Pkg.add(["SHTnsKit"])'
 
 # Verify installation
-RUN julia -e 'using SHTnsKit; cfg = create_gauss_config(8,8); free_config(cfg)'
+RUN julia -e 'using SHTnsKit; cfg = create_gauss_config(8,8); destroy_config(cfg)'
 ```
 
 ## Getting Help
 
-- **Documentation**: [SHTnsKit.jl Docs](https://username.github.io/SHTnsKit.jl/)
-- **Issues**: [GitHub Issues](https://github.com/username/SHTnsKit.jl/issues)  
-- **SHTns Documentation**: [SHTns Manual](https://nschaeff.bitbucket.io/shtns/)
+- **Documentation**: [SHTnsKit.jl Docs](https://subhk.github.io/SHTnsKit.jl/)
+- **Issues**: [GitHub Issues](https://github.com/subhk/SHTnsKit.jl/issues)
 - **Julia Discourse**: [Julia Community](https://discourse.julialang.org/)
