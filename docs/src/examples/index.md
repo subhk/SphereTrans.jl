@@ -136,7 +136,7 @@ cfg = create_gauss_config(72, 72)  # High resolution for Earth
 
 # Simulate Earth's gravitational field coefficients
 # (In practice, these would come from satellite measurements)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Create realistic gravity anomalies
 # J₂ (Earth's oblate shape) + smaller harmonics
@@ -147,7 +147,7 @@ gravity_field = @. -9.81 * (1 + 0.001082 * (1.5 * cos(θ)^2 - 0.5) +
 g_lm = analyze(cfg, gravity_field)
 
 # Extract major components
-J2_coeff = g_lm[get_index(cfg, 2, 0)]  # J₂ term
+J2_coeff = g_lm[lmidx(cfg, 2, 0)]  # J₂ term
 println("J₂ coefficient: $J2_coeff")
 
 # Compute power spectrum
@@ -160,7 +160,7 @@ plot(0:length(power)-1, log10.(power),
      ylabel="log₁₀(Power)",
      title="Gravity Field Power Spectrum")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Magnetic Field Modeling
@@ -171,7 +171,7 @@ using SHTnsKit
 cfg = create_gauss_config(48, 48)
 
 # Simulate magnetic field measurements (3 components)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Dipole + quadrupole + small-scale fields
 Br = @. 30000 * cos(θ) * (1 + 0.1 * cos(2θ) * sin(φ))  # Radial
@@ -185,8 +185,8 @@ Bφ = @. 5000 * sin(θ) * cos(θ) * cos(2φ)                # Azimuthal
 # Analyze radial component (related to potential)
 V_lm = analyze(cfg, -Br / 30000)  # Normalized
 
-# Compute horizontal components from potential
-Bθ_computed, Bφ_computed = compute_gradient(cfg, V_lm)
+# Compute horizontal components from potential (spheroidal only)
+Bθ_computed, Bφ_computed = synthesize_vector(cfg, V_lm, zeros(V_lm))
 
 # Compare with input
 θ_error = norm(Bθ/15000 - Bθ_computed) / norm(Bθ/15000)
@@ -196,7 +196,7 @@ println("Magnetic field modeling errors:")
 println("θ component: $θ_error")  
 println("φ component: $φ_error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Climate Science Applications
@@ -208,7 +208,7 @@ using SHTnsKit
 using Statistics
 
 cfg = create_gauss_config(64, 64)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Simulate monthly temperature anomalies
 n_months = 120  # 10 years
@@ -246,7 +246,7 @@ plot(1:n_months, global_means,
      xlabel="Month", ylabel="Global Mean Anomaly",
      title="Global Temperature Trend")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Precipitation Pattern Analysis
@@ -255,7 +255,7 @@ free_config(cfg)
 using SHTnsKit
 
 cfg = create_gauss_config(32, 32)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Seasonal precipitation patterns
 # Summer: ITCZ near equator, winter: shifted south
@@ -298,7 +298,7 @@ using SHTnsKit
 cfgs = [create_gauss_config(l, l) for l in [16, 32, 64, 128]]
 
 # Create test field with multiple scales
-θ, φ = get_coordinates(cfgs[end])  # Use highest resolution grid
+θ, φ = SHTnsKit.create_coordinate_matrices(cfgs[end])  # Use highest resolution grid
 field = @. (sin(2θ) * cos(φ) +           # Large scale
            0.3 * sin(8θ) * cos(4φ) +     # Medium scale
            0.1 * sin(16θ) * cos(8φ))     # Small scale
@@ -307,7 +307,7 @@ field = @. (sin(2θ) * cos(φ) +           # Large scale
 powers = []
 for (i, cfg) in enumerate(cfgs)
     # Interpolate field to current grid if needed
-    θ_i, φ_i = get_coordinates(cfg)
+    θ_i, φ_i = SHTnsKit.create_coordinate_matrices(cfg)
     field_i = field[1:get_nlat(cfg), 1:get_nphi(cfg)]  # Simple subsampling
     
     # Analyze and compute power spectrum
@@ -329,7 +329,7 @@ display(p)
 
 # Cleanup
 for cfg in cfgs
-    free_config(cfg)
+    destroy_config(cfg)
 end
 ```
 
@@ -347,25 +347,12 @@ original_field = @. sin(3θ) * cos(2φ)
 # Rotate coordinates (simulate different observation viewpoint)
 α, β, γ = π/4, π/6, π/8  # Euler angles
 
-# Method 1: Rotate in spectral domain (exact)
 f_lm = analyze(cfg, original_field)
-f_rotated_lm = rotate_field(cfg, f_lm, α, β, γ)
-rotated_field_spectral = synthesize(cfg, f_rotated_lm)
+f_rot = copy(f_lm)
+rotate_real!(cfg, f_rot; alpha=α, beta=β, gamma=γ)
+rotated_field = synthesize(cfg, f_rot)
 
-# Method 2: Rotate in spatial domain (approximate)
-rotated_field_spatial = rotate_spatial_field(cfg, original_field, α, β, γ)
-
-# Compare methods
-error = norm(rotated_field_spectral - rotated_field_spatial)
-println("Rotation method comparison error: $error")
-
-# Energy conservation check
-original_energy = sum(abs2, f_lm)
-rotated_energy = sum(abs2, f_rotated_lm)
-energy_conservation = abs(original_energy - rotated_energy) / original_energy
-println("Energy conservation error: $energy_conservation")
-
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## High-Performance Examples
