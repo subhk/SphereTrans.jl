@@ -29,6 +29,7 @@ SHTnsKit.jl provides a complete interface to all SHTns features:
 - **Field Rotations**: Wigner D-matrix rotations in spectral and spatial domains
 - **Power Spectrum Analysis**: Energy distribution across spherical harmonic modes
 - **Multipole Analysis**: Expansion coefficients for gravitational/magnetic fields
+- **Automatic Differentiation**: Full ForwardDiff.jl and Zygote.jl support for optimization and machine learning
 
 ### Performance Optimizations
 - **OpenMP Multi-threading**: Automatic detection and optimal thread configuration
