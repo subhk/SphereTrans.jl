@@ -302,6 +302,20 @@ function interpolate_to_point(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{
 end
 
 """
+    interpolate_to_point(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{Complex{T}},
+                         theta_target::T, phi_target::T) -> Complex{T}
+
+Bilinear interpolation for complex spatial fields. Interpolates real and imaginary
+parts independently using the real-valued interpolator.
+"""
+function interpolate_to_point(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{Complex{T}},
+                             theta_target::T, phi_target::T) where T
+    re = interpolate_to_point(cfg, real.(spatial_data), theta_target, phi_target)
+    im = interpolate_to_point(cfg, imag.(spatial_data), theta_target, phi_target)
+    return Complex{T}(re, im)
+end
+
+"""
     extract_latitude_slice(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                           latitude_deg::T) -> Vector{T}
 

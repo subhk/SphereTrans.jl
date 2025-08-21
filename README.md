@@ -12,22 +12,23 @@
     </a>
 </p>
 
-A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. This package is implemented purely in Julia (no C FFI required).
+A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. This package is implemented purely in Julia (no C FFI required). Complex coefficients are the canonical representation, with a parity-accurate real-basis API built on top.
 
 ## Features
 
 SHTnsKit.jl provides a complete interface to all SHTns features:
 
 ### Core Transforms
-- **Scalar Transforms**: Forward and backward spherical harmonic transforms
-- **Complex Field Transforms**: Support for complex-valued fields on the sphere
-- **Vector Transforms**: Spheroidal-toroidal decomposition of vector fields (experimental)
+- **Complex Transforms (canonical)**: Analysis/synthesis for complex fields with full ±m modes
+- **Real-Basis Parity API**: `analyze_real` and `synthesize_real` with correct cos/sin storage for m>0
+- **Vector Transforms**: Complex spheroidal/toroidal analysis/synthesis with precise derivatives
 - **In-place Operations**: Memory-efficient transform operations
 
 ### Analysis and Utilities
 - **Multiple Grid Types**: Gauss-Legendre and regular (equiangular) grids
 - **Power Spectrum Analysis**: Energy distribution across spherical harmonic modes
 - **Spatial Operations**: Area-weighted integrals, means, variance, regridding
+- **Rotation Support**: Rotate coefficients via Wigner-D (ZYZ Euler angles)
 - **Automatic Differentiation**: ForwardDiff.jl and Zygote.jl support (via extensions)
 
 ### Notes
@@ -83,11 +84,14 @@ cfg = create_gauss_config(lmax, lmax)
 nlm = get_nlm(cfg)     # Number of spectral coefficients
 sh_coeffs = rand(nlm)  # Random spectral coefficients
 
-# Forward transform: spectral → spatial
-spatial_field = synthesize(cfg, sh_coeffs)
+# Forward transform: spectral → spatial (real-basis API)
+rcoeffs = analyze_real(cfg, rand(get_nlat(cfg), get_nphi(cfg)))
+spatial_field = synthesize_real(cfg, rcoeffs)
 
-# Backward transform: spatial → spectral  
-recovered_coeffs = analyze(cfg, spatial_field)
+# Complex API (canonical)
+sh_cplx = allocate_complex_spectral(cfg)
+spatial_cplx = synthesize_complex(cfg, sh_cplx)
+recovered_cplx = analyze_complex(cfg, spatial_cplx)
 
 # Clean up
 destroy_config(cfg)
@@ -126,7 +130,7 @@ println("Transform error: ", maximum(abs.(spatial - reconstructed)))
 destroy_config(cfg)
 ```
 
-### Vector Field Analysis
+### Vector Field Analysis (complex)
 
 ```julia
 using SHTnsKit
@@ -136,11 +140,10 @@ using LinearAlgebra
 cfg = create_gauss_config(16, 16)
 
 # Create a vector field (e.g., surface winds)
-u = rand(get_nlat(cfg), get_nphi(cfg))  # Zonal component
-v = rand(get_nlat(cfg), get_nphi(cfg))  # Meridional component
-
-# Decompose into spheroidal (divergent) and toroidal (rotational) parts
-Slm, Tlm = analyze_vector(cfg, u, v)
+using Complexes: ComplexF64
+u = rand(get_nlat(cfg), get_nphi(cfg))
+v = rand(get_nlat(cfg), get_nphi(cfg))
+Slm, Tlm = cplx_analyze_vector(cfg, ComplexF64.(u), ComplexF64.(v))
 
 # Compute energy in each component
 total_energy = sum(Slm.^2 + Tlm.^2)
@@ -151,7 +154,7 @@ println("Spheroidal (divergent) energy: $(spheroidal_fraction*100)%")
 println("Toroidal (rotational) energy: $(toroidal_fraction*100)%")
 
 # Reconstruct vector field
-u_reconstructed, v_reconstructed = synthesize_vector(cfg, Slm, Tlm)
+u_reconstructed, v_reconstructed = cplx_synthesize_vector(cfg, Slm, Tlm)
 
 free_config(cfg)
 ```
@@ -177,6 +180,19 @@ plot(0:get_lmax(cfg), power,
      yscale=:log10, title="Energy Spectrum")
 
 destroy_config(cfg)
+```
+
+### Rotations (ZYZ Euler angles)
+
+```julia
+cfg = create_gauss_config(12, 12)
+coeffs = allocate_complex_spectral(cfg)
+# rotate in-place by (alpha, beta, gamma)
+rotate_complex!(cfg, coeffs; alpha=0.2, beta=0.3, gamma=0.1)
+
+# Real-basis rotation
+r = analyze_real(cfg, rand(get_nlat(cfg), get_nphi(cfg)))
+rotate_real!(cfg, r; alpha=0.2, beta=0.3, gamma=0.1)
 ```
 
 ## Automatic Differentiation
