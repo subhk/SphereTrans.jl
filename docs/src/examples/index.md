@@ -13,8 +13,8 @@ using SHTnsKit
 cfg = create_gauss_config(32, 32)
 
 # Create a test field: temperature variation
-θ, φ = get_coordinates(cfg)
-temperature = @. 273.15 + 30 * cos(2θ) * (1 + 0.3 * cos(3φ))
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+temperature = @. 273.15 + 30 * cos(2*θ) * (1 + 0.3 * cos(3*φ))
 
 # Transform to spectral domain
 T_lm = analyze(cfg, temperature)
@@ -25,7 +25,7 @@ T_reconstructed = synthesize(cfg, T_lm)
 error = norm(temperature - T_reconstructed)
 println("Reconstruction error: $error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Spherical Harmonic Visualization
@@ -35,11 +35,11 @@ using SHTnsKit
 using Plots
 
 cfg = create_gauss_config(32, 32)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Create pure Y_4^2 spherical harmonic
 sh = zeros(get_nlm(cfg))
-idx = get_index(cfg, 4, 2)  # l=4, m=2
+idx = lmidx(cfg, 4, 2)  # l=4, m=2
 sh[idx] = 1.0
 
 # Synthesize to spatial domain
@@ -50,7 +50,7 @@ surface(φ*180/π, θ*180/π, Y42,
         xlabel="Longitude (°)", ylabel="Colatitude (°)",
         title="Y₄² Spherical Harmonic")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Fluid Dynamics Applications
@@ -63,35 +63,28 @@ using SHTnsKit
 cfg = create_gauss_config(64, 64)
 
 # Create a realistic atmospheric flow pattern
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 nlat, nphi = size(θ)
 
 # Jet stream pattern with vortices
 u = @. 20 * sin(2θ) * (1 + 0.4 * cos(4φ))  # Zonal wind
 v = @. 5 * cos(3θ) * sin(2φ)                # Meridional wind
 
-# Compute vorticity and divergence
-# First, decompose velocity into spheroidal-toroidal
 S_lm, T_lm = analyze_vector(cfg, u, v)
 
-# Vorticity comes from toroidal component
-# ζ = ∇² T (Laplacian of stream function)
-vorticity_spatial = compute_curl(cfg, T_lm)
-vorticity = vorticity_spatial[1]  # Just θ component for 2D
-
-# Divergence comes from spheroidal component  
-# δ = ∇² S (Laplacian of velocity potential)
-divergence_spatial = compute_gradient(cfg, S_lm)
+# Spatial divergence and vorticity
+divergence = SHTnsKit.spatial_divergence(cfg, u, v)
+vorticity  = SHTnsKit.spatial_vorticity(cfg, u, v)
 
 println("Max vorticity: ", maximum(abs.(vorticity)))
-println("Max divergence: ", maximum(abs.(divergence_spatial[1])))
+println("Max divergence: ", maximum(abs.(divergence)))
 
 # Reconstruct original velocity
 u_recon, v_recon = synthesize_vector(cfg, S_lm, T_lm)
 velocity_error = norm(u - u_recon) + norm(v - v_recon)
 println("Velocity reconstruction error: $velocity_error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Stream Function from Vorticity
@@ -103,7 +96,7 @@ using LinearAlgebra
 cfg = create_gauss_config(48, 48)
 
 # Create vorticity field (e.g., from observations)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 vorticity = @. exp(-((θ - π/2)^2 + (φ - π)^2) / 0.5^2) * sin(4φ)
 
 # Transform vorticity to spectral domain
@@ -113,7 +106,7 @@ vorticity = @. exp(-((θ - π/2)^2 + (φ - π)^2) / 0.5^2) * sin(4φ)
 # In spectral domain: -l(l+1) ψ_lm = ζ_lm
 ψ_lm = similar(ζ_lm)
 for i in 1:get_nlm(cfg)
-    l, m = get_lm_from_index(cfg, i)  # Helper function needed
+    l, m = lm_from_index(cfg, i)
     if l > 0
         ψ_lm[i] = -ζ_lm[i] / (l * (l + 1))
     else
@@ -121,9 +114,7 @@ for i in 1:get_nlm(cfg)
     end
 end
 
-# Compute velocity from stream function
-# u = -∂ψ/∂φ / sin(θ), v = ∂ψ/∂θ
-u_stream, v_stream = compute_curl(cfg, ψ_lm)
+u_stream, v_stream = synthesize_vector(cfg, zero(ψ_lm), ψ_lm)
 
 # Convert stream function to spatial domain
 stream_function = synthesize(cfg, ψ_lm)
@@ -131,7 +122,7 @@ stream_function = synthesize(cfg, ψ_lm)
 println("Stream function range: ", extrema(stream_function))
 println("Max velocity from stream: ", maximum(sqrt.(u_stream.^2 + v_stream.^2)))
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Geophysics Applications
