@@ -339,3 +339,29 @@ function synthesize_vector(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{T},
     sphtor_to_spat!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
     return u_theta, u_phi
 end
+
+"""
+    analyze_vector_real(cfg, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) -> (Vector{T}, Vector{T})
+
+Analyze a real tangential vector field into real-basis spheroidal and toroidal coefficients.
+Uses the complex canonical analyzer under the hood and converts to real-basis coefficients.
+"""
+function analyze_vector_real(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
+    S_r = SHTnsKit.complex_to_real_coeffs(cfg, S_c)
+    T_r = SHTnsKit.complex_to_real_coeffs(cfg, T_c)
+    return S_r, T_r
+end
+
+"""
+    synthesize_vector_real(cfg, S_real::AbstractVector{T}, T_real::AbstractVector{T}) -> (Matrix{T}, Matrix{T})
+
+Synthesize a real tangential vector field from real-basis spheroidal and toroidal coefficients.
+Uses the complex canonical synthesizer under the hood.
+"""
+function synthesize_vector_real(cfg::SHTnsConfig{T}, S_real::AbstractVector{T}, T_real::AbstractVector{T}) where T
+    S_c = SHTnsKit.real_to_complex_coeffs(cfg, S_real)
+    T_c = SHTnsKit.real_to_complex_coeffs(cfg, T_real)
+    uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
+    return real.(uθ_c), real.(uφ_c)
+end

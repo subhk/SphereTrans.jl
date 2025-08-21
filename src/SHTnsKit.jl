@@ -52,6 +52,7 @@ export
     
     # Vector transforms
     synthesize_vector, analyze_vector,
+    analyze_vector_real, synthesize_vector_real,
     
     # Complex transforms  
     synthesize_complex, analyze_complex,
