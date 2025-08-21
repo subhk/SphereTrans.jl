@@ -297,6 +297,40 @@ All major SHTnsKit functions support automatic differentiation:
 See `docs/automatic_differentiation.md` for comprehensive examples and `examples/differentiation_examples.jl` for runnable code.
 Additional runnable examples are provided in `examples/ad_examples.jl` showing both Zygote and ForwardDiff on small problems.
 
+### Vector optimization with Zygote (example)
+
+```julia
+using SHTnsKit, Zygote, Random
+
+cfg = create_gauss_config(8, 8)
+n = length(SHTnsKit._cplx_lm_indices(cfg))
+rng = MersenneTwister(42)
+
+# Build a target vector field
+S_tar = [0.3randn(rng) + 0.3im*randn(rng) for _ in 1:n]
+T_tar = [0.3randn(rng) + 0.3im*randn(rng) for _ in 1:n]
+uθ_tar, uφ_tar = cplx_synthesize_vector(cfg, S_tar, T_tar)
+
+# Loss
+loss(S, T) = begin
+    uθ, uφ = cplx_synthesize_vector(cfg, S, T)
+    0.5 * (sum(abs2, uθ .- uθ_tar) + sum(abs2, uφ .- uφ_tar))
+end
+
+# Optimize S,T to match the target
+S = zeros(ComplexF64, n); T = zeros(ComplexF64, n)
+for it in 1:20
+    L, back = Zygote.pullback(loss, S, T)
+    gS, gT = back(1.0)
+    S .-= 0.1 .* gS
+    T .-= 0.1 .* gT
+    @show it L
+end
+destroy_config(cfg)
+```
+
+See also `examples/ad_vector_zygote.jl` for a complete runnable script.
+
 ## Thread Safety
 
 All SHTns operations are thread-safe when using different configurations. Operations on the same configuration are automatically serialized using per-config locks.
