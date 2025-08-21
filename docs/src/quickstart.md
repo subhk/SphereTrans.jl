@@ -26,7 +26,7 @@ error = norm(sh_coeffs - recovered_coeffs)
 println("Round-trip error: $error")
 
 # Clean up
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Understanding the Basics
@@ -52,7 +52,7 @@ println("Grid size: $nlat × $nphi points")
 spatial = synthesize(cfg, sh)
 println("Spatial field size: ", size(spatial))
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Grid Types
@@ -68,8 +68,8 @@ println("Gauss grid: $(get_nlat(cfg_gauss)) × $(get_nphi(cfg_gauss))")
 cfg_regular = create_regular_config(32, 32)
 println("Regular grid: $(get_nlat(cfg_regular)) × $(get_nphi(cfg_regular))")
 
-free_config(cfg_gauss)
-free_config(cfg_regular)
+destroy_config(cfg_gauss)
+destroy_config(cfg_regular)
 ```
 
 ## Working with Real Data
@@ -79,26 +79,26 @@ free_config(cfg_regular)
 ```julia
 cfg = create_gauss_config(24, 24)
 
-# Get grid coordinates
-θ, φ = get_coordinates(cfg)
+# Get grid coordinate matrices
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Create a test field: Y_2^1 (spherical harmonic)
-test_field = real.(sqrt(15/(4π)) * sin(θ) .* cos(θ) .* exp.(1im * φ))
+# Create a test field: Y_2^1 (illustrative)
+test_field = real.(sqrt(15/(4π)) * sin.(θ) .* cos.(θ) .* exp.(1im .* φ))
 
 # Analyze to get spectral coefficients
 sh_result = analyze(cfg, test_field)
 
-# The coefficient for Y_2^1 should be ≈ 1.0
-println("Y_2^1 coefficient: ", sh_result[get_index(cfg, 2, 1)])
+# The coefficient index for (l=2, m=1)
+println("Y_2^1 coefficient: ", sh_result[lmidx(cfg, 2, 1)])
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Physical Fields
 
 ```julia
 cfg = create_gauss_config(32, 32)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Temperature-like field with equatorial maximum
 temperature = 300 .+ 50 * cos.(2 * θ) .* cos.(φ)
@@ -111,7 +111,7 @@ temp_reconstructed = synthesize(cfg, temp_sh)
 reconstruction_error = norm(temperature - temp_reconstructed)
 println("Temperature reconstruction error: $reconstruction_error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Vector Fields
@@ -138,7 +138,7 @@ S_error = norm(S_lm - S_recovered)
 T_error = norm(T_lm - T_recovered)
 println("Spheroidal error: $S_error, Toroidal error: $T_error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Gradient and Curl
@@ -146,20 +146,13 @@ free_config(cfg)
 ```julia
 cfg = create_gauss_config(20, 20)
 
-# Create a scalar potential
-scalar_coeffs = rand(get_nlm(cfg))
+# Example: compute spatial derivatives via FFT in φ
+spatial = rand(get_nlat(cfg), get_nphi(cfg))
+dφ = SHTnsKit.spatial_derivative_phi(cfg, spatial)
 
-# Compute gradient (gives a spheroidal vector field)
-grad_theta, grad_phi = compute_gradient(cfg, scalar_coeffs)
+println("Spatial derivative field size: ", size(dφ))
 
-# For a toroidal field, compute curl
-toroidal_coeffs = rand(get_nlm(cfg))
-curl_theta, curl_phi = compute_curl(cfg, toroidal_coeffs)
-
-println("Gradient field size: ", size(grad_theta))
-println("Curl field size: ", size(curl_theta))
-
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Complex Fields
@@ -182,24 +175,21 @@ recovered_complex = analyze_complex(cfg, spatial_complex)
 complex_error = norm(sh_complex - recovered_complex)
 println("Complex field error: $complex_error")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Performance and Threading
 
-### OpenMP Threading
+### Threading and FFTW threads
 
 ```julia
-# Check current thread settings
-println("Current OpenMP threads: ", get_num_threads())
+# Enable parallel loops and set FFTW threads sensibly
+summary = set_optimal_threads!()
+println(summary)  # (threads=..., fft_threads=...)
 
-# Set thread count
-set_num_threads(4)
-println("Set to 4 threads: ", get_num_threads())
-
-# Use optimal thread count for your system
-set_optimal_threads()
-println("Optimal threads: ", get_num_threads())
+# Fine-tune
+set_threading!(true)           # enable/disable parallel loops
+set_fft_threads(4); get_fft_threads()
 ```
 
 ### Benchmarking
@@ -225,28 +215,7 @@ free_config(cfg)
 
 ## GPU Acceleration
 
-If you have CUDA available:
-
-```julia
-using CUDA
-
-# Check if CUDA is functional
-if CUDA.functional()
-    # Create GPU-enabled configuration
-    cfg_gpu = create_gpu_config(32, 32)
-    
-    # GPU transforms
-    sh = rand(get_nlm(cfg_gpu))
-    sh_gpu = CuArray(sh)
-    
-    spatial_gpu = synthesize_gpu(cfg_gpu, sh_gpu)
-    println("GPU spatial field size: ", size(spatial_gpu))
-    
-    free_config(cfg_gpu)
-else
-    println("CUDA not available")
-end
-```
+This package is CPU‑focused and does not include GPU support.
 
 ## Common Patterns
 
@@ -266,7 +235,7 @@ rand!(sh)
 synthesize!(cfg, sh, spatial)  # spatial = synthesize(cfg, sh)
 analyze!(cfg, spatial, sh)     # sh = analyze(cfg, spatial)
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Batch Processing
@@ -348,9 +317,9 @@ spatial_c = synthesize_complex(cfg, spectral_c)
 spectral_c = analyze_complex(cfg, spatial_c)
 
 # Threading
-set_num_threads(n)
-set_optimal_threads()
+set_threading!(true)
+set_optimal_threads!()
 
 # Cleanup
-free_config(cfg)
+destroy_config(cfg)
 ```

@@ -6,10 +6,9 @@ This guide provides comprehensive information on optimizing SHTnsKit.jl performa
 
 ### Transform Complexity
 
-Spherical harmonic transforms have the following computational complexity:
-- **Naive implementation**: O(L⁴) for degree L
-- **SHTns optimized**: O(L³) with advanced algorithms
-- **Memory usage**: O(L²) for spectral coefficients, O(L²) for spatial grid
+Spherical harmonic transforms have the following computational characteristics:
+- Practical implementations: approximately O(L³) in maximum degree L
+- Memory: O(L²) for spectral coefficients and spatial grid
 
 ### Performance Scaling
 
@@ -49,21 +48,17 @@ end
 
 ## Threading Optimization
 
-### OpenMP Configuration
+### Julia Threads and FFTW
 
-SHTnsKit uses OpenMP for multi-threading. Optimal performance requires proper thread configuration:
+SHTnsKit uses Julia `Threads.@threads` and FFTW’s internal threads. Configure them for best results:
 
 ```julia
 using SHTnsKit
 
 # Check system capabilities
 println("System threads: ", Sys.CPU_THREADS)
-println("Current OpenMP threads: ", get_num_threads())
-
-# Optimal thread setting
-set_optimal_threads()
-optimal_threads = get_num_threads()
-println("Optimal threads: ", optimal_threads)
+summary = set_optimal_threads!()
+println("Thread config: ", summary)
 
 # Manual thread control
 function benchmark_threading(lmax=64)
@@ -73,7 +68,8 @@ function benchmark_threading(lmax=64)
     thread_counts = [1, 2, 4, 8, min(16, Sys.CPU_THREADS)]
     
     for nthreads in thread_counts
-        set_num_threads(nthreads)
+        # Control FFTW threads for azimuthal FFTs
+        set_fft_threads(nthreads)
         time = @elapsed begin
             for i in 1:10
                 synthesize(cfg, sh)
@@ -85,24 +81,10 @@ function benchmark_threading(lmax=64)
         println("$nthreads threads: $(time/10)s per transform")
     end
     
-    free_config(cfg)
+    destroy_config(cfg)
 end
 
 benchmark_threading()
-```
-
-### Thread Affinity and NUMA
-
-For high-performance computing:
-
-```bash
-# Set thread affinity
-export OMP_PROC_BIND=close
-export OMP_PLACES=cores
-
-# NUMA-aware execution
-export OMP_NUM_THREADS=16
-numactl --interleave=all julia script.jl
 ```
 
 ### Avoiding Oversubscription
@@ -113,9 +95,8 @@ ENV["OPENBLAS_NUM_THREADS"] = "1"
 ENV["MKL_NUM_THREADS"] = "1"
 ENV["FFTW_NUM_THREADS"] = "1"
 
-# Set SHTns threads to match physical cores
-using Sys
-set_num_threads(min(Sys.CPU_THREADS ÷ 2, 8))  # Account for hyperthreading
+# Keep FFTW threads modest to avoid contention
+set_fft_threads(min(Sys.CPU_THREADS ÷ 2, 8))
 ```
 
 ## Memory Optimization
@@ -235,144 +216,14 @@ function process_large_dataset(lmax=256, n_fields=10000)
         GC.gc()
     end
     
-    free_config(cfg)
+    destroy_config(cfg)
     return results
 end
 ```
 
 ## GPU Acceleration
 
-### CUDA Setup and Optimization
-
-```julia
-using SHTnsKit
-using CUDA
-
-if CUDA.functional()
-    # GPU memory management
-    function optimize_gpu_memory()
-        # Check available memory
-        total_mem = CUDA.device!(0) do
-            CUDA.total_memory()
-        end
-        
-        free_mem = CUDA.device!(0) do  
-            CUDA.free_memory()
-        end
-        
-        println("GPU Memory - Total: $(total_mem÷1024^3)GB, Free: $(free_mem÷1024^3)GB")
-        
-        # Set memory pool size
-        CUDA.memory_pool_limit!(div(free_mem, 2))  # Use half of free memory
-    end
-    
-    optimize_gpu_memory()
-    
-    # GPU performance benchmarking
-    function benchmark_gpu_vs_cpu(lmax=128)
-        cfg_cpu = create_gauss_config(lmax, lmax)
-        cfg_gpu = create_gpu_config(lmax, lmax)
-        
-        # Initialize GPU
-        initialize_gpu(0, verbose=false)
-        
-        # Data
-        sh = rand(get_nlm(cfg_cpu))
-        sh_gpu = CuArray(sh)
-        
-        # CPU benchmark
-        cpu_time = @elapsed begin
-            for i in 1:10
-                spatial = synthesize(cfg_cpu, sh)
-            end
-        end
-        
-        # GPU benchmark (with data transfer)
-        gpu_time_with_transfer = @elapsed begin
-            for i in 1:10
-                sh_gpu_i = CuArray(sh)
-                spatial_gpu = synthesize_gpu(cfg_gpu, sh_gpu_i)
-                spatial_cpu = Array(spatial_gpu)
-            end
-        end
-        
-        # GPU benchmark (no data transfer)
-        gpu_time_no_transfer = @elapsed begin
-            for i in 1:10
-                spatial_gpu = synthesize_gpu(cfg_gpu, sh_gpu)
-            end
-        end
-        
-        println("Performance Comparison (lmax=$lmax):")
-        println("CPU: $(cpu_time/10)s per transform")
-        println("GPU (with transfer): $(gpu_time_with_transfer/10)s per transform") 
-        println("GPU (no transfer): $(gpu_time_no_transfer/10)s per transform")
-        
-        speedup = cpu_time / gpu_time_no_transfer
-        println("GPU speedup: $(speedup)x")
-        
-        cleanup_gpu(verbose=false)
-        free_config(cfg_cpu)
-        free_config(cfg_gpu)
-    end
-    
-    benchmark_gpu_vs_cpu()
-    
-else
-    println("CUDA not available")
-end
-```
-
-### GPU Memory Staging
-
-```julia
-using CUDA, SHTnsKit
-
-function gpu_batch_processing(spectral_data::Vector{Vector{Float64}})
-    if !CUDA.functional()
-        error("CUDA not available")
-    end
-    
-    cfg = create_gpu_config(32, 32)
-    initialize_gpu(0, verbose=false)
-    
-    # Stage data in GPU memory
-    batch_size = 32
-    n_batches = div(length(spectral_data), batch_size)
-    
-    results = []
-    
-    for batch in 1:n_batches
-        # Upload batch to GPU
-        gpu_batch = []
-        for i in 1:batch_size
-            idx = (batch-1)*batch_size + i
-            if idx <= length(spectral_data)
-                push!(gpu_batch, CuArray(spectral_data[idx]))
-            end
-        end
-        
-        # Process on GPU
-        batch_results = []
-        for sh_gpu in gpu_batch
-            spatial_gpu = synthesize_gpu(cfg, sh_gpu)
-            # Do processing on GPU if possible
-            result = CUDA.sum(spatial_gpu)  # Example operation
-            push!(batch_results, Array(result)[1])
-        end
-        
-        append!(results, batch_results)
-        
-        # Clear GPU memory for next batch
-        CUDA.reclaim()
-    end
-    
-    cleanup_gpu(verbose=false)
-    free_config(cfg)
-    
-    return results
-end
-```
+This package is CPU‑focused and does not include GPU support.
 
 ## Algorithm-Specific Optimizations
 
@@ -410,7 +261,7 @@ function optimize_transform_direction()
 end
 
 optimize_transform_direction()
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Grid Type Selection
