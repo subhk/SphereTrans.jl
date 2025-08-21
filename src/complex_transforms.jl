@@ -113,14 +113,9 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
             for (coeff_idx, (l2, m2)) in enumerate(idx_list)
                 if l2 >= abs(m) && m2 == m
                     # plm_cache stores only |m| rows; map to |m|
-                    # Find cfg.lm_indices index for (l, |m|)
-                    for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-                        if ll == l2 && mm == abs(m)
-                            plm_val = cfg.plm_cache[i, k]
-                            value += sh_coeffs[coeff_idx] * plm_val
-                            break
-                        end
-                    end
+                    k = SHTnsKit.find_plm_index(cfg, l2, abs(m))
+                    plm_val = cfg.plm_cache[i, k]
+                    value += sh_coeffs[coeff_idx] * plm_val
                 end
             end
             fourier_coeffs[i, m_idx] = value
@@ -163,15 +158,10 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
         integral = zero(Complex{T})
         for i in 1:nlat
             # Map to |m| for plm
-            # Find cfg.lm_indices index for (l, |m|)
-            for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-                if ll == l && mm == abs(m)
-                    plm_val = cfg.plm_cache[i, k]
-                    weight = cfg.gauss_weights[i]
-                    integral += fourier_coeffs[i, m_idx] * plm_val * weight
-                    break
-                end
-            end
+            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
+            plm_val = cfg.plm_cache[i, k]
+            weight = cfg.gauss_weights[i]
+            integral += fourier_coeffs[i, m_idx] * plm_val * weight
         end
         normalization = _get_complex_normalization(cfg.norm, l, abs(m))
         sh_coeffs[coeff_idx] = integral * normalization
@@ -336,12 +326,7 @@ end
 
 # Local helpers for derivative evaluation
 function _find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
-    @inbounds for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-        if ll == l && mm == m
-            return k
-        end
-    end
-    error("plm index not found for (l=$l, m=$m)")
+    return SHTnsKit.find_plm_index(cfg, l, m)
 end
 
 """

@@ -395,3 +395,20 @@ function filter_spectral(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     
     return filtered_coeffs
 end
+
+# Internal: fast lookup for (l, m) -> plm column index
+const _plm_index_cache = IdDict{SHTnsConfig, Dict{Tuple{Int,Int}, Int}}()
+
+function find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
+    # Build cache on first use
+    dict = get!(_plm_index_cache, cfg) do
+        d = Dict{Tuple{Int,Int}, Int}()
+        @inbounds for (k, lm) in enumerate(cfg.lm_indices)
+            d[lm] = k
+        end
+        d
+    end
+    idx = get(dict, (l, m), 0)
+    idx != 0 && return idx
+    error("plm index not found for (l=$(l), m=$(m))")
+end
