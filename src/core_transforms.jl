@@ -256,12 +256,7 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     end
     
     # Transform from Fourier coefficients to spatial domain
-    # Need to apply inverse φ normalization
-    spatial_temp = compute_spatial_from_fourier(fourier_coeffs, cfg)
-    
-    # The synthesis needs the inverse normalization factor
-    phi_normalization_inv = T(cfg.nphi) / T(2π)
-    spatial_data .= spatial_temp .* phi_normalization_inv
+    spatial_data .= compute_spatial_from_fourier(fourier_coeffs, cfg)
     
     return nothing
 end

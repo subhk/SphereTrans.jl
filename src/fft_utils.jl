@@ -87,6 +87,8 @@ function azimuthal_fft_backward!(cfg::SHTnsConfig{T},
         # Copy to contiguous array for FFTW
         temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:expected_fc_length])
         result = ifft_plan * temp_coeffs
+        # FFTW's irfft doesn't normalize, so we need to divide by nphi
+        result ./= nphi
         if spatial_row isa SubArray
             spatial_row .= result
         else
@@ -94,6 +96,8 @@ function azimuthal_fft_backward!(cfg::SHTnsConfig{T},
         end
     else
         result = ifft_plan * fourier_coeffs[1:expected_fc_length]
+        # FFTW's irfft doesn't normalize, so we need to divide by nphi
+        result ./= nphi
         spatial_row .= result
     end
     
@@ -146,6 +150,8 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
     if fourier_coeffs isa SubArray
         temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:nphi])
         result = ifft_plan * temp_coeffs
+        # FFTW's ifft doesn't normalize, so we need to divide by nphi
+        result ./= nphi
         if spatial_row isa SubArray
             spatial_row .= result
         else
@@ -153,6 +159,8 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
         end
     else
         result = ifft_plan * fourier_coeffs[1:nphi]
+        # FFTW's ifft doesn't normalize, so we need to divide by nphi
+        result ./= nphi
         spatial_row .= result
     end
     
