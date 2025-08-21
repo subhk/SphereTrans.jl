@@ -51,6 +51,7 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
         end
         
         # Newton-Raphson iteration to refine the root
+        final_derivative = T(1)  # Initialize derivative variable
         for iter in 1:max_iter
             # Compute Legendre polynomial P_n(x) and its derivative P_n'(x)
             # using the recurrence relation
@@ -66,6 +67,8 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
                 p0, p1 = p1, p2
                 dp0, dp1 = dp1, dp2
             end
+            
+            final_derivative = dp1  # Store final derivative
             
             # Newton-Raphson update
             dx = -p1 / dp1
@@ -83,8 +86,7 @@ function compute_gauss_legendre_nodes_weights(n::Integer, T::Type=Float64)
         nodes[i] = x
         
         # Compute weight: w_i = 2 / [(1 - x_i^2) * (P_n'(x_i))^2]
-        # We have P_n'(x_i) = dp1 from the last iteration
-        weights[i] = T(2) / ((T(1) - x^2) * dp1^2)
+        weights[i] = T(2) / ((T(1) - x^2) * final_derivative^2)
         
         # Use symmetry for the other half
         if i <= n ÷ 2
