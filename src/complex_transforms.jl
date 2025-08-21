@@ -100,22 +100,39 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
 
     # For each azimuthal mode m (including negative)
     groups = _cplx_mode_groups_arr(cfg)
-    for m in -cfg.mmax:cfg.mmax
-        abs(m) <= nphi ÷ 2 || continue
-        (m == 0 || abs(m) % cfg.mres == 0) || continue
-
-        m_idx = m >= 0 ? m + 1 : nphi + m + 1
-
-        # Compute mode coefficients for all latitudes
-        for i in 1:nlat
-            value = zero(Complex{T})
-            # Sum over pregrouped entries for this m
-            for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
-                l2 >= abs(m) || continue
-                plm_val = cfg.plm_cache[i, k]
-                value += sh_coeffs[coeff_idx] * plm_val
+    if SHTnsKit.get_threading() && Threads.nthreads() > 1
+        Threads.@threads :static for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+            for i in 1:nlat
+                value = zero(Complex{T})
+                for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
+                    l2 >= abs(m) || continue
+                    plm_val = cfg.plm_cache[i, k]
+                    value += sh_coeffs[coeff_idx] * plm_val
+                end
+                fourier_coeffs[i, m_idx] = value
             end
-            fourier_coeffs[i, m_idx] = value
+        end
+    else
+        for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+
+            # Compute mode coefficients for all latitudes
+            for i in 1:nlat
+                value = zero(Complex{T})
+                # Sum over pregrouped entries for this m
+                for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
+                    l2 >= abs(m) || continue
+                    plm_val = cfg.plm_cache[i, k]
+                    value += sh_coeffs[coeff_idx] * plm_val
+                end
+                fourier_coeffs[i, m_idx] = value
+            end
         end
     end
 
@@ -147,22 +164,43 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
     # For each (l,m) coefficient over full m range
     fill!(sh_coeffs, zero(Complex{T}))
     groups = _cplx_mode_groups_arr(cfg)
-    for m in -cfg.mmax:cfg.mmax
-        abs(m) <= nphi ÷ 2 || continue
-        (m == 0 || abs(m) % cfg.mres == 0) || continue
-        m_idx = m >= 0 ? m + 1 : nphi + m + 1
-        entries = groups[m + cfg.mmax + 1]
-        # Precompute latitudinal weighted transform for this m
-        for (coeff_idx, k, l) in entries
-            l >= abs(m) || continue
-            integral = zero(Complex{T})
-            for i in 1:nlat
-                plm_val = cfg.plm_cache[i, k]
-                weight = cfg.gauss_weights[i]
-                integral += fourier_coeffs[i, m_idx] * plm_val * weight
+    if SHTnsKit.get_threading() && Threads.nthreads() > 1
+        Threads.@threads :static for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+            entries = groups[m + cfg.mmax + 1]
+            # Precompute latitudinal weighted transform for this m
+            for (coeff_idx, k, l) in entries
+                l >= abs(m) || continue
+                integral = zero(Complex{T})
+                for i in 1:nlat
+                    plm_val = cfg.plm_cache[i, k]
+                    weight = cfg.gauss_weights[i]
+                    integral += fourier_coeffs[i, m_idx] * plm_val * weight
+                end
+                norm = _get_complex_normalization(cfg.norm, l, abs(m))
+                sh_coeffs[coeff_idx] = integral * norm
             end
-            norm = _get_complex_normalization(cfg.norm, l, abs(m))
-            sh_coeffs[coeff_idx] = integral * norm
+        end
+    else
+        for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+            entries = groups[m + cfg.mmax + 1]
+            # Precompute latitudinal weighted transform for this m
+            for (coeff_idx, k, l) in entries
+                l >= abs(m) || continue
+                integral = zero(Complex{T})
+                for i in 1:nlat
+                    plm_val = cfg.plm_cache[i, k]
+                    weight = cfg.gauss_weights[i]
+                    integral += fourier_coeffs[i, m_idx] * plm_val * weight
+                end
+                norm = _get_complex_normalization(cfg.norm, l, abs(m))
+                sh_coeffs[coeff_idx] = integral * norm
+            end
         end
     end
     
@@ -388,24 +426,47 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
 
     groups = _cplx_mode_groups_arr(cfg)
     # Accumulate over m
-    for m in -cfg.mmax:cfg.mmax
-        abs(m) <= nphi ÷ 2 || continue
-        (m == 0 || abs(m) % cfg.mres == 0) || continue
-        m_idx = m >= 0 ? m + 1 : nphi + m + 1
-        for i in 1:nlat
-            val_f = zero(Complex{T})
-            val_dt = zero(Complex{T})
-            theta = cfg.theta_grid[i]
-            for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
-                l >= abs(m) || continue
-                plm = cfg.plm_cache[i, k]
-                dplm = _plm_dtheta(cfg, l, m, theta, i)
-                c = sh_coeffs[coeff_idx]
-                val_f += c * plm
-                val_dt += c * dplm
+    if SHTnsKit.get_threading() && Threads.nthreads() > 1
+        Threads.@threads :static for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+            for i in 1:nlat
+                val_f = zero(Complex{T})
+                val_dt = zero(Complex{T})
+                theta = cfg.theta_grid[i]
+                for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
+                    l >= abs(m) || continue
+                    plm = cfg.plm_cache[i, k]
+                    dplm = _plm_dtheta(cfg, l, m, theta, i)
+                    c = sh_coeffs[coeff_idx]
+                    val_f += c * plm
+                    val_dt += c * dplm
+                end
+                dtheta_fourier[i, m_idx] = val_dt
+                fourier_f[i, m_idx] = val_f
             end
-            dtheta_fourier[i, m_idx] = val_dt
-            fourier_f[i, m_idx] = val_f
+        end
+    else
+        for m in -cfg.mmax:cfg.mmax
+            abs(m) <= nphi ÷ 2 || continue
+            (m == 0 || abs(m) % cfg.mres == 0) || continue
+            m_idx = m >= 0 ? m + 1 : nphi + m + 1
+            for i in 1:nlat
+                val_f = zero(Complex{T})
+                val_dt = zero(Complex{T})
+                theta = cfg.theta_grid[i]
+                for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
+                    l >= abs(m) || continue
+                    plm = cfg.plm_cache[i, k]
+                    dplm = _plm_dtheta(cfg, l, m, theta, i)
+                    c = sh_coeffs[coeff_idx]
+                    val_f += c * plm
+                    val_dt += c * dplm
+                end
+                dtheta_fourier[i, m_idx] = val_dt
+                fourier_f[i, m_idx] = val_f
+            end
         end
     end
 
