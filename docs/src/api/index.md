@@ -7,15 +7,17 @@ Complete reference for all SHTnsKit.jl functions and types.
 ### Configuration Creation
 
 ```julia
-create_config(lmax, mmax, nlat_fft, flags) → SHTnsConfig
+create_config(lmax; mmax=lmax, mres=1, grid_type=SHT_GAUSS, norm=SHT_ORTHONORMAL, T=Float64) → SHTnsConfig
 ```
-Create a new SHTns configuration with specified parameters.
+Create a new SHTns configuration with specified parameters. After creation, call `set_grid!(cfg, nlat, nphi)`.
 
 **Arguments:**
 - `lmax::Int`: Maximum spherical harmonic degree
-- `mmax::Int`: Maximum spherical harmonic order  
-- `nlat_fft::Int`: Number of latitude points for FFT
-- `flags::UInt32`: Configuration flags from `SHTnsFlags`
+- `mmax::Int`: Maximum spherical harmonic order (default: lmax)
+- `mres::Int`: Azimuthal resolution (default: 1)
+- `grid_type::SHTnsGrid`: `SHT_GAUSS` or `SHT_REGULAR`
+- `norm::SHTnsNorm`: Normalization convention
+- `T::Type`: Floating point precision (default: Float64)
 
 **Returns:** `SHTnsConfig` object
 
@@ -59,16 +61,7 @@ nlat, nphi = get_nlat(cfg), get_nphi(cfg)  # 65 × 65
 
 ---
 
-```julia
-create_gpu_config(lmax, mmax) → SHTnsConfig
-```
-Create GPU-optimized configuration (requires CUDA extension).
-
-**Arguments:**
-- `lmax::Int`: Maximum degree
-- `mmax::Int`: Maximum order
-
-**Returns:** `SHTnsConfig` optimized for GPU operations
+<!-- GPU configuration is not supported in this package -->
 
 ### Configuration Queries
 
