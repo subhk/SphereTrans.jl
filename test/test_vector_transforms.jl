@@ -26,9 +26,8 @@ using Random
         den_s = maximum(abs.(sph[mask])) + eps()
         num_t = maximum(abs.(tor2[mask] .- tor[mask]))
         den_t = maximum(abs.(tor[mask])) + eps()
-        @test num_s / den_s < 5e-3
-        @test num_t / den_t < 5e-3
+        @test num_s / den_s < 1e-3
+        @test num_t / den_t < 1e-3
         destroy_config(cfg)
     end
 end
-
