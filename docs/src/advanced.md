@@ -1118,8 +1118,9 @@ function rotation_objective(angles)
     # Original field
     sh_original = rand(get_nlm(cfg))
     
-    # Rotate field
-    sh_rotated = rotate_field(cfg, sh_original, α, β, γ)
+    # Rotate field (in-place helper for real-basis coefficients)
+    sh_rotated = copy(sh_original)
+    rotate_real!(cfg, sh_rotated; alpha=α, beta=β, gamma=γ)
     
     # Target field (e.g., aligned with some axis)
     sh_target = zeros(get_nlm(cfg))
