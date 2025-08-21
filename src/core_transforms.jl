@@ -209,48 +209,22 @@ end
     _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                      spatial_data::AbstractMatrix{T}) where T
 
-Internal implementation of spherical harmonic synthesis.
-Uses the precomputed Legendre polynomials and FFT approach.
+Internal implementation of spherical harmonic synthesis using complex route.
+Real coefficients are converted to complex, transformed, then converted back.
 """
 function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                           spatial_data::AbstractMatrix{T}) where T
-    nlat, nphi = cfg.nlat, cfg.nphi
+    # Convert real coefficients to complex format
+    complex_coeffs = real_to_complex_coeffs(cfg, sh_coeffs)
     
-    # Allocate working arrays for Fourier coefficients
-    nphi_modes = nphi ÷ 2 + 1
-    fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
-    fill!(fourier_coeffs, zero(Complex{T}))
+    # Allocate complex spatial array
+    complex_spatial = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
     
-    # For each azimuthal mode m
-    for m in 0:min(cfg.mmax, nphi÷2)
-        m_idx = m + 1  # Convert to 1-based indexing
-        
-        # Skip if this m is not included due to mres
-        (m == 0 || m % cfg.mres == 0) || continue
-        
-        # Collect all (l,m) coefficients for this m
-        mode_coeffs = Vector{Complex{T}}(undef, nlat)
-        fill!(mode_coeffs, zero(Complex{T}))
-        
-        # Sum over l for this m: Σ_l c_{l,m} P_l^m(cos θ)
-        for i in 1:nlat
-            value = zero(Complex{T})
-            for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
-                if m_coeff == m
-                    # Get Legendre polynomial value
-                    plm_val = cfg.plm_cache[i, coeff_idx]
-                    value += sh_coeffs[coeff_idx] * plm_val
-                end
-            end
-            mode_coeffs[i] = value
-        end
-        
-        # Store in Fourier coefficient array
-        insert_fourier_mode!(fourier_coeffs, m, mode_coeffs, nlat)
-    end
+    # Use complex transform
+    SHTnsKit.cplx_sh_to_spat!(cfg, complex_coeffs, complex_spatial)
     
-    # Transform from Fourier coefficients to spatial domain
-    spatial_data .= compute_spatial_from_fourier(fourier_coeffs, cfg)
+    # Extract real part (imaginary part should be ~0 for real coefficients)
+    spatial_data .= real.(complex_spatial)
     
     return nothing
 end
@@ -259,46 +233,22 @@ end
     _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                      sh_coeffs::AbstractVector{T}) where T
 
-Internal implementation of spherical harmonic analysis.
-Uses quadrature integration with precomputed weights.
+Internal implementation of spherical harmonic analysis using complex route.
+Real spatial data is converted to complex, transformed, then converted back.
 """
 function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                           sh_coeffs::AbstractVector{T}) where T
-    nlat, nphi = cfg.nlat, cfg.nphi
+    # Convert real spatial data to complex format
+    complex_spatial = Complex{T}.(spatial_data)
     
-    # Transform spatial data to Fourier coefficients in longitude
-    fourier_coeffs = compute_fourier_coefficients_spatial(spatial_data, cfg)
+    # Allocate complex coefficients array
+    complex_coeffs = Vector{Complex{T}}(undef, SHTnsKit._cplx_nlm(cfg))
     
-    # For each (l,m) coefficient
-    fill!(sh_coeffs, zero(T))
+    # Use complex transform
+    SHTnsKit.cplx_spat_to_sh!(cfg, complex_spatial, complex_coeffs)
     
-    for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
-        # Extract Fourier mode m
-        if m <= nphi ÷ 2
-            mode_data = Vector{Complex{T}}(undef, nlat)
-            extract_fourier_mode!(fourier_coeffs, m, mode_data, nlat)
-            
-            # Integrate over latitude using Gaussian quadrature
-            # ∫ f(θ) P_l^m(cos θ) sin θ dθ = ∫ f(θ) P_l^m(cos θ) d(cos θ)
-            integral = zero(Complex{T})
-            for i in 1:nlat
-                plm_val = cfg.plm_cache[i, coeff_idx]
-                weight = cfg.gauss_weights[i]
-                
-                # For Gauss-Legendre quadrature, weights already include the measure
-                integral += mode_data[i] * plm_val * weight
-            end
-            
-            # For real spherical harmonics, store the real part
-            # The imaginary part should be zero for real input fields
-            sh_coeffs[coeff_idx] = real(integral)
-            
-            # Verify that imaginary part is small for real fields
-            if abs(imag(integral)) > 1e-12 * abs(real(integral))
-                @warn "Large imaginary component in real SH coefficient: $(imag(integral))"
-            end
-        end
-    end
+    # Convert complex coefficients back to real format
+    sh_coeffs .= complex_to_real_coeffs(cfg, complex_coeffs)
     
     return nothing
 end
