@@ -12,7 +12,7 @@
     </a>
 </p>
 
-A comprehensive Julia wrapper for the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transforms) library, providing fast and efficient spherical harmonic transforms for scientific computing applications.
+A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. Includes a pure-Julia implementation and utilities to locate a system `libshtns` when desired.
 
 ## Features
 
@@ -21,21 +21,17 @@ SHTnsKit.jl provides a complete interface to all SHTns features:
 ### Core Transforms
 - **Scalar Transforms**: Forward and backward spherical harmonic transforms
 - **Complex Field Transforms**: Support for complex-valued fields on the sphere
-- **Vector Transforms**: Spheroidal-toroidal decomposition of vector fields
+- **Vector Transforms**: Spheroidal-toroidal decomposition of vector fields (experimental)
 - **In-place Operations**: Memory-efficient transform operations
 
-### Advanced Features
+### Analysis and Utilities
 - **Multiple Grid Types**: Gauss-Legendre and regular (equiangular) grids
-- **Field Rotations**: Wigner D-matrix rotations in spectral and spatial domains
 - **Power Spectrum Analysis**: Energy distribution across spherical harmonic modes
-- **Multipole Analysis**: Expansion coefficients for gravitational/magnetic fields
-- **Automatic Differentiation**: Full ForwardDiff.jl and Zygote.jl support for optimization and machine learning
+- **Spatial Operations**: Area-weighted integrals, means, variance, regridding
+- **Automatic Differentiation**: ForwardDiff.jl and Zygote.jl support (via extensions)
 
-### Performance Optimizations
-- **OpenMP Multi-threading**: Automatic detection and optimal thread configuration
-- **GPU Acceleration**: CUDA support for NVIDIA GPUs with host-device memory management
-- **Vectorization**: Support for SSE, AVX, and other SIMD instruction sets
-- **Memory Management**: Efficient allocation and thread-safe operations
+### Notes
+- GPU acceleration and explicit OpenMP threading controls are not enabled at this time.
 
 
 ## Installation
@@ -72,7 +68,7 @@ make && sudo make install
 
 ### Custom Library Path
 
-SHTnsKit.jl provides flexible options for specifying a custom libshtns library path, allowing you to use your own compiled version instead of relying on system packages:
+SHTnsKit.jl provides flexible options for specifying a custom `libshtns` path, allowing you to use your own compiled version or the `SHTns_jll` artifact when available:
 
 **Option 1: Environment Variable (Recommended)**
 ```julia
@@ -85,7 +81,7 @@ using SHTnsKit
 ```julia
 using SHTnsKit
 
-# Set custom library path (requires Julia restart to take effect)
+# Set custom library path (takes effect on next validation)
 SHTnsKit.set_library_path("/path/to/your/libshtns.so")
 
 # Check current library path
@@ -94,9 +90,9 @@ println("Using library: $current_path")
 
 # Validate the library is working
 if SHTnsKit.validate_library()
-    println(" SHTns library is working correctly")
+    println("SHTns library is reachable and valid")
 else
-    println(" Library validation failed - check your SHTns installation")
+    println("Library validation failed - check your SHTns installation")
 end
 ```
 
@@ -131,7 +127,7 @@ spatial_field = synthesize(cfg, sh_coeffs)
 recovered_coeffs = analyze(cfg, spatial_field)
 
 # Clean up
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Examples
@@ -164,7 +160,7 @@ spectral = analyze(cfg, spatial)
 reconstructed = synthesize(cfg, spectral)
 
 println("Transform error: ", maximum(abs.(spatial - reconstructed)))
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Vector Field Analysis
@@ -197,31 +193,6 @@ u_reconstructed, v_reconstructed = synthesize_vector(cfg, Slm, Tlm)
 free_config(cfg)
 ```
 
-### GPU Acceleration
-
-```julia
-using SHTnsKit
-using CUDA
-
-# Initialize GPU
-if CUDA.functional() && initialize_gpu()
-    cfg = create_gpu_config(32, 32)
-    
-    # Create data on GPU
-    sh_gpu = CUDA.rand(Float64, get_nlm(cfg))
-    
-    # GPU transforms
-    spatial_gpu = synthesize_gpu(cfg, sh_gpu)
-    recovered_gpu = analyze_gpu(cfg, spatial_gpu)
-    
-    # Copy results back to CPU if needed
-    spatial_cpu = Array(spatial_gpu)
-    
-    cleanup_gpu()
-    free_config(cfg)
-end
-```
-
 ### Power Spectrum Analysis
 
 ```julia
@@ -242,7 +213,7 @@ plot(0:get_lmax(cfg), power,
      ylabel="Power",
      yscale=:log10, title="Energy Spectrum")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Automatic Differentiation
@@ -315,22 +286,6 @@ All major SHTnsKit functions support automatic differentiation:
 
 See `docs/automatic_differentiation.md` for comprehensive examples and `examples/differentiation_examples.jl` for runnable code.
 
-## Multi-threading
-
-SHTnsKit.jl automatically detects and uses optimal OpenMP threading:
-
-```julia
-using SHTnsKit
-
-# Set optimal number of threads
-nthreads = set_optimal_threads()
-println("Using $nthreads OpenMP threads")
-
-# Or manually set thread count
-set_num_threads(4)
-println("Now using $(get_num_threads()) threads")
-```
-
 ## Thread Safety
 
 All SHTns operations are thread-safe when using different configurations. Operations on the same configuration are automatically serialized using per-config locks.
@@ -346,8 +301,6 @@ cfg_gauss = create_gauss_config(32, 32)
 # Regular (equiangular) grid
 cfg_regular = create_regular_config(32, 32)
 
-# GPU-optimized configuration
-cfg_gpu = create_gpu_config(32, 32, grid_type=SHTnsFlags.SHT_GAUSS)
 ```
 
 ## Complex Fields
@@ -367,7 +320,7 @@ spatial_complex = synthesize_complex(cfg, sh_complex)
 # Transform back
 recovered_complex = analyze_complex(cfg, spatial_complex)
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Error Handling
@@ -383,13 +336,13 @@ try
     # Operations that might fail
     sh = rand(10)  # Wrong size
     spat = allocate_spatial(cfg)
-    synthesize!(cfg, sh, spat)  # Will throw AssertionError
+    synthesize!(cfg, sh, spat)  # Will throw an error due to wrong size
     
 catch e
     println("Error: $e")
 finally
     if @isdefined(cfg)
-        free_config(cfg)
+        destroy_config(cfg)
     end
 end
 ```
@@ -397,10 +350,8 @@ end
 ## Performance Tips
 
 1. **Use Gauss grids** for most applications - they're more efficient
-2. **Set optimal threading** with `set_optimal_threads()`
-3. **Use in-place operations** (`synthesize!`, `analyze!`) when possible
-4. **Batch operations** on the same configuration for better cache usage
-5. **Initialize GPU once** and reuse for multiple operations
+2. **Use in-place operations** (`synthesize!`, `analyze!`) when possible
+3. **Batch operations** on the same configuration for better cache usage
 
 ## Benchmarking
 

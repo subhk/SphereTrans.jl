@@ -18,10 +18,13 @@ module SHTnsKit
 using LinearAlgebra
 using FFTW
 using Base.Threads
+using .LibSHTns
 
 export 
     # Core types
     SHTnsConfig, SHTnsNorm, SHTnsType, SHTnsGrid,
+    # Library loader helpers
+    set_library_path, get_library_path, validate_library,
     
     # Configuration and setup
     create_config, set_grid!, destroy_config,
@@ -60,6 +63,7 @@ export
     # Grid creation helpers
     create_gauss_config, create_regular_config
 
+include("libshtns.jl")
 include("types.jl")
 include("gauss_legendre.jl") 
 include("fft_utils.jl")
@@ -68,5 +72,10 @@ include("vector_transforms.jl")
 include("complex_transforms.jl")
 include("utilities.jl")
 include("grid_utils.jl")
+
+# Re-export loader helpers
+const set_library_path = LibSHTns.set_library_path
+const get_library_path = LibSHTns.get_library_path
+const validate_library = LibSHTns.validate_library
 
 end # module SHTnsKit
