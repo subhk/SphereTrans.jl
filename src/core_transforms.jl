@@ -238,7 +238,7 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     plm_val = cfg.plm_cache[i, coeff_idx]
                     coeff_val = sh_coeffs[coeff_idx]
                     
-                    # For synthesis, we need to convert back from the analysis representation
+                    # For synthesis, apply inverse normalization
                     if m == 0
                         value += coeff_val * plm_val
                     else
