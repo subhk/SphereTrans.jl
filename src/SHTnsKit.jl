@@ -42,6 +42,10 @@ export
     
     # Utility functions
     lmidx, nlm_calc, allocate_spectral, allocate_spatial,
+    synthesize, analyze, synthesize!, analyze!,
+    
+    # Internal functions (for testing)
+    compute_gauss_legendre_nodes_weights, compute_associated_legendre,
     
     # Grid creation helpers
     create_gauss_config, create_regular_config

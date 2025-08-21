@@ -48,9 +48,15 @@ function azimuthal_fft_forward!(cfg::SHTnsConfig{T},
     expected_fc_length = nphi ÷ 2 + 1
     length(fourier_coeffs) >= expected_fc_length || error("fourier_coeffs too short")
     
-    # Use cached FFT plan
+    # Use cached FFT plan (ensure contiguous array)
     fft_plan = cfg.fft_plans[:r2c]
-    fourier_coeffs .= fft_plan * spatial_row
+    if spatial_row isa SubArray
+        # Copy to contiguous array for FFTW
+        temp_row = Vector{T}(spatial_row)
+        fourier_coeffs .= fft_plan * temp_row
+    else
+        fourier_coeffs .= fft_plan * spatial_row
+    end
     
     return nothing
 end
@@ -75,9 +81,21 @@ function azimuthal_fft_backward!(cfg::SHTnsConfig{T},
     length(fourier_coeffs) >= expected_fc_length || error("fourier_coeffs too short")
     length(spatial_row) == nphi || error("spatial_row length must equal nphi")
     
-    # Use cached FFT plan
+    # Use cached FFT plan (ensure contiguous array)
     ifft_plan = cfg.fft_plans[:c2r]
-    spatial_row .= ifft_plan * fourier_coeffs[1:expected_fc_length]
+    if fourier_coeffs isa SubArray
+        # Copy to contiguous array for FFTW
+        temp_coeffs = Vector{Complex{T}}(fourier_coeffs[1:expected_fc_length])
+        result = ifft_plan * temp_coeffs
+        if spatial_row isa SubArray
+            spatial_row .= result
+        else
+            spatial_row .= result
+        end
+    else
+        result = ifft_plan * fourier_coeffs[1:expected_fc_length]
+        spatial_row .= result
+    end
     
     return nothing
 end

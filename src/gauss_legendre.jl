@@ -138,7 +138,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     plm = zeros(T, nlm)
     
     # P_0^0 = 1 (properly normalized)
-    idx = lmidx(0, 0)
+    idx = lmidx(0, 0) + 1
     if norm == SHT_ORTHONORMAL
         plm[idx] = T(1) / sqrt(T(4π))
     elseif norm == SHT_FOURPI
@@ -152,7 +152,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     end
     
     # P_1^0 = x (with normalization)
-    idx = lmidx(1, 0)
+    idx = lmidx(1, 0) + 1
     if norm == SHT_ORTHONORMAL
         plm[idx] = x * sqrt(T(3)) / sqrt(T(4π))
     elseif norm == SHT_FOURPI  
@@ -163,7 +163,7 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
     
     # P_1^1 = -sin(θ) (with normalization)
     if sint > 0  # Avoid division by zero at poles
-        idx = lmidx(1, 1)
+        idx = lmidx(1, 1) + 1
         if norm == SHT_ORTHONORMAL
             plm[idx] = -sint * sqrt(T(3) / T(2)) / sqrt(T(4π))
         elseif norm == SHT_FOURPI
@@ -203,18 +203,20 @@ function compute_associated_legendre(lmax::Int, x::T, norm::SHTnsNorm=SHT_ORTHON
         
         # P_l^m for 0 < m < l using recurrence
         for m in 1:(l-1)
-            idx_lm = lmidx(l, m) + 1
-            idx_l1_m = lmidx(l-1, m) + 1
-            idx_l2_m = lmidx(l-2, m) + 1
-            
-            if norm == SHT_ORTHONORMAL
-                # Orthonormal recurrence for off-diagonal terms
-                c1 = sqrt((2l+1)*(2l-1) / ((l-m)*(l+m)))
-                c2 = sqrt((2l+1)*(l-1-m)*(l-1+m) / ((2l-3)*(l-m)*(l+m)))
-                plm[idx_lm] = c1 * x * plm[idx_l1_m] - c2 * plm[idx_l2_m]
-            else
-                # Standard recurrence
-                plm[idx_lm] = ((2l - 1) * x * plm[idx_l1_m] - (l + m - 1) * plm[idx_l2_m]) / (l - m)
+            if l-2 >= 0 && l-2 >= abs(m)  # Ensure valid indices
+                idx_lm = lmidx(l, m) + 1
+                idx_l1_m = lmidx(l-1, m) + 1
+                idx_l2_m = lmidx(l-2, m) + 1
+                
+                if norm == SHT_ORTHONORMAL
+                    # Orthonormal recurrence for off-diagonal terms
+                    c1 = sqrt((2l+1)*(2l-1) / ((l-m)*(l+m)))
+                    c2 = sqrt((2l+1)*(l-1-m)*(l-1+m) / ((2l-3)*(l-m)*(l+m)))
+                    plm[idx_lm] = c1 * x * plm[idx_l1_m] - c2 * plm[idx_l2_m]
+                else
+                    # Standard recurrence
+                    plm[idx_lm] = ((2l - 1) * x * plm[idx_l1_m] - (l + m - 1) * plm[idx_l2_m]) / (l - m)
+                end
             end
         end
     end
