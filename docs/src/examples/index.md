@@ -284,7 +284,7 @@ println("Max seasonal difference: ", maximum(abs.(seasonal_diff)))
 max_diff_locations = findall(abs.(seasonal_diff) .> 0.8 * maximum(abs.(seasonal_diff)))
 println("High variability regions: $(length(max_diff_locations)) grid points")
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Advanced Applications
@@ -341,7 +341,7 @@ using SHTnsKit
 cfg = create_gauss_config(32, 32)
 
 # Create field in one coordinate system
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 original_field = @. sin(3θ) * cos(2φ)
 
 # Rotate coordinates (simulate different observation viewpoint)
@@ -357,58 +357,6 @@ destroy_config(cfg)
 
 ## High-Performance Examples
 
-### GPU-Accelerated Processing
-
-```julia
-using SHTnsKit
-using CUDA
-
-if CUDA.functional()
-    # Large problem that benefits from GPU
-    cfg = create_gpu_config(128, 128)
-    
-    # Initialize GPU
-    gpu_success = initialize_gpu(0, verbose=false)
-    
-    if gpu_success
-        # Create large dataset
-        n_fields = 100
-        sh_data = [rand(get_nlm(cfg)) for _ in 1:n_fields]
-        
-        # Process on GPU
-        println("Processing $n_fields fields on GPU...")
-        
-        gpu_results = []
-        @time for sh in sh_data
-            sh_gpu = CuArray(sh)
-            spatial_gpu = synthesize_gpu(cfg, sh_gpu)
-            result_cpu = Array(spatial_gpu)  # Copy back
-            push!(gpu_results, mean(result_cpu))
-        end
-        
-        # Compare with CPU timing
-        println("Processing same data on CPU...")
-        cpu_results = []
-        @time for sh in sh_data
-            spatial = synthesize(cfg, sh)
-            push!(cpu_results, mean(spatial))
-        end
-        
-        # Verify results match
-        result_error = norm(gpu_results - cpu_results)
-        println("GPU vs CPU error: $result_error")
-        
-        cleanup_gpu(verbose=false)
-    else
-        println("GPU initialization failed")
-    end
-    
-    free_config(cfg)
-else
-    println("CUDA not functional, skipping GPU example")
-end
-```
-
 ### Multi-threaded Batch Processing
 
 ```julia
@@ -416,7 +364,7 @@ using SHTnsKit
 using Base.Threads
 
 cfg = create_gauss_config(64, 64)
-set_optimal_threads()
+set_optimal_threads!()
 
 # Large batch of fields to process
 n_batch = 1000
@@ -441,7 +389,7 @@ end
 println("Mean energy per field: ", mean(results))
 println("Energy std dev: ", std(results))
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Validation and Testing Examples
@@ -472,7 +420,7 @@ for (i, case) in enumerate(test_cases)
     sh = analyze(cfg, Y_analytical)
     
     # Check that only the correct coefficient is non-zero
-    expected_idx = get_index(cfg, case.l, case.m)
+expected_idx = lmidx(cfg, case.l, case.m)
     
     # Find largest coefficient
     max_idx = argmax(abs.(sh))
@@ -489,7 +437,7 @@ for (i, case) in enumerate(test_cases)
     end
 end
 
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ### Numerical Accuracy Tests
@@ -522,7 +470,7 @@ for grid_type in grid_types
         
         println("  lmax=$lmax: error = $error")
         
-        free_config(cfg)
+        destroy_config(cfg)
     end
 end
 ```
