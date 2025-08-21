@@ -114,7 +114,15 @@ function azimuthal_fft_complex_forward!(cfg::SHTnsConfig{T},
     length(fourier_coeffs) >= nphi || error("fourier_coeffs too short")
     
     fft_plan = cfg.fft_plans[:c2c_forward]
-    fourier_coeffs[1:nphi] .= fft_plan * spatial_row
+    
+    # Ensure contiguous arrays for FFTW
+    if spatial_row isa SubArray
+        temp_row = Vector{Complex{T}}(spatial_row)
+        result = fft_plan * temp_row
+        fourier_coeffs[1:nphi] .= result
+    else
+        fourier_coeffs[1:nphi] .= fft_plan * spatial_row
+    end
     
     return nothing
 end
