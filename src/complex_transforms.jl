@@ -1,6 +1,7 @@
 """
-Complex-valued spherical harmonic transforms.
-Handles transforms of complex scalar fields on the sphere.
+Complex-valued spherical harmonic transforms (canonical).
+Handles transforms of complex scalar fields on the sphere, storing full
+coefficient sets for m ∈ [-min(l,mmax), ..., 0, ..., +min(l,mmax)].
 """
 
 """
@@ -20,7 +21,7 @@ function cplx_sh_to_spat!(cfg::SHTnsConfig{T},
                          sh_coeffs::AbstractVector{Complex{T}},
                          spatial_data::AbstractMatrix{Complex{T}}) where T
     validate_config(cfg)
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal complex nlm")
     size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
     
     lock(cfg.lock) do
@@ -48,7 +49,7 @@ function cplx_spat_to_sh!(cfg::SHTnsConfig{T},
                          sh_coeffs::AbstractVector{Complex{T}}) where T
     validate_config(cfg)
     size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal complex nlm")
     
     lock(cfg.lock) do
         _cplx_spat_to_sh_impl!(cfg, spatial_data, sh_coeffs)
@@ -75,7 +76,7 @@ end
 Transform complex spatial field to spherical harmonic coefficients (allocating).
 """
 function cplx_spat_to_sh(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{Complex{T}}) where T
-    sh_coeffs = Vector{Complex{T}}(undef, cfg.nlm)
+    sh_coeffs = Vector{Complex{T}}(undef, _cplx_nlm(cfg))
     return cplx_spat_to_sh!(cfg, spatial_data, sh_coeffs)
 end
 
@@ -93,52 +94,39 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
                                sh_coeffs::AbstractVector{Complex{T}},
                                spatial_data::AbstractMatrix{Complex{T}}) where T
     nlat, nphi = cfg.nlat, cfg.nphi
-    
     # Allocate working array for complex Fourier coefficients
     fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
     fill!(fourier_coeffs, zero(Complex{T}))
-    
-    # For each azimuthal mode m (now including negative m)
+
+    idx_list = _cplx_lm_indices(cfg)
+
+    # For each azimuthal mode m (including negative)
     for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
         (m == 0 || abs(m) % cfg.mres == 0) || continue
-        
-        # Fourier coefficient index (handle negative frequencies)
+
         m_idx = m >= 0 ? m + 1 : nphi + m + 1
-        
+
         # Compute mode coefficients for all latitudes
-        mode_coeffs = Vector{Complex{T}}(undef, nlat)
-        fill!(mode_coeffs, zero(Complex{T}))
-        
-        # Sum over l for this m: Σ_l c_{l,m} P_l^|m|(cos θ) e^{im φ}
         for i in 1:nlat
             value = zero(Complex{T})
-            
-            for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
-                if m_coeff == abs(m) && l >= abs(m)
-                    plm_val = cfg.plm_cache[i, coeff_idx]
-                    
-                    if m >= 0
-                        # Positive m: use coefficient directly
-                        value += sh_coeffs[coeff_idx] * plm_val
-                    else
-                        # Negative m: use conjugate symmetry
-                        # c_{l,-m} = (-1)^m * conj(c_{l,m})
-                        phase_factor = m % 2 == 0 ? 1 : -1
-                        value += phase_factor * conj(sh_coeffs[coeff_idx]) * plm_val
+            for (coeff_idx, (l2, m2)) in enumerate(idx_list)
+                if l2 >= abs(m) && m2 == m
+                    # plm_cache stores only |m| rows; map to |m|
+                    # Find cfg.lm_indices index for (l, |m|)
+                    for (k, (ll, mm)) in enumerate(cfg.lm_indices)
+                        if ll == l2 && mm == abs(m)
+                            plm_val = cfg.plm_cache[i, k]
+                            value += sh_coeffs[coeff_idx] * plm_val
+                            break
+                        end
                     end
                 end
             end
-            
-            mode_coeffs[i] = value
-        end
-        
-        # Insert into Fourier array
-        for i in 1:nlat
-            fourier_coeffs[i, m_idx] = mode_coeffs[i]
+            fourier_coeffs[i, m_idx] = value
         end
     end
-    
+
     # Transform from Fourier coefficients to spatial domain
     for i in 1:nlat
         azimuthal_fft_complex_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
@@ -158,40 +146,35 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
                                spatial_data::AbstractMatrix{Complex{T}},
                                sh_coeffs::AbstractVector{Complex{T}}) where T
     nlat, nphi = cfg.nlat, cfg.nphi
-    
     # Transform spatial data to complex Fourier coefficients
     fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
     for i in 1:nlat
         azimuthal_fft_complex_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
     end
-    
-    # For each (l,m) coefficient
+
+    # For each (l,m) coefficient over full m range
     fill!(sh_coeffs, zero(Complex{T}))
-    
-    for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
-        # Handle both positive and negative m (but store only |m|)
-        if m <= nphi ÷ 2
-            # Get Fourier mode data
-            mode_data = Vector{Complex{T}}(undef, nlat)
-            
-            # Extract positive m mode
-            m_idx = m + 1
-            for i in 1:nlat
-                mode_data[i] = fourier_coeffs[i, m_idx]
+    idx_list = _cplx_lm_indices(cfg)
+    for (coeff_idx, (l, m)) in enumerate(idx_list)
+        abs(m) <= nphi ÷ 2 || continue
+        # Extract Fourier mode m
+        m_idx = m >= 0 ? m + 1 : nphi + m + 1
+        # Integrate over latitude using quadrature
+        integral = zero(Complex{T})
+        for i in 1:nlat
+            # Map to |m| for plm
+            # Find cfg.lm_indices index for (l, |m|)
+            for (k, (ll, mm)) in enumerate(cfg.lm_indices)
+                if ll == l && mm == abs(m)
+                    plm_val = cfg.plm_cache[i, k]
+                    weight = cfg.gauss_weights[i]
+                    integral += fourier_coeffs[i, m_idx] * plm_val * weight
+                    break
+                end
             end
-            
-            # Integrate over latitude using quadrature
-            integral = zero(Complex{T})
-            for i in 1:nlat
-                plm_val = cfg.plm_cache[i, coeff_idx]
-                weight = cfg.gauss_weights[i]
-                integral += mode_data[i] * plm_val * weight
-            end
-            
-            # Store result with proper normalization
-            normalization = _get_complex_normalization(cfg.norm, l, m)
-            sh_coeffs[coeff_idx] = integral * normalization
         end
+        normalization = _get_complex_normalization(cfg.norm, l, abs(m))
+        sh_coeffs[coeff_idx] = integral * normalization
     end
     
     return nothing
@@ -229,7 +212,7 @@ end
 Allocate array for complex spherical harmonic coefficients.
 """
 function allocate_complex_spectral(cfg::SHTnsConfig{T}) where T
-    return Vector{Complex{T}}(undef, cfg.nlm)
+    return Vector{Complex{T}}(undef, _cplx_nlm(cfg))
 end
 
 """
@@ -275,14 +258,14 @@ Useful for testing and validation.
 """
 function create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
     0 <= l <= cfg.lmax || error("l must be in range [0, lmax]")
-    abs(m) <= min(l, cfg.mmax) || error("m must be in range [-min(l,mmax), min(l,mmax)]")
+    -min(l, cfg.mmax) <= m <= min(l, cfg.mmax) || error("m out of range for l and mmax")
     
     # Create coefficients with single mode
-    sh_coeffs = zeros(Complex{T}, cfg.nlm)
+    sh_coeffs = zeros(Complex{T}, _cplx_nlm(cfg))
     
-    # Find the coefficient index for (l, |m|)
-    for (idx, (l_idx, m_idx)) in enumerate(cfg.lm_indices)
-        if l_idx == l && m_idx == abs(m)
+    # Find the coefficient index for (l, m)
+    for (idx, (ll, mm)) in enumerate(_cplx_lm_indices(cfg))
+        if ll == l && mm == m
             sh_coeffs[idx] = one(Complex{T})
             break
         end
@@ -290,4 +273,40 @@ function create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
     
     # Synthesize to spatial domain
     return cplx_sh_to_spat(cfg, sh_coeffs)
+end
+
+# Internal helpers for complex coefficient indexing
+function _cplx_lm_indices(cfg::SHTnsConfig)
+    idx = Tuple{Int,Int}[]
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # negative m down to -mres in steps of -mres
+        for m in -maxm:-cfg.mres:-cfg.mres
+            push!(idx, (l, m))
+        end
+        # m=0
+        push!(idx, (l, 0))
+        # positive m in steps of mres
+        for m in cfg.mres:cfg.mres:maxm
+            push!(idx, (l, m))
+        end
+    end
+    return idx
+end
+
+function _cplx_nlm(cfg::SHTnsConfig)
+    # Count full m for each l with mres
+    total = 0
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        if cfg.mres == 1
+            total += 2*maxm + 1
+        else
+            # negative: m = -mres, -2mres, ... >= -maxm
+            cnt_neg = maxm ÷ cfg.mres
+            cnt_pos = cnt_neg
+            total += cnt_neg + 1 + cnt_pos
+        end
+    end
+    return total
 end
