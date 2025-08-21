@@ -41,7 +41,7 @@ export
     cplx_sh_to_spat!, cplx_spat_to_sh!,
     
     # Utility functions
-    lmidx, nlm_calc, allocate_spectral, allocate_spatial,
+    lmidx, lm_from_index, nlm_calc, allocate_spectral, allocate_spatial,
     synthesize, analyze, synthesize!, analyze!,
     real_nlm, analyze_real, synthesize_real, complex_to_real_coeffs, real_to_complex_coeffs,
     

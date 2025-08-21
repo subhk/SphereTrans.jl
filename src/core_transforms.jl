@@ -206,6 +206,25 @@ end
 # Implementation functions (internal)
 
 """
+    _build_m_coefficient_mapping(cfg::SHTnsConfig) -> Dict{Int, Vector{Int}}
+
+Build a mapping from azimuthal mode m to coefficient indices for efficient lookup.
+This avoids repeated enumeration in the synthesis inner loops.
+"""
+function _build_m_coefficient_mapping(cfg::SHTnsConfig)::Dict{Int, Vector{Int}}
+    m_indices = Dict{Int, Vector{Int}}()
+    
+    @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
+        if !haskey(m_indices, m)
+            m_indices[m] = Int[]
+        end
+        push!(m_indices[m], coeff_idx)
+    end
+    
+    return m_indices
+end
+
+"""
     _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                      spatial_data::AbstractMatrix{T}) where T
 
@@ -214,46 +233,48 @@ Internal implementation of spherical harmonic synthesis using direct real approa
 function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                           spatial_data::AbstractMatrix{T}) where T
     nlat, nphi = cfg.nlat, cfg.nphi
-    
-    # Allocate working arrays for Fourier coefficients
     nphi_modes = nphi ÷ 2 + 1
-    fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    
+    # Use pre-allocated workspace if available, otherwise allocate
+    fourier_coeffs = get!(() -> Matrix{Complex{T}}(undef, nlat, nphi_modes), 
+                         cfg.fft_plans, :workspace_fourier_coeffs)
+    if size(fourier_coeffs) != (nlat, nphi_modes)
+        fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+        cfg.fft_plans[:workspace_fourier_coeffs] = fourier_coeffs
+    end
     fill!(fourier_coeffs, zero(Complex{T}))
     
+    # Pre-compute m-coefficient mapping for efficiency
+    m_indices = get!(() -> _build_m_coefficient_mapping(cfg), cfg.fft_plans, :m_coefficient_mapping)
+    
     # For each azimuthal mode m (only m >= 0)
-    for m in 0:min(cfg.mmax, nphi÷2)
+    @inbounds for m in 0:min(cfg.mmax, nphi÷2)
         # Skip if this m is not included due to mres
         (m == 0 || m % cfg.mres == 0) || continue
         
-        # Collect all (l,m) coefficients for this m
-        mode_coeffs = Vector{Complex{T}}(undef, nlat)
-        fill!(mode_coeffs, zero(Complex{T}))
+        # Get precomputed indices for this m
+        coeff_indices = get(m_indices, m, Int[])
+        isempty(coeff_indices) && continue
         
-        # Sum over l for this m: Σ_l c_{l,m} P_l^m(cos θ)
-        for i in 1:nlat
-            value = zero(Complex{T})
-            for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
-                if m_coeff == m
-                    # Get Legendre polynomial value
+        # Direct computation without temporary array allocation
+        m_col = m + 1  # Convert to 1-based indexing
+        if m_col <= nphi_modes
+            @simd for i in 1:nlat
+                value = zero(Complex{T})
+                @simd for coeff_idx in coeff_indices
                     plm_val = cfg.plm_cache[i, coeff_idx]
                     coeff_val = sh_coeffs[coeff_idx]
                     
-                    # For synthesis, no additional normalization needed
-                    # The FFT handles the scaling correctly
+                    # Optimized scaling
                     if m == 0
                         value += coeff_val * plm_val
                     else
-                        # For m > 0, we stored the coefficient with factor of 2
-                        # So we need to divide by 2 to get back the complex amplitude
-                        value += (coeff_val / 2) * plm_val
+                        value += (coeff_val * T(0.5)) * plm_val
                     end
                 end
+                fourier_coeffs[i, m_col] = value
             end
-            mode_coeffs[i] = value
         end
-        
-        # Store in Fourier coefficient array
-        insert_fourier_mode!(fourier_coeffs, m, mode_coeffs, nlat)
     end
     
     # Transform from Fourier coefficients to spatial domain
@@ -281,33 +302,37 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
     # For each (l,m) coefficient (only m >= 0 stored)
     fill!(sh_coeffs, zero(T))
     
-    for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
+    # Pre-allocate workspace for mode extraction
+    mode_data = get!(() -> Vector{Complex{T}}(undef, nlat), 
+                    cfg.fft_plans, :workspace_mode_data)
+    if length(mode_data) != nlat
+        resize!(mode_data, nlat)
+    end
+    
+    # Precompute normalization factor
+    phi_normalization = T(2π) / nphi
+    
+    @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
         # Extract Fourier mode m
         if m <= nphi ÷ 2
-            mode_data = Vector{Complex{T}}(undef, nlat)
             extract_fourier_mode!(fourier_coeffs, m, mode_data, nlat)
             
             # Integrate over latitude using Gaussian quadrature
             integral = zero(Complex{T})
-            for i in 1:nlat
+            @simd for i in 1:nlat
                 plm_val = cfg.plm_cache[i, coeff_idx]
                 weight = cfg.gauss_weights[i]
                 integral += mode_data[i] * plm_val * weight
             end
             
-            # Apply proper normalization for φ integration
-            # FFT gives sum over nphi points, but we need integral over [0,2π]
-            phi_normalization = T(2π) / nphi
+            # Apply proper normalization for φ integration  
             integral *= phi_normalization
             
-            # For real fields, extract appropriate part
+            # For real fields, extract appropriate part with optimized conditionals
             if m == 0
-                # m=0: coefficient is real
                 sh_coeffs[coeff_idx] = real(integral)
             else
-                # m>0: for real fields, use real part and account for m>0 normalization
-                # The factor of 2 accounts for the ±m symmetry in real representation
-                sh_coeffs[coeff_idx] = real(integral) * 2
+                sh_coeffs[coeff_idx] = real(integral) * T(2)
             end
         end
     end

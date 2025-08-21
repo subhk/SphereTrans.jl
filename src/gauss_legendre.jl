@@ -259,26 +259,32 @@ end
 
 Calculate the number of spherical harmonic coefficients for given truncation.
 """
-function nlm_calc(lmax::Int, mmax::Int, mres::Int)
+function nlm_calc(lmax::Int, mmax::Int, mres::Int)::Int
     lmax >= 0 || error("lmax must be non-negative")
     mmax >= 0 || error("mmax must be non-negative")
     mres >= 1 || error("mres must be positive")
     
-    nlm = 0
-    for l in 0:lmax
-        max_m = min(l, mmax)
-        if mres == 1
-            nlm += max_m + 1  # m = 0, 1, ..., max_m
+    if mres == 1
+        # Optimized formula for mres=1 case
+        if mmax >= lmax
+            # Full triangular truncation: Σ(l+1) for l=0..lmax = (lmax+1)(lmax+2)/2
+            return (lmax + 1) * (lmax + 2) ÷ 2
         else
-            # Count m = 0, mres, 2*mres, ... up to max_m
-            nlm += 1  # m = 0
-            m = mres
-            while m <= max_m
-                nlm += 1
-                m += mres
+            # mmax < lmax case - use optimized loop
+            nlm = 0
+            @inbounds for l in 0:lmax
+                nlm += min(l, mmax) + 1
             end
+            return nlm
         end
+    else
+        # General case with mres > 1 - optimized counting
+        nlm = lmax + 1  # m=0 contribution for all l
+        @inbounds for l in 1:lmax
+            max_m = min(l, mmax)
+            # Count multiples of mres up to max_m
+            nlm += max_m ÷ mres
+        end
+        return nlm
     end
-    
-    return nlm
 end

@@ -50,7 +50,7 @@ Pick a reasonable threading setup: enable parallel loops, and set FFTW threads
 to `min(Threads.nthreads(), Sys.CPU_THREADS)`.
 Returns a summary NamedTuple.
 """
-function set_optimal_threads!()
+function set_optimal_threads!()::NamedTuple{(:threads, :fft_threads), Tuple{Int, Int}}
     set_threading!(true)
     n = min(Threads.nthreads(), Sys.CPU_THREADS)
     set_fft_threads(n)

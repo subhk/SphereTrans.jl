@@ -39,14 +39,8 @@ function lmidx(cfg::SHTnsConfig, l::Int, m::Int)
     0 <= l <= cfg.lmax || error("l must be in range [0, lmax]")
     abs(m) <= min(l, cfg.mmax) || error("m must be in range [-min(l,mmax), min(l,mmax)]")
     
-    # Search through the index mapping
-    for (idx, (l_idx, m_idx)) in enumerate(cfg.lm_indices)
-        if l_idx == l && m_idx == abs(m)
-            return idx
-        end
-    end
-    
-    error("Could not find index for (l=$l, m=$m)")
+    # Use cached lookup for O(1) access
+    return find_plm_index(cfg, l, abs(m))
 end
 
 """
@@ -396,19 +390,19 @@ function filter_spectral(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     return filtered_coeffs
 end
 
-# Internal: fast lookup for (l, m) -> plm column index
-const _plm_index_cache = IdDict{SHTnsConfig, Dict{Tuple{Int,Int}, Int}}()
-
-function find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
-    # Build cache on first use
-    dict = get!(_plm_index_cache, cfg) do
+# Internal: fast lookup for (l, m) -> plm column index using config-local cache
+function find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)::Int
+    # Use config-local cache to avoid global dictionary overhead
+    cache_key = :plm_index_cache
+    cache = get!(cfg.fft_plans, cache_key) do
         d = Dict{Tuple{Int,Int}, Int}()
         @inbounds for (k, lm) in enumerate(cfg.lm_indices)
             d[lm] = k
         end
         d
-    end
-    idx = get(dict, (l, m), 0)
+    end::Dict{Tuple{Int,Int}, Int}
+    
+    idx = get(cache, (l, m), 0)
     idx != 0 && return idx
     error("plm index not found for (l=$(l), m=$(m))")
 end
@@ -418,9 +412,9 @@ end
 
 Number of real-basis coefficients with explicit cos/sin for m>0 and single for m=0.
 """
-function real_nlm(cfg::SHTnsConfig)
+function real_nlm(cfg::SHTnsConfig)::Int
     total = 0
-    for l in 0:cfg.lmax
+    @inbounds for l in 0:cfg.lmax
         maxm = min(l, cfg.mmax)
         # m=0
         total += 1

@@ -246,10 +246,10 @@ function compute_fourier_coefficients_spatial(spatial_data::AbstractMatrix{T},
     nphi_modes = nphi ÷ 2 + 1
     fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi_modes)
     
-    # Transform each latitude row with optional threading
+    # Transform each latitude row with optional threading and optimized memory access
     if SHTnsKit.get_threading() && nlat > 32
         @threads for i in 1:nlat
-            azimuthal_fft_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
+            @inbounds azimuthal_fft_forward!(cfg, view(spatial_data, i, :), view(fourier_coeffs, i, :))
         end
     else
         @inbounds for i in 1:nlat
@@ -282,10 +282,10 @@ function compute_spatial_from_fourier(fourier_coeffs::AbstractMatrix{Complex{T}}
     
     spatial_data = Matrix{T}(undef, nlat, cfg.nphi)
     
-    # Transform each latitude row with optional threading
+    # Transform each latitude row with optional threading and optimized memory access
     if SHTnsKit.get_threading() && nlat > 32
         @threads for i in 1:nlat
-            azimuthal_fft_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
+            @inbounds azimuthal_fft_backward!(cfg, view(fourier_coeffs, i, :), view(spatial_data, i, :))
         end
     else
         @inbounds for i in 1:nlat
