@@ -344,6 +344,61 @@ function _find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
     error("plm index not found for (l=$l, m=$m)")
 end
 
+"""
+    cplx_spectral_gradient_spatial(cfg, sh_coeffs)
+
+Compute the surface gradient of a complex scalar field in spatial components (θ, φ components).
+Returns (gθ, gφ) with size (nlat × nphi), where gθ = ∂θ f and gφ = (1/sinθ) ∂φ f.
+"""
+function cplx_spectral_gradient_spatial(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}}) where T
+    dθ, dφ = cplx_spatial_derivatives(cfg, sh_coeffs)
+    nlat, nphi = cfg.nlat, cfg.nphi
+    gθ = dθ
+    gφ = Matrix{Complex{T}}(undef, nlat, nphi)
+    @inbounds for i in 1:nlat
+        s = sin(cfg.theta_grid[i])
+        invs = s > 1e-12 ? (one(T)/s) : zero(T)
+        for j in 1:nphi
+            gφ[i, j] = invs * dφ[i, j]
+        end
+    end
+    return gθ, gφ
+end
+
+"""
+    cplx_divergence_spectral(cfg, sph_coeffs, tor_coeffs)
+
+Compute spectral divergence of a tangential vector field decomposed as spheroidal/toroidal.
+In spectral domain: div_lm = -l(l+1) * S_lm; toroidal part is divergence-free.
+Returns a vector of complex spectral coefficients matching `_cplx_nlm(cfg)`.
+"""
+function cplx_divergence_spectral(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{Complex{T}}, tor_coeffs::AbstractVector{Complex{T}}) where T
+    length(sph_coeffs) == _cplx_nlm(cfg) || error("length mismatch for sph_coeffs")
+    length(tor_coeffs) == _cplx_nlm(cfg) || error("length mismatch for tor_coeffs")
+    out = similar(sph_coeffs)
+    for (idx, (l, m)) in enumerate(_cplx_lm_indices(cfg))
+        out[idx] = -T(l*(l+1)) * sph_coeffs[idx]
+    end
+    return out
+end
+
+"""
+    cplx_vorticity_spectral(cfg, sph_coeffs, tor_coeffs)
+
+Compute spectral vertical vorticity (radial curl) of a tangential vector field.
+In spectral domain: vort_lm = -l(l+1) * T_lm; spheroidal part is curl-free.
+Returns a vector of complex spectral coefficients matching `_cplx_nlm(cfg)`.
+"""
+function cplx_vorticity_spectral(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{Complex{T}}, tor_coeffs::AbstractVector{Complex{T}}) where T
+    length(sph_coeffs) == _cplx_nlm(cfg) || error("length mismatch for sph_coeffs")
+    length(tor_coeffs) == _cplx_nlm(cfg) || error("length mismatch for tor_coeffs")
+    out = similar(tor_coeffs)
+    for (idx, (l, m)) in enumerate(_cplx_lm_indices(cfg))
+        out[idx] = -T(l*(l+1)) * tor_coeffs[idx]
+    end
+    return out
+end
+
 function _plm_dtheta(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int) where T
     if l == 0
         return zero(T)
