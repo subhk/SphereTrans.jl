@@ -44,6 +44,16 @@ export
     lmidx, nlm_calc, allocate_spectral, allocate_spatial,
     synthesize, analyze, synthesize!, analyze!,
     
+    # Analysis functions
+    evaluate_at_point, power_spectrum, total_power,
+    spatial_integral, spatial_mean,
+    
+    # Vector transforms
+    synthesize_vector, analyze_vector,
+    
+    # Complex transforms  
+    synthesize_complex, analyze_complex,
+    
     # Internal functions (for testing)
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,
     
