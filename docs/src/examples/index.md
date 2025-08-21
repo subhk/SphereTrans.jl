@@ -400,7 +400,7 @@ destroy_config(cfg)
 using SHTnsKit
 
 cfg = create_gauss_config(24, 24)
-θ, φ = get_coordinates(cfg)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Test Case 1: Pure spherical harmonics
 test_cases = [
