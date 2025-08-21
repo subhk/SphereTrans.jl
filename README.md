@@ -245,6 +245,76 @@ plot(0:get_lmax(cfg), power,
 free_config(cfg)
 ```
 
+## Automatic Differentiation
+
+SHTnsKit.jl provides comprehensive automatic differentiation support through extensions for both **ForwardDiff.jl** (forward-mode) and **Zygote.jl** (reverse-mode), enabling gradient-based optimization and machine learning applications.
+
+### Forward-mode AD (ForwardDiff.jl)
+
+```julia
+using SHTnsKit, ForwardDiff
+
+cfg = create_gauss_config(8, 8)
+sh_coeffs = rand(get_nlm(cfg))
+
+# Define objective function
+function total_power(sh)
+    spatial = synthesize(cfg, sh)
+    return sum(abs2, spatial)
+end
+
+# Compute gradient
+gradient = ForwardDiff.gradient(total_power, sh_coeffs)
+hessian = ForwardDiff.hessian(total_power, sh_coeffs)
+```
+
+### Reverse-mode AD (Zygote.jl)
+
+```julia
+using SHTnsKit, Zygote
+
+# Same function as above
+function loss_function(sh)
+    spatial = synthesize(cfg, sh)
+    return sum(abs2, spatial)
+end
+
+# Get both value and gradient
+value, gradient = Zygote.withgradient(loss_function, sh_coeffs)
+```
+
+### Optimization Example
+
+```julia
+# Target fitting with gradient descent
+target_field = create_test_field(cfg, 2, 1)  # Y_2^1 harmonic
+
+function mse_loss(sh_coeffs)
+    predicted = synthesize(cfg, sh_coeffs) 
+    return sum((predicted - target_field).^2) / length(target_field)
+end
+
+# Initialize and optimize
+sh_coeffs = 0.1 * randn(get_nlm(cfg))
+learning_rate = 0.01
+
+for i in 1:100
+    loss_val, grad = Zygote.withgradient(mse_loss, sh_coeffs)
+    sh_coeffs .-= learning_rate .* grad[1]  # Gradient descent step
+end
+```
+
+### Supported Functions
+
+All major SHTnsKit functions support automatic differentiation:
+- `synthesize`, `analyze` - Core transforms
+- `synthesize_vector`, `analyze_vector` - Vector field transforms  
+- `evaluate_at_point` - Point evaluation
+- `power_spectrum`, `total_power` - Spectral analysis
+- `spatial_integral`, `spatial_mean` - Spatial operations
+
+See `docs/automatic_differentiation.md` for comprehensive examples and `examples/differentiation_examples.jl` for runnable code.
+
 ## Multi-threading
 
 SHTnsKit.jl automatically detects and uses optimal OpenMP threading:
