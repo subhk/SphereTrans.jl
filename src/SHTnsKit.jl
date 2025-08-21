@@ -60,6 +60,7 @@ export
     cplx_spectral_gradient_spatial, cplx_divergence_spectral, cplx_vorticity_spectral,
     cplx_vector_from_spheroidal, cplx_vector_from_toroidal, cplx_vector_from_potentials,
     cplx_divergence_spatial_from_potentials, cplx_vorticity_spatial_from_potentials,
+    cplx_sphtor_to_spat!, cplx_synthesize_vector, cplx_spat_to_sphtor!, cplx_analyze_vector,
     
     # Internal functions (for testing)
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,

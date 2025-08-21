@@ -98,8 +98,6 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
     fourier_coeffs = Matrix{Complex{T}}(undef, nlat, nphi)
     fill!(fourier_coeffs, zero(Complex{T}))
 
-    idx_list = _cplx_lm_indices(cfg)
-
     # For each azimuthal mode m (including negative)
     for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
@@ -110,13 +108,11 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
         # Compute mode coefficients for all latitudes
         for i in 1:nlat
             value = zero(Complex{T})
-            for (coeff_idx, (l2, m2)) in enumerate(idx_list)
-                if l2 >= abs(m) && m2 == m
-                    # plm_cache stores only |m| rows; map to |m|
-                    k = SHTnsKit.find_plm_index(cfg, l2, abs(m))
-                    plm_val = cfg.plm_cache[i, k]
-                    value += sh_coeffs[coeff_idx] * plm_val
-                end
+            # Sum over pregrouped entries for this m
+            for (coeff_idx, k, l2) in get(_cplx_mode_groups(cfg), m, NTuple{3,Int}[])
+                l2 >= abs(m) || continue
+                plm_val = cfg.plm_cache[i, k]
+                value += sh_coeffs[coeff_idx] * plm_val
             end
             fourier_coeffs[i, m_idx] = value
         end
@@ -149,22 +145,23 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
 
     # For each (l,m) coefficient over full m range
     fill!(sh_coeffs, zero(Complex{T}))
-    idx_list = _cplx_lm_indices(cfg)
-    for (coeff_idx, (l, m)) in enumerate(idx_list)
+    groups = _cplx_mode_groups(cfg)
+    for (m, entries) in groups
         abs(m) <= nphi ÷ 2 || continue
-        # Extract Fourier mode m
+        (m == 0 || abs(m) % cfg.mres == 0) || continue
         m_idx = m >= 0 ? m + 1 : nphi + m + 1
-        # Integrate over latitude using quadrature
-        integral = zero(Complex{T})
-        for i in 1:nlat
-            # Map to |m| for plm
-            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
-            plm_val = cfg.plm_cache[i, k]
-            weight = cfg.gauss_weights[i]
-            integral += fourier_coeffs[i, m_idx] * plm_val * weight
+        # Precompute latitudinal weighted transform for this m
+        for (coeff_idx, k, l) in entries
+            l >= abs(m) || continue
+            integral = zero(Complex{T})
+            for i in 1:nlat
+                plm_val = cfg.plm_cache[i, k]
+                weight = cfg.gauss_weights[i]
+                integral += fourier_coeffs[i, m_idx] * plm_val * weight
+            end
+            norm = _get_complex_normalization(cfg.norm, l, abs(m))
+            sh_coeffs[coeff_idx] = integral * norm
         end
-        normalization = _get_complex_normalization(cfg.norm, l, abs(m))
-        sh_coeffs[coeff_idx] = integral * normalization
     end
     
     return nothing
@@ -279,7 +276,7 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
     fourier_f = Matrix{Complex{T}}(undef, nlat, nphi)
     fill!(fourier_f, zero(Complex{T}))
 
-    idx_list = _cplx_lm_indices(cfg)
+    groups = _cplx_mode_groups(cfg)
     # Accumulate over m
     for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
@@ -289,16 +286,13 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
             val_f = zero(Complex{T})
             val_dt = zero(Complex{T})
             theta = cfg.theta_grid[i]
-            for (idx, (l, mm)) in enumerate(idx_list)
-                if mm == m && l >= abs(m)
-                    # Index for (l, |m|) in plm cache
-                    k_plm = _find_plm_index(cfg, l, abs(m))
-                    plm = cfg.plm_cache[i, k_plm]
-                    dplm = _plm_dtheta(cfg, l, m, theta, i)
-                    c = sh_coeffs[idx]
-                    val_f += c * plm
-                    val_dt += c * dplm
-                end
+            for (coeff_idx, k, l) in get(groups, m, NTuple{3,Int}[])
+                l >= abs(m) || continue
+                plm = cfg.plm_cache[i, k]
+                dplm = _plm_dtheta(cfg, l, m, theta, i)
+                c = sh_coeffs[coeff_idx]
+                val_f += c * plm
+                val_dt += c * dplm
             end
             dtheta_fourier[i, m_idx] = val_dt
             fourier_f[i, m_idx] = val_f
@@ -457,6 +451,107 @@ function cplx_divergence_spatial_from_potentials(cfg::SHTnsConfig{T}, S_coeffs::
 end
 
 """
+    cplx_sphtor_to_spat!(cfg, S_coeffs, T_coeffs, u_theta, u_phi)
+
+Synthesize complex tangential vector field from spheroidal (S) and toroidal (T) potentials.
+Writes results into u_theta and u_phi (complex spatial matrices).
+"""
+function cplx_sphtor_to_spat!(cfg::SHTnsConfig{T},
+                              S_coeffs::AbstractVector{Complex{T}},
+                              T_coeffs::AbstractVector{Complex{T}},
+                              u_theta::AbstractMatrix{Complex{T}},
+                              u_phi::AbstractMatrix{Complex{T}}) where T
+    size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
+    size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
+    uθ, uφ = cplx_vector_from_potentials(cfg, S_coeffs, T_coeffs)
+    u_theta .= uθ
+    u_phi  .= uφ
+    return u_theta, u_phi
+end
+
+"""
+    cplx_synthesize_vector(cfg, S_coeffs, T_coeffs)
+
+Allocating version of complex vector synthesis from potentials; returns (u_theta, u_phi).
+"""
+function cplx_synthesize_vector(cfg::SHTnsConfig{T},
+                                S_coeffs::AbstractVector{Complex{T}},
+                                T_coeffs::AbstractVector{Complex{T}}) where T
+    u_theta = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
+    u_phi   = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
+    return cplx_sphtor_to_spat!(cfg, S_coeffs, T_coeffs, u_theta, u_phi)
+end
+
+"""
+    cplx_spat_to_sphtor!(cfg, u_theta, u_phi, S_coeffs, T_coeffs)
+
+Analyze complex tangential vector field into spheroidal and toroidal complex spectral coefficients.
+"""
+function cplx_spat_to_sphtor!(cfg::SHTnsConfig{T},
+                              u_theta::AbstractMatrix{Complex{T}},
+                              u_phi::AbstractMatrix{Complex{T}},
+                              S_coeffs::AbstractVector{Complex{T}},
+                              T_coeffs::AbstractVector{Complex{T}}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    size(u_theta) == (nlat, nphi) || error("u_theta size mismatch")
+    size(u_phi) == (nlat, nphi) || error("u_phi size mismatch")
+    length(S_coeffs) == _cplx_nlm(cfg) || error("S_coeffs length mismatch")
+    length(T_coeffs) == _cplx_nlm(cfg) || error("T_coeffs length mismatch")
+
+    # Fourier transform u_theta and u_phi along longitude
+    theta_fourier = Matrix{Complex{T}}(undef, nlat, nphi)
+    phi_fourier   = Matrix{Complex{T}}(undef, nlat, nphi)
+    for i in 1:nlat
+        azimuthal_fft_complex_forward!(cfg, view(u_theta, i, :), view(theta_fourier, i, :))
+        azimuthal_fft_complex_forward!(cfg, view(u_phi,   i, :), view(phi_fourier,   i, :))
+    end
+
+    fill!(S_coeffs, zero(Complex{T}))
+    fill!(T_coeffs, zero(Complex{T}))
+    idx_list = _cplx_lm_indices(cfg)
+
+    for (idx, (l, m)) in enumerate(idx_list)
+        l >= 1 || continue
+        abs(m) <= nphi ÷ 2 || continue
+        m_idx = m >= 0 ? m + 1 : nphi + m + 1
+        sph_int = zero(Complex{T})
+        tor_int = zero(Complex{T})
+        for i in 1:nlat
+            θ = cfg.theta_grid[i]
+            sθ = sin(θ)
+            invs = sθ > 1e-12 ? (one(T)/sθ) : zero(T)
+            w = cfg.gauss_weights[i]
+            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
+            Plm = cfg.plm_cache[i, k]
+            # d/dθ P_l^{|m|}(cosθ)
+            dPlm = _plm_dtheta(cfg, l, m, θ, i)
+            uθm = theta_fourier[i, m_idx]
+            uφm = phi_fourier[i, m_idx]
+            # Projections
+            sph_int += (uθm * dPlm + uφm * (Complex{T}(0, m) * Plm * invs)) * w
+            tor_int += (uθm * (Complex{T}(0, m) * Plm * invs) - uφm * dPlm) * w
+        end
+        norm = T(1) / (l * (l + 1))
+        S_coeffs[idx] = sph_int * norm
+        T_coeffs[idx] = tor_int * norm
+    end
+    return S_coeffs, T_coeffs
+end
+
+"""
+    cplx_analyze_vector(cfg, u_theta, u_phi)
+
+Allocating version of complex vector analysis; returns (S_coeffs, T_coeffs).
+"""
+function cplx_analyze_vector(cfg::SHTnsConfig{T},
+                             u_theta::AbstractMatrix{Complex{T}},
+                             u_phi::AbstractMatrix{Complex{T}}) where T
+    S_coeffs = Vector{Complex{T}}(undef, _cplx_nlm(cfg))
+    T_coeffs = Vector{Complex{T}}(undef, _cplx_nlm(cfg))
+    return cplx_spat_to_sphtor!(cfg, u_theta, u_phi, S_coeffs, T_coeffs)
+end
+
+"""
     cplx_vorticity_spatial_from_potentials(cfg, S_coeffs, T_coeffs)
 
 Compute spatial vertical vorticity (radial curl) as complex field from potentials using spectral identity:
@@ -534,4 +629,21 @@ function _cplx_nlm(cfg::SHTnsConfig)
         end
     end
     return total
+end
+
+# Cache of per-m mode groups: m => [(complex_idx, plm_k, l)]
+const _cplx_groups_cache = IdDict{SHTnsConfig, Dict{Int, Vector{NTuple{3,Int}}}}()
+
+function _cplx_mode_groups(cfg::SHTnsConfig)
+    groups = get!(_cplx_groups_cache, cfg) do
+        d = Dict{Int, Vector{NTuple{3,Int}}}()
+        idx_list = _cplx_lm_indices(cfg)
+        for (idx, (l, m)) in enumerate(idx_list)
+            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
+            v = get!(d, m, NTuple{3,Int}[])
+            push!(v, (idx, k, l))
+        end
+        d
+    end
+    return groups
 end
