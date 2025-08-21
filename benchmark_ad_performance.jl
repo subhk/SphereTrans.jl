@@ -21,7 +21,7 @@ try
     global AD_AVAILABLE = true
 catch
     global AD_AVAILABLE = false
-    println("⚠ AD packages not available - install with: Pkg.add([\"ForwardDiff\", \"Zygote\"])")
+    println(" AD packages not available - install with: Pkg.add([\"ForwardDiff\", \"Zygote\"])")
 end
 
 if AD_AVAILABLE
@@ -93,7 +93,7 @@ function benchmark_function(test_func::Function, cfg, sh_coeffs, name::String)
         
         return metrics
     catch e
-        println("    ❌ Benchmark failed: $e")
+        println("     Benchmark failed: $e")
         return PerformanceMetrics()
     end
 end
@@ -129,11 +129,11 @@ function analyze_memory_allocations(f::Function, cfg, sh_coeffs, name::String)
     
     # Check for major allocation sources
     if alloc_result > 1_000_000  # > 1MB
-        println("      ⚠ HIGH MEMORY USAGE detected")
+        println("       HIGH MEMORY USAGE detected")
     elseif alloc_result > 100_000  # > 100KB  
-        println("      ⚠ Moderate memory usage")
+        println("       Moderate memory usage")
     else
-        println("      ✓ Low memory usage")
+        println("       Low memory usage")
     end
     
     return alloc_result
@@ -144,20 +144,20 @@ Run comprehensive AD performance benchmark
 """
 function run_ad_benchmark()
     if !AD_AVAILABLE
-        println("❌ Cannot run AD benchmarks - packages not available")
+        println(" Cannot run AD benchmarks - packages not available")
         return
     end
     
     config = BenchmarkConfig()
     
-    println("🚀 Starting AD Performance Benchmark")
+    println(" Starting AD Performance Benchmark")
     println("="^60)
     
     # Results storage
     results = Dict()
     
     for lmax in config.lmax_values
-        println("\\n📊 Testing lmax = $lmax")
+        println("\\n Testing lmax = $lmax")
         println("-"^40)
         
         # Create configuration
@@ -170,7 +170,7 @@ function run_ad_benchmark()
         results[lmax] = Dict()
         
         for (test_name, test_func) in config.test_functions
-            println("\\n  🔬 Testing $test_name")
+            println("\\n   Testing $test_name")
             
             # Test forward function
             forward_metrics = benchmark_function(test_func, cfg, sh_coeffs, test_name)
@@ -193,7 +193,7 @@ function run_ad_benchmark()
                     results[lmax]["$test_name\_fd"] = fd_metrics
                     
                 catch e
-                    println("    ❌ ForwardDiff test failed: $e")
+                    println("     ForwardDiff test failed: $e")
                 end
             end
             
@@ -215,18 +215,18 @@ function run_ad_benchmark()
                     results[lmax]["$test_name\_zy"] = zy_metrics
                     
                 catch e
-                    println("    ❌ Zygote test failed: $e")
+                    println("     Zygote test failed: $e")
                 end
             end
             
             # Memory allocation analysis
-            println("\\n    📊 Memory Analysis:")
+            println("\\n     Memory Analysis:")
             analyze_memory_allocations(test_func, cfg, sh_coeffs, test_name)
         end
     end
     
     # Summary analysis
-    println("\\n\\n📋 PERFORMANCE SUMMARY")
+    println("\\n\\n PERFORMANCE SUMMARY")
     println("="^60)
     
     analyze_scalability(results)
@@ -240,7 +240,7 @@ end
 Analyze performance scalability with problem size
 """
 function analyze_scalability(results::Dict)
-    println("\\n🔍 Scalability Analysis:")
+    println("\\n Scalability Analysis:")
     
     for test_name in ["synthesis_power_fd", "power_spectrum_zy"]
         if all(haskey(results[lmax], test_name) for lmax in keys(results))
@@ -262,11 +262,11 @@ function analyze_scalability(results::Dict)
                 println("    Scaling exponent: $(@sprintf("%.2f", scaling_exponent))")
                 
                 if scaling_exponent < 1.5
-                    println("    ✅ Good scalability (sub-quadratic)")
+                    println("     Good scalability (sub-quadratic)")
                 elseif scaling_exponent < 2.5
-                    println("    ⚠ Moderate scalability (quadratic-ish)")
+                    println("     Moderate scalability (quadratic-ish)")
                 else
-                    println("    ❌ Poor scalability (super-quadratic)")
+                    println("     Poor scalability (super-quadratic)")
                 end
             end
         end
@@ -277,7 +277,7 @@ end
 Identify performance bottlenecks
 """
 function identify_bottlenecks(results::Dict)
-    println("\\n🎯 Bottleneck Analysis:")
+    println("\\n Bottleneck Analysis:")
     
     # Find highest memory users
     max_memory = 0
@@ -320,7 +320,7 @@ end
 Suggest performance optimizations based on results
 """
 function suggest_optimizations(results::Dict)
-    println("\\n💡 Optimization Suggestions:")
+    println("\\n Optimization Suggestions:")
     
     suggestions = String[]
     
@@ -366,11 +366,11 @@ Compare original vs optimized implementations if available
 """
 function compare_implementations()
     if !OPTIMIZED_AVAILABLE
-        println("⚠ Optimized implementations not available for comparison")
+        println(" Optimized implementations not available for comparison")
         return
     end
     
-    println("\\n🏁 Original vs Optimized Comparison")
+    println("\\n Original vs Optimized Comparison")
     println("="^50)
     
     # This would require loading both versions and comparing
@@ -381,11 +381,11 @@ end
 Main benchmark execution
 """
 function main()
-    println("🔧 SHTnsKit.jl AD Performance Benchmark")
+    println(" SHTnsKit.jl AD Performance Benchmark")
     println("="^50)
     
     if !AD_AVAILABLE
-        println("❌ Automatic differentiation packages not available")
+        println(" Automatic differentiation packages not available")
         println("Install with: julia -e 'using Pkg; Pkg.add([\"ForwardDiff\", \"Zygote\"])'")
         return
     end
@@ -402,7 +402,7 @@ function main()
     # Compare implementations if available
     compare_implementations()
     
-    println("\\n✅ Benchmark completed!")
+    println("\\n Benchmark completed!")
     return results
 end
 

@@ -7,43 +7,43 @@ println("Testing AD accuracy fixes...")
 # Test with the compiled version first
 try
     using SHTnsKit
-    println("✓ SHTnsKit loaded")
+    println(" SHTnsKit loaded")
     
     # Create test configuration  
     cfg = create_gauss_config(4, 4)
     nlm = get_nlm(cfg)
     sh_coeffs = 0.1 * randn(nlm)
     
-    println("✓ Configuration created: lmax=$(get_lmax(cfg)), nlm=$nlm")
+    println(" Configuration created: lmax=$(get_lmax(cfg)), nlm=$nlm")
     
     # Test basic functions exist
     spatial = synthesize(cfg, sh_coeffs)
-    println("✓ Synthesis works")
+    println(" Synthesis works")
     
     sh_recovered = analyze(cfg, spatial)
     error = norm(sh_coeffs - sh_recovered)
-    println("✓ Analysis works, round-trip error: $(error)")
+    println(" Analysis works, round-trip error: $(error)")
     
     # Test power spectrum  
     power = power_spectrum(cfg, sh_coeffs)
-    println("✓ Power spectrum works: $(length(power)) values")
+    println(" Power spectrum works: $(length(power)) values")
     
     total_pow = total_power(cfg, sh_coeffs)
-    println("✓ Total power: $total_pow")
+    println(" Total power: $total_pow")
     
     # Test point evaluation
     try
         val = evaluate_at_point(cfg, sh_coeffs, π/3, π/4)
-        println("✓ Point evaluation works: $val")
+        println(" Point evaluation works: $val")
     catch e
-        println("⚠ Point evaluation issue: $e")
+        println(" Point evaluation issue: $e")
     end
     
     # Now test ForwardDiff
     println("\n--- Testing ForwardDiff ---")
     try
         using ForwardDiff
-        println("✓ ForwardDiff loaded")
+        println(" ForwardDiff loaded")
         
         # Simple test function
         function test_func(sh)
@@ -54,7 +54,7 @@ try
         # This should trigger the extension
         try
             grad = ForwardDiff.gradient(test_func, sh_coeffs)
-            println("✓ ForwardDiff gradient computed: norm = $(norm(grad))")
+            println(" ForwardDiff gradient computed: norm = $(norm(grad))")
             
             # Finite difference check
             h = 1e-8
@@ -64,26 +64,26 @@ try
             println("  Component 1: AD=$(grad[1]), FD=$fd_grad_1, Error=$error_1")
             
             if error_1 < 1e-6
-                println("✓ ForwardDiff accuracy excellent")
+                println(" ForwardDiff accuracy excellent")
             elseif error_1 < 1e-3
-                println("✓ ForwardDiff accuracy good") 
+                println(" ForwardDiff accuracy good") 
             else
-                println("⚠ ForwardDiff accuracy may have issues")
+                println(" ForwardDiff accuracy may have issues")
             end
             
         catch e
-            println("❌ ForwardDiff gradient failed: $e")
+            println(" ForwardDiff gradient failed: $e")
         end
         
     catch e
-        println("❌ ForwardDiff loading failed: $e")
+        println(" ForwardDiff loading failed: $e")
     end
     
     # Test Zygote
     println("\n--- Testing Zygote ---")
     try
         using Zygote
-        println("✓ Zygote loaded")
+        println(" Zygote loaded")
         
         function test_func(sh)
             spatial = synthesize(cfg, sh)
@@ -93,7 +93,7 @@ try
         try
             value, grad = Zygote.withgradient(test_func, sh_coeffs)
             grad = grad[1]
-            println("✓ Zygote gradient computed: value=$(value[1]), grad_norm=$(norm(grad))")
+            println(" Zygote gradient computed: value=$(value[1]), grad_norm=$(norm(grad))")
             
             # Finite difference check
             h = 1e-8  
@@ -103,19 +103,19 @@ try
             println("  Component 1: AD=$(grad[1]), FD=$fd_grad_1, Error=$error_1")
             
             if error_1 < 1e-6
-                println("✓ Zygote accuracy excellent")
+                println(" Zygote accuracy excellent")
             elseif error_1 < 1e-3
-                println("✓ Zygote accuracy good")
+                println(" Zygote accuracy good")
             else
-                println("⚠ Zygote accuracy may have issues")
+                println(" Zygote accuracy may have issues")
             end
             
         catch e
-            println("❌ Zygote gradient failed: $e")
+            println(" Zygote gradient failed: $e")
         end
         
     catch e
-        println("❌ Zygote loading failed: $e")
+        println(" Zygote loading failed: $e")
     end
     
     # Test power spectrum accuracy
@@ -142,25 +142,25 @@ try
         println("Power spectrum gradient error: $rel_error")
         
         if rel_error < 1e-10
-            println("✅ Power spectrum derivative accuracy EXCELLENT - fixes working!")
+            println(" Power spectrum derivative accuracy EXCELLENT - fixes working!")
         elseif rel_error < 1e-6
-            println("✓ Power spectrum derivative accuracy good")  
+            println(" Power spectrum derivative accuracy good")  
         else
-            println("❌ Power spectrum derivative has accuracy issues")
+            println(" Power spectrum derivative has accuracy issues")
         end
         
     catch e
-        println("⚠ Power spectrum derivative test failed: $e")
+        println(" Power spectrum derivative test failed: $e")
     end
     
     println("\n=== Summary ===")
-    println("✓ Basic SHTnsKit functions work")
-    println("✓ AD packages can be loaded")
-    println("✓ Extensions trigger AD methods") 
-    println("✓ Accuracy fixes are in place")
+    println(" Basic SHTnsKit functions work")
+    println(" AD packages can be loaded")
+    println(" Extensions trigger AD methods") 
+    println(" Accuracy fixes are in place")
     
 catch e
-    println("❌ Test failed: $e")
+    println(" Test failed: $e")
     println("This may indicate:")
     println("  - Package not properly installed")
     println("  - Missing dependencies")

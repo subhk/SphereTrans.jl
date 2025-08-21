@@ -8,7 +8,7 @@ memory usage patterns to guide zero-allocation optimizations.
 using SHTnsKit
 using LinearAlgebra
 
-println("🔍 Analyzing Memory Allocations in AD Extensions")
+println(" Analyzing Memory Allocations in AD Extensions")
 println("="^60)
 
 # Load source directly to avoid compilation issues
@@ -19,13 +19,13 @@ using .SHTnsKit
 Track allocations for a specific function call
 """
 function track_allocations(f, args...; name="Function")
-    println("\n📊 Allocation analysis for: $name")
+    println("\n Allocation analysis for: $name")
     
     # Warmup to avoid measuring compilation
     try
         f(args...)
     catch
-        println("  ⚠ Warmup failed, continuing with cold measurement")
+        println("   Warmup failed, continuing with cold measurement")
     end
     
     # Measure allocations
@@ -53,7 +53,7 @@ end
 Analyze specific allocation patterns in current AD code
 """
 function analyze_current_ad_patterns()
-    println("\n🔍 Current AD Implementation Analysis")
+    println("\n Current AD Implementation Analysis")
     println("-"^50)
     
     # Create test configuration
@@ -71,7 +71,7 @@ function analyze_current_ad_patterns()
     basic_analyze_allocs = track_allocations(analyze, cfg, spatial_data, name="Basic analyze")
     
     # Simulate ForwardDiff-style operations (the problematic patterns)
-    println("\n🚨 Simulating Current AD Allocation Patterns:")
+    println("\n Simulating Current AD Allocation Patterns:")
     
     # Pattern 1: Array comprehensions (major allocator)
     function array_comprehension_pattern(n_partials=8)
@@ -131,7 +131,7 @@ function analyze_current_ad_patterns()
     
     power_allocs = track_allocations(power_spectrum_pattern, name="Repeated power spectrum")
     
-    println("\n📊 ALLOCATION HOTSPOT SUMMARY:")
+    println("\n ALLOCATION HOTSPOT SUMMARY:")
     println("="^50)
     total_problematic = array_comp_allocs + large_matrix_allocs + tuple_allocs + power_allocs
     println("  Array comprehensions: $(round(Int, array_comp_allocs/1024)) KB")
@@ -151,7 +151,7 @@ end
 Demonstrate zero-allocation patterns
 """
 function demonstrate_zero_allocation_patterns()
-    println("\n✅ Zero-Allocation Patterns Demonstration")
+    println("\n Zero-Allocation Patterns Demonstration")
     println("-"^50)
     
     cfg = create_gauss_config(8, 8)
@@ -251,7 +251,7 @@ function demonstrate_zero_allocation_patterns()
     randn!(values_buffer)
     zero_alloc_3 = track_allocations(zero_alloc_small_arrays, name="Stack-allocated processing")
     
-    println("\n📊 Zero-Allocation Results:")
+    println("\n Zero-Allocation Results:")
     total_zero_alloc = zero_alloc_1 + zero_alloc_2 + zero_alloc_3
     println("  Pattern 1 (extraction): $(zero_alloc_1) bytes")
     println("  Pattern 2 (in-place ops): $(zero_alloc_2) bytes") 
@@ -259,9 +259,9 @@ function demonstrate_zero_allocation_patterns()
     println("  TOTAL: $(total_zero_alloc) bytes")
     
     if total_zero_alloc < 1000
-        println("  ✅ SUCCESS: Near-zero allocations achieved!")
+        println("   SUCCESS: Near-zero allocations achieved!")
     else
-        println("  ⚠ Still some allocations present")
+        println("   Still some allocations present")
     end
     
     return total_zero_alloc
@@ -271,7 +271,7 @@ end
 Analyze memory access patterns for cache efficiency
 """
 function analyze_cache_patterns()
-    println("\n🧠 Cache Access Pattern Analysis") 
+    println("\n Cache Access Pattern Analysis") 
     println("-"^50)
     
     cfg = create_gauss_config(16, 16)  # Larger for cache analysis
@@ -343,33 +343,33 @@ function main()
     analyze_cache_patterns()
     
     # Final summary
-    println("\n🏁 FINAL ALLOCATION ANALYSIS SUMMARY")
+    println("\n FINAL ALLOCATION ANALYSIS SUMMARY")
     println("="^60)
     
     if total_problematic > 0 && total_optimized >= 0
         reduction_factor = total_problematic / max(total_optimized, 100)  # Avoid div by 0
-        println("📊 Memory allocation reduction potential:")
+        println(" Memory allocation reduction potential:")
         println("  Current problematic patterns: $(round(Int, total_problematic/1024)) KB")
         println("  Optimized zero-allocation patterns: $(round(Int, total_optimized/1024)) KB")
-        println("  🎯 REDUCTION FACTOR: $(round(Int, reduction_factor))x less memory!")
+        println("   REDUCTION FACTOR: $(round(Int, reduction_factor))x less memory!")
         
-        println("\n💡 Key optimization strategies identified:")
-        println("  ✅ Pre-allocated buffer pools")
-        println("  ✅ In-place operations with views")
-        println("  ✅ Stack-allocated small arrays")
-        println("  ✅ Contiguous memory access patterns")
-        println("  ✅ Zero-copy operations where possible")
+        println("\n Key optimization strategies identified:")
+        println("   Pre-allocated buffer pools")
+        println("   In-place operations with views")
+        println("   Stack-allocated small arrays")
+        println("   Contiguous memory access patterns")
+        println("   Zero-copy operations where possible")
         
         if reduction_factor > 100
-            println("\n🚀 MASSIVE improvement potential - 100x+ reduction achievable!")
+            println("\n MASSIVE improvement potential - 100x+ reduction achievable!")
         elseif reduction_factor > 10
-            println("\n🎯 SIGNIFICANT improvement potential - 10x+ reduction achievable!")
+            println("\n SIGNIFICANT improvement potential - 10x+ reduction achievable!")
         else
-            println("\n✅ Moderate improvement potential identified")
+            println("\n Moderate improvement potential identified")
         end
     end
     
-    println("\n📋 Next steps:")
+    println("\n Next steps:")
     println("  1. Implement zero-allocation buffer management")
     println("  2. Replace array comprehensions with pre-allocated loops")
     println("  3. Use views instead of array copies")

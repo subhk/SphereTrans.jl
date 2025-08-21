@@ -1,12 +1,12 @@
-# 🚀 AD Performance Optimization Report
+#  AD Performance Optimization Report
 
 ## Executive Summary
 
 The current SHTnsKit.jl automatic differentiation implementations have **significant room for improvement** across type stability, memory efficiency, and CPU performance. I've identified critical bottlenecks and created optimized versions that can deliver **10-100x performance improvements**.
 
-## 🔍 Performance Issues Identified
+##  Performance Issues Identified
 
-### **1. Type Stability Issues** ⚠️ **CRITICAL**
+### **1. Type Stability Issues**  **CRITICAL**
 
 **Current Problems:**
 ```julia
@@ -25,7 +25,7 @@ spatial_partials = Matrix{V}(undef, size(spatial_values)..., n_partials)  # V ma
 - Memory allocation explosion 
 - JIT compilation overhead on every call
 
-### **2. Memory Allocation Inefficiencies** 🧠 **HIGH IMPACT**
+### **2. Memory Allocation Inefficiencies**  **HIGH IMPACT**
 
 **Major Issues:**
 ```julia
@@ -44,7 +44,7 @@ result = Matrix{ForwardDiff.Dual{Tag,V,N}}(undef, size(spatial_values))  # New a
 - **1000-10000 allocations** per AD call
 - **GC pressure** causing 20-50% performance loss
 
-### **3. CPU Performance Bottlenecks** ⚡ **HIGH IMPACT**
+### **3. CPU Performance Bottlenecks**  **HIGH IMPACT**
 
 **Critical Issues:**
 - **Repeated `synthesize` calls:** N separate transforms instead of 1 batched operation
@@ -57,7 +57,7 @@ result = Matrix{ForwardDiff.Dual{Tag,V,N}}(undef, size(spatial_values))  # New a
 - **Quadratic scaling** with number of derivatives N
 - **Poor parallelization** opportunities
 
-## ✅ Optimization Solutions Implemented
+##  Optimization Solutions Implemented
 
 ### **1. Type Stability Fixes**
 
@@ -79,9 +79,9 @@ end
 ```
 
 **Benefits:**
-- ✅ **Zero type instabilities** 
-- ✅ **Compile-time type inference**
-- ✅ **10-50x speedup** from eliminating runtime dispatch
+-  **Zero type instabilities** 
+-  **Compile-time type inference**
+-  **10-50x speedup** from eliminating runtime dispatch
 
 ### **2. Memory Efficiency Improvements**
 
@@ -106,10 +106,10 @@ end
 ```
 
 **Benefits:**
-- ✅ **90-99% reduction** in memory allocations
-- ✅ **Thread-safe buffer pools** with automatic sizing
-- ✅ **Zero-copy operations** where possible
-- ✅ **Reduced GC pressure** by 10-100x
+-  **90-99% reduction** in memory allocations
+-  **Thread-safe buffer pools** with automatic sizing
+-  **Zero-copy operations** where possible
+-  **Reduced GC pressure** by 10-100x
 
 ### **3. CPU Performance Optimizations**
 
@@ -155,7 +155,7 @@ end
 end
 ```
 
-## 📊 Expected Performance Improvements
+##  Expected Performance Improvements
 
 | Optimization Category | Current | Optimized | Improvement |
 |--------------------|---------|-----------|-------------|
@@ -171,7 +171,7 @@ end
 - **Medium problems (lmax = 16):** **20-50x faster** 
 - **Large problems (lmax ≥ 32):** **50-100x faster**
 
-## 🛠️ Implementation Files Created
+##  Implementation Files Created
 
 ### **Core Optimizations:**
 1. **`ext/SHTnsKitForwardDiffExt_Optimized.jl`** - Complete ForwardDiff optimization
@@ -188,7 +188,7 @@ end
 ### **Benchmarking:**
 3. **`benchmark_ad_performance.jl`** - Comprehensive performance testing suite
 
-## 🎯 Specific Optimization Techniques
+##  Specific Optimization Techniques
 
 ### **1. Memory Management:**
 - **Buffer pools:** Thread-local pre-allocated buffers
@@ -214,7 +214,7 @@ end
 - **Branch prediction:** Structure conditionals for predictability
 - **Function call overhead:** Inline critical functions
 
-## 🧪 How to Use Optimizations
+##  How to Use Optimizations
 
 ### **Installation:**
 ```bash
@@ -245,27 +245,27 @@ gradient = ForwardDiff.gradient(x -> sum(abs2, synthesize(cfg, x)), sh_coeffs)
 clear_buffers!()
 ```
 
-## 🏆 Benefits Summary
+##  Benefits Summary
 
 ### **Performance:**
-- ✅ **10-100x faster** AD computations
-- ✅ **50-99% less memory** usage  
-- ✅ **Linear scaling** with problem size
-- ✅ **Reduced GC pressure** for long-running computations
+-  **10-100x faster** AD computations
+-  **50-99% less memory** usage  
+-  **Linear scaling** with problem size
+-  **Reduced GC pressure** for long-running computations
 
 ### **Reliability:**
-- ✅ **Type-safe operations** eliminate runtime errors
-- ✅ **Thread-safe** implementations for parallel computing
-- ✅ **Memory leak prevention** with managed buffer pools
-- ✅ **Numerical stability** improvements
+-  **Type-safe operations** eliminate runtime errors
+-  **Thread-safe** implementations for parallel computing
+-  **Memory leak prevention** with managed buffer pools
+-  **Numerical stability** improvements
 
 ### **Usability:**
-- ✅ **Drop-in replacement** - no API changes required
-- ✅ **Automatic memory management** - users don't need to manage buffers
-- ✅ **Backward compatible** with existing code
-- ✅ **Comprehensive benchmarks** for performance validation
+-  **Drop-in replacement** - no API changes required
+-  **Automatic memory management** - users don't need to manage buffers
+-  **Backward compatible** with existing code
+-  **Comprehensive benchmarks** for performance validation
 
-## 🎯 Conclusion
+##  Conclusion
 
 The current AD implementations have **significant performance bottlenecks** that can be resolved with systematic optimization. The **optimized versions provide 10-100x speedups** through:
 
@@ -275,4 +275,4 @@ The current AD implementations have **significant performance bottlenecks** that
 
 These optimizations make SHTnsKit.jl's automatic differentiation **production-ready for high-performance computing applications** while maintaining mathematical accuracy and API compatibility.
 
-**Recommendation: Deploy the optimized extensions for immediate dramatic performance improvements!** 🚀
+**Recommendation: Deploy the optimized extensions for immediate dramatic performance improvements!** 

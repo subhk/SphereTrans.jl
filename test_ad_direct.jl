@@ -13,28 +13,28 @@ try
     # Load ForwardDiff and Zygote first
     println("Loading AD packages...")
     using ForwardDiff, Zygote
-    println("✓ AD packages loaded")
+    println(" AD packages loaded")
     
     # Now load SHTnsKit source
     println("Loading SHTnsKit from source...")
     include("src/SHTnsKit.jl")
     using .SHTnsKit
-    println("✓ SHTnsKit loaded from source")
+    println(" SHTnsKit loaded from source")
     
     # Create test config
     cfg = create_gauss_config(4, 4)
     nlm = get_nlm(cfg)
     sh_coeffs = 0.1 * randn(nlm)
     
-    println("✓ Test configuration: lmax=4, nlm=$nlm")
+    println(" Test configuration: lmax=4, nlm=$nlm")
     
     # Test basic functionality
     spatial = synthesize(cfg, sh_coeffs)
-    println("✓ Synthesis works: spatial size = $(size(spatial))")
+    println(" Synthesis works: spatial size = $(size(spatial))")
     
     sh_back = analyze(cfg, spatial)
     error = norm(sh_coeffs - sh_back) / norm(sh_coeffs)
-    println("✓ Analysis works: relative error = $error")
+    println(" Analysis works: relative error = $error")
     
     # Test extensions are loaded
     println("\\nChecking extensions...")
@@ -44,7 +44,7 @@ try
     
     try
         grad_fd = ForwardDiff.gradient(test_func, sh_coeffs)
-        println("✅ ForwardDiff extension working! Gradient norm: $(norm(grad_fd))")
+        println(" ForwardDiff extension working! Gradient norm: $(norm(grad_fd))")
         
         # Numerical check
         h = 1e-8
@@ -53,15 +53,15 @@ try
         println("  First component accuracy: AD=$(grad_fd[1]), FD=$num_grad, error=$error")
         
     catch e
-        println("❌ ForwardDiff extension issue: ", typeof(e), " - ", e)
+        println(" ForwardDiff extension issue: ", typeof(e), " - ", e)
     end
     
     try
         val, grad_zy = Zygote.withgradient(test_func, sh_coeffs)
-        println("✅ Zygote extension working! Value: $(val[1]), gradient norm: $(norm(grad_zy[1]))")
+        println(" Zygote extension working! Value: $(val[1]), gradient norm: $(norm(grad_zy[1]))")
         
     catch e
-        println("❌ Zygote extension issue: ", typeof(e), " - ", e)
+        println(" Zygote extension issue: ", typeof(e), " - ", e)
     end
     
     # Test power spectrum accuracy
@@ -79,11 +79,11 @@ try
     println("Power calculation error: $power_error")
     
     if power_error < 1e-10
-        println("✅ Power spectrum calculation EXACT")
+        println(" Power spectrum calculation EXACT")
     elseif power_error < 1e-6
-        println("✓ Power spectrum calculation good")
+        println(" Power spectrum calculation good")
     else
-        println("⚠ Power spectrum calculation may have issues")
+        println(" Power spectrum calculation may have issues")
     end
     
     # Test power spectrum derivative
@@ -101,11 +101,11 @@ try
         println("  Relative error: $rel_error")
         
         if rel_error < 1e-12
-            println("✅ EXCELLENT: Power spectrum derivative fixes working perfectly!")
+            println(" EXCELLENT: Power spectrum derivative fixes working perfectly!")
         elseif rel_error < 1e-6
-            println("✓ GOOD: Power spectrum derivative accuracy acceptable")
+            println(" GOOD: Power spectrum derivative accuracy acceptable")
         else
-            println("❌ ISSUE: Power spectrum derivative has accuracy problems")
+            println(" ISSUE: Power spectrum derivative has accuracy problems")
             
             # Show first few components for debugging
             println("  First 5 components comparison:")
@@ -115,13 +115,13 @@ try
         end
         
     catch e
-        println("❌ Power spectrum derivative test failed: $e")
+        println(" Power spectrum derivative test failed: $e")
     end
     
-    println("\\n🎉 AD accuracy test completed!")
+    println("\\n AD accuracy test completed!")
     
 catch e
-    println("❌ Test failed with error: $e")
+    println(" Test failed with error: $e")
     println("\\nStacktrace:")
     for (exc, bt) in Base.catch_stack()
         Base.showerror(stdout, exc, bt)

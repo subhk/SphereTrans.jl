@@ -26,7 +26,7 @@ end
 
 # Example 1: Forward-mode differentiation with ForwardDiff
 function example_forwarddiff()
-    println("\n🔄 ForwardDiff Examples (Forward-mode AD)")
+    println("\n ForwardDiff Examples (Forward-mode AD)")
     println("="^60)
     
     # Create SHT configuration
@@ -77,7 +77,7 @@ end
 
 # Example 2: Reverse-mode differentiation with Zygote
 function example_zygote(cfg, sh_coeffs)
-    println("\n⚡ Zygote Examples (Reverse-mode AD)")
+    println("\n Zygote Examples (Reverse-mode AD)")
     println("="^60)
     
     # Example 2a: Same total power function using Zygote
@@ -115,7 +115,7 @@ end
 
 # Example 3: Vector field differentiation
 function example_vector_differentiation()
-    println("\n🌊 Vector Field Differentiation")
+    println("\n Vector Field Differentiation")
     println("="^60)
     
     cfg = create_gauss_config(6, 6)
@@ -154,7 +154,7 @@ end
 
 # Example 4: Comparison between ForwardDiff and Zygote
 function example_comparison()
-    println("\n🔍 ForwardDiff vs Zygote Comparison")
+    println("\n ForwardDiff vs Zygote Comparison")
     println("="^60)
     
     cfg = create_gauss_config(6, 6)
@@ -186,7 +186,7 @@ end
 
 # Example 5: Machine Learning-style optimization
 function example_optimization()
-    println("\n🎯 Optimization Example")
+    println("\n Optimization Example")
     println("="^60)
     
     cfg = create_gauss_config(4, 4)
@@ -235,7 +235,7 @@ end
 
 # Main execution
 function main()
-    println("🌍 SHTnsKit.jl Automatic Differentiation Examples")
+    println(" SHTnsKit.jl Automatic Differentiation Examples")
     println("="^60)
     println("This demonstrates forward-mode (ForwardDiff) and reverse-mode (Zygote)")
     println("automatic differentiation with spherical harmonic transforms.")
@@ -249,7 +249,7 @@ function main()
         example_comparison()
         example_optimization()
         
-        println("\n✅ All examples completed successfully!")
+        println("\n All examples completed successfully!")
         println("="^60)
         println("Key takeaways:")
         println("• ForwardDiff is excellent for functions with few inputs, many outputs")
@@ -259,7 +259,7 @@ function main()
         println("• Round-trip transforms preserve gradients correctly")
         
     catch e
-        println("❌ Error running examples: ", e)
+        println(" Error running examples: ", e)
         println("Make sure ForwardDiff and Zygote are installed and SHTnsKit is properly loaded.")
     end
 end

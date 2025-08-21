@@ -9,14 +9,14 @@ using LinearAlgebra
 using Statistics
 using Random
 
-println("🔍 Zero-Allocation Concept Validation")
+println(" Zero-Allocation Concept Validation")
 println("="^60)
 
 """
 Simulate current high-allocation AD patterns (problematic)
 """
 function demonstrate_current_problems()
-    println("\n❌ Current Problematic Allocation Patterns")
+    println("\n Current Problematic Allocation Patterns")
     println("-"^50)
     
     # Simulate typical AD problem size
@@ -77,18 +77,18 @@ function demonstrate_current_problems()
     
     total_problematic = allocs1 + allocs2 + allocs3
     
-    println("📊 Current Allocation Hotspots:")
+    println(" Current Allocation Hotspots:")
     println("  Array comprehensions: $(round(Int, allocs1/1024)) KB")
     println("  Large 3D matrices: $(round(Int, allocs2/1024)) KB")
     println("  Tuple splatting: $(round(Int, allocs3/1024)) KB")
     println("  TOTAL PROBLEMATIC: $(round(Int, total_problematic/1024)) KB")
     
     if total_problematic > 10*1024*1024  # > 10MB
-        println("  🚨 SEVERE: >10MB allocated per AD call!")
+        println("   SEVERE: >10MB allocated per AD call!")
     elseif total_problematic > 1024*1024  # > 1MB
-        println("  ⚠ HIGH: >1MB allocated per AD call")
+        println("   HIGH: >1MB allocated per AD call")
     else
-        println("  ✅ Moderate allocation levels")
+        println("   Moderate allocation levels")
     end
     
     return total_problematic
@@ -98,7 +98,7 @@ end
 Demonstrate zero-allocation solutions
 """
 function demonstrate_zero_allocation_solutions()
-    println("\n✅ Zero-Allocation Solutions")
+    println("\n Zero-Allocation Solutions")
     println("-"^50)
     
     nlm = 81
@@ -108,7 +108,7 @@ function demonstrate_zero_allocation_solutions()
     println("Same problem size: nlm=$nlm, spatial=$(nlat)×$(nphi), derivatives=$n_partials")
     
     # Pre-allocate ALL buffers once (this is the key!)
-    println("\n🧠 Pre-allocated Buffer Pool:")
+    println("\n Pre-allocated Buffer Pool:")
     values_buffer = Vector{Float64}(undef, nlm)
     partials_matrix = Matrix{Float64}(undef, nlm, n_partials)
     spatial_buffer = Matrix{Float64}(undef, nlat, nphi)
@@ -195,20 +195,20 @@ function demonstrate_zero_allocation_solutions()
     
     total_zero = allocs1 + allocs2 + allocs3
     
-    println("📊 Zero-Allocation Results:")
+    println(" Zero-Allocation Results:")
     println("  Pattern 1 (extraction): $(allocs1) bytes")
     println("  Pattern 2 (in-place): $(allocs2) bytes")
     println("  Pattern 3 (stack): $(allocs3) bytes")
     println("  TOTAL: $(total_zero) bytes")
     
     if total_zero < 100
-        println("  🎯 TARGET ACHIEVED: <100 bytes total!")
-        println("  ✅ Zero-allocation success!")
+        println("   TARGET ACHIEVED: <100 bytes total!")
+        println("   Zero-allocation success!")
     elseif total_zero < 1000
-        println("  🎯 NEAR TARGET: <1KB total")
-        println("  ✅ Very low allocation!")
+        println("   NEAR TARGET: <1KB total")
+        println("   Very low allocation!")
     else
-        println("  ⚠ Still some allocations: $(total_zero) bytes")
+        println("   Still some allocations: $(total_zero) bytes")
     end
     
     return total_zero
@@ -218,7 +218,7 @@ end
 Demonstrate cache-friendly memory access patterns
 """
 function demonstrate_cache_optimization()
-    println("\n🧠 Cache-Friendly Memory Access Patterns")
+    println("\n Cache-Friendly Memory Access Patterns")
     println("-"^50)
     
     # Larger arrays for cache analysis
@@ -270,7 +270,7 @@ function demonstrate_cache_optimization()
     GC.gc()
     good_time = @elapsed good_cache_pattern()
     
-    println("📊 Cache Performance Comparison:")
+    println(" Cache Performance Comparison:")
     println("  Bad (non-contiguous): $(round(bad_time*1000, digits=1)) ms")
     println("  Good (contiguous): $(round(good_time*1000, digits=1)) ms")
     
@@ -279,9 +279,9 @@ function demonstrate_cache_optimization()
         println("  Cache improvement: $(round(improvement, digits=1))x faster")
         
         if improvement > 2
-            println("  ✅ Significant cache benefit achieved!")
+            println("   Significant cache benefit achieved!")
         else
-            println("  ✅ Some cache benefit observed")
+            println("   Some cache benefit observed")
         end
     end
 end
@@ -302,41 +302,41 @@ function main()
     demonstrate_cache_optimization()
     
     # Final comparison
-    println("\n🏁 ZERO-ALLOCATION VALIDATION SUMMARY")
+    println("\n ZERO-ALLOCATION VALIDATION SUMMARY")
     println("="^50)
     
     if zero_allocs >= 0 && problematic_allocs > 0
         reduction_factor = problematic_allocs / max(zero_allocs, 100)  # Avoid div by zero
         
-        println("📊 Memory Allocation Analysis:")
+        println(" Memory Allocation Analysis:")
         println("  Current problematic: $(round(Int, problematic_allocs/1024)) KB")
         println("  Zero-allocation target: $(round(Int, zero_allocs/1024)) KB")
-        println("  🎯 REDUCTION ACHIEVED: $(round(Int, reduction_factor))x less memory!")
+        println("   REDUCTION ACHIEVED: $(round(Int, reduction_factor))x less memory!")
         
-        println("\n💡 Key Optimization Strategies Validated:")
-        println("  ✅ Pre-allocated buffer pools")
-        println("  ✅ In-place operations with views")  
-        println("  ✅ Stack-allocated small computations")
-        println("  ✅ Contiguous memory access patterns")
-        println("  ✅ Zero-copy operations where possible")
+        println("\n Key Optimization Strategies Validated:")
+        println("   Pre-allocated buffer pools")
+        println("   In-place operations with views")  
+        println("   Stack-allocated small computations")
+        println("   Contiguous memory access patterns")
+        println("   Zero-copy operations where possible")
         
         if reduction_factor > 100
-            println("\n🚀 MASSIVE improvement potential: 100x+ reduction!")
+            println("\n MASSIVE improvement potential: 100x+ reduction!")
             println("  From ~$(round(Int, problematic_allocs/1024/1024)) MB down to <1 KB per AD call")
         elseif reduction_factor > 10  
-            println("\n🎯 SIGNIFICANT improvement potential: 10x+ reduction!")
+            println("\n SIGNIFICANT improvement potential: 10x+ reduction!")
             println("  From ~$(round(Int, problematic_allocs/1024)) KB down to <100 bytes per AD call")
         else
-            println("\n✅ Moderate improvement achieved")
+            println("\n Moderate improvement achieved")
         end
         
-        println("\n📋 Implementation Status:")
-        println("  ✅ Zero-allocation concepts validated")
-        println("  ✅ Buffer management patterns proven")
-        println("  ✅ Memory reduction targets achievable")  
-        println("  ✅ Cache optimization benefits demonstrated")
+        println("\n Implementation Status:")
+        println("   Zero-allocation concepts validated")
+        println("   Buffer management patterns proven")
+        println("   Memory reduction targets achievable")  
+        println("   Cache optimization benefits demonstrated")
         
-        println("\n🚀 Ready for Production Deployment:")
+        println("\n Ready for Production Deployment:")
         println("  1. Zero-allocation extensions created")
         println("  2. Buffer management implemented")
         println("  3. Memory reduction validated")
@@ -344,7 +344,7 @@ function main()
         
         return (problematic=problematic_allocs, optimized=zero_allocs, reduction=reduction_factor)
     else
-        println("⚠ Validation completed with limited results")
+        println(" Validation completed with limited results")
         return nothing
     end
 end
@@ -354,6 +354,6 @@ if abspath(PROGRAM_FILE) == @__FILE__
     result = main()
     
     if result !== nothing
-        println("\n✨ Zero-allocation optimization: VALIDATED AND READY! ✨")
+        println("\n Zero-allocation optimization: VALIDATED AND READY! ")
     end
 end

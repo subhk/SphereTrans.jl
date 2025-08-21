@@ -3,7 +3,7 @@ Verification script for AD accuracy fixes.
 Tests the most critical components to ensure fixes are working correctly.
 """
 
-println("🔧 Verifying AD accuracy fixes...")
+println(" Verifying AD accuracy fixes...")
 
 try
     # Load the main package
@@ -11,17 +11,17 @@ try
     using .SHTnsKit
     using LinearAlgebra
     
-    println("✓ SHTnsKit loaded successfully")
+    println(" SHTnsKit loaded successfully")
     
     # Create test configuration
     cfg = create_gauss_config(4, 4)
     nlm = get_nlm(cfg)
     sh_coeffs = 0.1 * randn(nlm)
     
-    println("✓ Test configuration created (lmax=4, nlm=$nlm)")
+    println(" Test configuration created (lmax=4, nlm=$nlm)")
     
     # Test 1: Power spectrum derivative accuracy
-    println("\n📊 Testing power spectrum derivative accuracy...")
+    println("\n Testing power spectrum derivative accuracy...")
     
     function power_sum(sh)
         # Simple test: sum of all power spectrum coefficients
@@ -47,7 +47,7 @@ try
         grad_numeric[i] = (power_sum(sh_plus) - base_value) / h
     end
     
-    println("✓ Finite difference gradients computed")
+    println(" Finite difference gradients computed")
     
     # Test ForwardDiff if available
     try
@@ -61,15 +61,15 @@ try
             println("  Component $i: FD=$(grad_fd[i]:.6e), Numeric=$(grad_numeric[i]:.6e), Error=$(error:.2e)")
             
             if error > 1e-6
-                println("  ⚠ Warning: High error for component $i")
+                println("   Warning: High error for component $i")
             end
         end
         
         total_error = norm(grad_fd[1:5] - grad_numeric[1:5]) / norm(grad_fd[1:5])
-        println("✓ ForwardDiff total relative error: $(total_error:.2e)")
+        println(" ForwardDiff total relative error: $(total_error:.2e)")
         
     catch e
-        println("⚠ ForwardDiff not available: $e")
+        println(" ForwardDiff not available: $e")
     end
     
     # Test Zygote if available  
@@ -80,25 +80,25 @@ try
         grad_zy = grad_zy[1]
         
         # Compare first 5 components
-        println("\n🔄 Zygote gradient comparison:")
+        println("\n Zygote gradient comparison:")
         for i in 1:min(5, nlm)
             error = abs(grad_zy[i] - grad_numeric[i]) / max(abs(grad_zy[i]), abs(grad_numeric[i]), 1e-15)
             println("  Component $i: Zygote=$(grad_zy[i]:.6e), Numeric=$(grad_numeric[i]:.6e), Error=$(error:.2e)")
             
             if error > 1e-6
-                println("  ⚠ Warning: High error for component $i")
+                println("   Warning: High error for component $i")
             end
         end
         
         total_error = norm(grad_zy[1:5] - grad_numeric[1:5]) / norm(grad_zy[1:5])
-        println("✓ Zygote total relative error: $(total_error:.2e)")
+        println(" Zygote total relative error: $(total_error:.2e)")
         
     catch e
-        println("⚠ Zygote not available: $e")
+        println(" Zygote not available: $e")
     end
     
     # Test 2: Point evaluation accuracy
-    println("\n📍 Testing point evaluation gradient accuracy...")
+    println("\n Testing point evaluation gradient accuracy...")
     
     θ, φ = π/3, π/4
     function point_eval_test(sh)
@@ -146,7 +146,7 @@ try
     end
     
     # Test 3: Round-trip accuracy
-    println("\n🔄 Testing round-trip gradient accuracy...")
+    println("\n Testing round-trip gradient accuracy...")
     
     function roundtrip_test(sh)
         spatial = synthesize(cfg, sh)
@@ -158,25 +158,25 @@ try
     println("  Round-trip error: $(roundtrip_error:.2e)")
     
     if roundtrip_error < 1e-20
-        println("  ✓ Round-trip accuracy excellent")
+        println("   Round-trip accuracy excellent")
     elseif roundtrip_error < 1e-15
-        println("  ✓ Round-trip accuracy good")
+        println("   Round-trip accuracy good")
     else
-        println("  ⚠ Round-trip accuracy may have issues")
+        println("   Round-trip accuracy may have issues")
     end
     
     # Summary
-    println("\n📋 Summary:")
-    println("  ✓ All major tests completed")
-    println("  ✓ AD implementations have been improved for accuracy")
-    println("  ✓ Power spectrum derivatives fixed (removed incorrect m>0 doubling)")
-    println("  ✓ Point evaluation gradients improved (better spherical harmonic evaluation)")
-    println("  ✓ Spatial integration weights corrected (proper quadrature)")
+    println("\n Summary:")
+    println("   All major tests completed")
+    println("   AD implementations have been improved for accuracy")
+    println("   Power spectrum derivatives fixed (removed incorrect m>0 doubling)")
+    println("   Point evaluation gradients improved (better spherical harmonic evaluation)")
+    println("   Spatial integration weights corrected (proper quadrature)")
     
-    println("\n🎉 AD accuracy verification completed!")
+    println("\n AD accuracy verification completed!")
     
 catch e
-    println("❌ Error during verification: $e")
+    println(" Error during verification: $e")
     println("Stack trace:")
     Base.showerror(stdout, e, catch_backtrace())
     println()

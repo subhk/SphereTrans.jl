@@ -94,9 +94,9 @@ println("Using library: $current_path")
 
 # Validate the library is working
 if SHTnsKit.validate_library()
-    println("✓ SHTns library is working correctly")
+    println(" SHTns library is working correctly")
 else
-    println("✗ Library validation failed - check your SHTns installation")
+    println(" Library validation failed - check your SHTns installation")
 end
 ```
 

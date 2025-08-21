@@ -2,7 +2,7 @@
 
 This document summarizes the critical accuracy issues found in the SHTnsKit.jl automatic differentiation implementations and the fixes applied.
 
-## 🔍 Issues Identified
+##  Issues Identified
 
 ### 1. Power Spectrum Derivative Error
 **Problem**: Incorrect factor of 4 for m>0 modes in power spectrum derivatives.
@@ -50,7 +50,7 @@ phase_factor = cos(m * phi)  # Simplified for real harmonics
 ### 4. Mathematical Inconsistencies
 **Problem**: Derivative formulas not matching the actual mathematical operations.
 
-## ✅ Fixes Applied
+##  Fixes Applied
 
 ### 1. Power Spectrum Derivative Correction
 
@@ -146,7 +146,7 @@ end
 - Correct trapezoid rule at poles
 - Proper sin(θ) factor for spherical coordinates
 
-## 🧪 Validation Tests Added
+##  Validation Tests Added
 
 ### 1. Comprehensive Accuracy Test Suite
 **File**: `test/test_ad_accuracy.jl`
@@ -170,7 +170,7 @@ Quick verification script that:
 - Checks round-trip accuracy
 - Provides detailed error reporting
 
-## 📊 Expected Accuracy Improvements
+##  Expected Accuracy Improvements
 
 ### Before Fixes:
 - Power spectrum gradients: **Wrong by factor of 2 for m>0**
@@ -184,7 +184,7 @@ Quick verification script that:
 - Spatial integration: **< 1e-6 relative error** 
 - Consistency: **< 1e-12 relative error** between AD methods
 
-## 🔧 Testing the Fixes
+##  Testing the Fixes
 
 Run the verification:
 ```bash
@@ -196,7 +196,7 @@ Run comprehensive tests:
 julia --project=. -e "include(\"test/test_ad_accuracy.jl\")"
 ```
 
-## 📝 Mathematical Background
+##  Mathematical Background
 
 ### Power Spectrum
 For power spectrum P_l = Σ_m |c_{l,m}|²:
@@ -213,7 +213,7 @@ For ∫∫ f(θ,φ) dΩ = ∫₀^{2π} ∫₀^π f(θ,φ) sin(θ) dθ dφ:
 - **Correct**: Include both latitude weights and longitude spacing
 - **Previous**: Missing 2π/nphi longitude factor
 
-## 🎯 Impact
+##  Impact
 
 These fixes ensure that:
 1. **Optimization algorithms** converge correctly

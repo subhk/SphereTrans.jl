@@ -9,7 +9,7 @@ using Pkg
 using LinearAlgebra
 using Statistics
 
-println("🚀 Zero-Allocation AD Benchmark Suite")
+println(" Zero-Allocation AD Benchmark Suite")
 println("="^60)
 
 # Load source directly to avoid compilation issues
@@ -24,7 +24,7 @@ include("ext/SHTnsKitZygoteExt_ZeroAlloc.jl")
 Benchmark allocation patterns with detailed memory tracking
 """
 function benchmark_allocations(name::String, f, args...; n_samples=5)
-    println("\n📊 Benchmarking: $name")
+    println("\n Benchmarking: $name")
     println("-" * "^"^(length(name) + 15))
     
     # Warmup to avoid measuring compilation
@@ -32,7 +32,7 @@ function benchmark_allocations(name::String, f, args...; n_samples=5)
         f(args...)
         GC.gc()  # Clear any warmup allocations
     catch e
-        println("  ⚠ Warmup failed: $e")
+        println("   Warmup failed: $e")
     end
     
     # Collect allocation samples
@@ -66,13 +66,13 @@ function benchmark_allocations(name::String, f, args...; n_samples=5)
     
     # Success criteria for zero-allocation
     if avg_allocs < 100
-        println("  ✅ ZERO-ALLOCATION SUCCESS: <100 bytes allocated!")
+        println("   ZERO-ALLOCATION SUCCESS: <100 bytes allocated!")
     elseif avg_allocs < 1000
-        println("  🎯 NEAR-ZERO: <1KB allocated")
+        println("   NEAR-ZERO: <1KB allocated")
     elseif avg_allocs < 100000
-        println("  ⚡ LOW-ALLOCATION: <100KB allocated")
+        println("   LOW-ALLOCATION: <100KB allocated")
     else
-        println("  ⚠ HIGH-ALLOCATION: $(round(avg_allocs/1024/1024, digits=2)) MB allocated")
+        println("   HIGH-ALLOCATION: $(round(avg_allocs/1024/1024, digits=2)) MB allocated")
     end
     
     return (allocations=avg_allocs, time=avg_time)
@@ -82,7 +82,7 @@ end
 Test zero-allocation ForwardDiff implementation
 """
 function test_zero_alloc_forwarddiff()
-    println("\n🔬 Testing Zero-Allocation ForwardDiff Implementation")
+    println("\n Testing Zero-Allocation ForwardDiff Implementation")
     println("=" * "^"^48)
     
     # Test configurations of increasing size
@@ -95,7 +95,7 @@ function test_zero_alloc_forwarddiff()
     results = Dict()
     
     for (lmax, mmax, config_name) in test_configs
-        println("\n📈 Configuration: $config_name")
+        println("\n Configuration: $config_name")
         
         cfg = create_gauss_config(lmax, mmax)
         nlm = get_nlm(cfg)
@@ -177,7 +177,7 @@ end
 Test simulated automatic differentiation patterns
 """
 function test_ad_patterns()
-    println("\n🧮 Testing AD Patterns with Zero-Allocation")
+    println("\n Testing AD Patterns with Zero-Allocation")
     println("=" * "^"^42)
     
     cfg = create_gauss_config(8, 8)
@@ -215,7 +215,7 @@ end
 Compare with original (high-allocation) implementations
 """
 function compare_with_original()
-    println("\n⚖️  Comparison: Zero-Allocation vs Original Implementation")
+    println("\n  Comparison: Zero-Allocation vs Original Implementation")
     println("=" * "^"^56)
     
     cfg = create_gauss_config(8, 8)
@@ -268,7 +268,7 @@ function compare_with_original()
     # Calculate improvement
     if zero_alloc_result.allocations > 0
         improvement = original_result.allocations / zero_alloc_result.allocations
-        println("\n📊 Memory Improvement:")
+        println("\n Memory Improvement:")
         println("  Original: $(round(Int, original_result.allocations/1024)) KB")
         println("  Zero-alloc: $(round(Int, zero_alloc_result.allocations/1024)) KB") 
         println("  Reduction: $(round(improvement, digits=1))x less memory!")
@@ -294,10 +294,10 @@ function main()
         comparison_results = compare_with_original()
         
         # Final summary
-        println("\n🏁 ZERO-ALLOCATION BENCHMARK SUMMARY")
+        println("\n ZERO-ALLOCATION BENCHMARK SUMMARY")
         println("=" * "^"^40)
         
-        println("\n📊 Key Results:")
+        println("\n Key Results:")
         
         # Check if we achieved zero-allocation goals
         all_low_alloc = true
@@ -319,14 +319,14 @@ function main()
         println("  Average allocation per operation: $(round(Int, avg_allocations)) bytes")
         
         if avg_allocations < 100
-            println("  🎯 TARGET ACHIEVED: <100 bytes average allocation!")
-            println("  ✅ Zero-allocation implementation successful!")
+            println("   TARGET ACHIEVED: <100 bytes average allocation!")
+            println("   Zero-allocation implementation successful!")
         elseif avg_allocations < 1000
-            println("  🎯 NEAR TARGET: <1KB average allocation")
-            println("  ✅ Very low allocation implementation!")
+            println("   NEAR TARGET: <1KB average allocation")
+            println("   Very low allocation implementation!")
         else
-            println("  ⚠ TARGET MISSED: >1KB average allocation")
-            println("  💡 Further optimization needed")
+            println("   TARGET MISSED: >1KB average allocation")
+            println("   Further optimization needed")
         end
         
         if haskey(comparison_results, :original) && haskey(comparison_results, :zero_alloc)
@@ -334,21 +334,21 @@ function main()
             zero_alloc = comparison_results.zero_alloc.allocations
             if zero_alloc > 0
                 reduction = orig_alloc / zero_alloc
-                println("\n📈 Memory reduction achieved: $(round(reduction, digits=1))x")
+                println("\n Memory reduction achieved: $(round(reduction, digits=1))x")
             end
         end
         
-        println("\n💡 Optimization Status:")
+        println("\n Optimization Status:")
         if all_low_alloc
-            println("  ✅ All operations under 1KB allocation")
-            println("  ✅ Zero-allocation patterns working correctly")
-            println("  ✅ Ready for production use")
+            println("   All operations under 1KB allocation")
+            println("   Zero-allocation patterns working correctly")
+            println("   Ready for production use")
         else
-            println("  ⚠ Some operations still have significant allocations")
-            println("  💡 Additional optimization opportunities exist")
+            println("   Some operations still have significant allocations")
+            println("   Additional optimization opportunities exist")
         end
         
-        println("\n📋 Next Steps:")
+        println("\n Next Steps:")
         println("  1. Deploy zero-allocation extensions")
         println("  2. Test with real ForwardDiff.jl and Zygote.jl")
         println("  3. Validate mathematical accuracy preserved")
@@ -357,8 +357,8 @@ function main()
         return (basic=basic_results, ad=ad_results, comparison=comparison_results)
         
     catch e
-        println("❌ Benchmark failed with error: $e")
-        println("\n🔧 This is expected if zero-allocation extensions aren't fully integrated.")
+        println(" Benchmark failed with error: $e")
+        println("\n This is expected if zero-allocation extensions aren't fully integrated.")
         println("   The benchmark framework is ready for testing once extensions are complete.")
         return nothing
     end
