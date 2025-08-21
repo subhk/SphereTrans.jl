@@ -33,6 +33,7 @@ SHTnsKit.jl provides a complete interface to all SHTns features:
 
 ### Notes
 - GPU acceleration and explicit OpenMP threading controls are not enabled at this time.
+- Normalization: default uses orthonormal spherical harmonics (L2-orthonormal basis). Real-basis conversion preserves energy under this convention.
 
 
 ## Installation
@@ -198,6 +199,23 @@ c = cplx_spat_to_sh(cfg, ComplexF64.(spat))
 rotate_complex!(cfg, c; alpha=0.1, beta=0.2, gamma=0.3)
 spat_rot = cplx_sh_to_spat(cfg, c)
 println("Rotated field stats: ", (minimum(real.(spat_rot)), maximum(real.(spat_rot))))
+```
+
+## Vector Field Analysis (Real-Basis)
+
+```julia
+using SHTnsKit
+
+cfg = create_gauss_config(16, 16)
+u = rand(get_nlat(cfg), get_nphi(cfg))
+v = rand(get_nlat(cfg), get_nphi(cfg))
+
+# Real-basis spheroidal/toroidal coefficients
+S_real, T_real = analyze_vector_real(cfg, u, v)
+
+# Reconstruct
+u_rt, v_rt = synthesize_vector_real(cfg, S_real, T_real)
+println("Vector real-basis roundtrip error: ", maximum(abs.(u .- u_rt)) + maximum(abs.(v .- v_rt)))
 ```
 
 ## Automatic Differentiation
