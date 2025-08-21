@@ -238,7 +238,8 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     plm_val = cfg.plm_cache[i, coeff_idx]
                     coeff_val = sh_coeffs[coeff_idx]
                     
-                    # For synthesis, apply inverse normalization
+                    # For synthesis, no additional normalization needed
+                    # The FFT handles the scaling correctly
                     if m == 0
                         value += coeff_val * plm_val
                     else
@@ -256,7 +257,10 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     end
     
     # Transform from Fourier coefficients to spatial domain
-    spatial_data .= compute_spatial_from_fourier(fourier_coeffs, cfg)
+    spatial_temp = compute_spatial_from_fourier(fourier_coeffs, cfg)
+    
+    # FFTW irfft scaling issue: need to multiply by nphi to get correct amplitude
+    spatial_data .= spatial_temp .* T(nphi)
     
     return nothing
 end
