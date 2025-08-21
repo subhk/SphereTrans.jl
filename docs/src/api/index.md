@@ -98,31 +98,27 @@ get_nlm(cfg::SHTnsConfig) → Int
 ```
 Get total number of (l,m) spectral coefficients.
 
-For triangular truncation: `nlm = (lmax+1) × (lmax+2) / 2`
+For the real basis, coefficients are stored for m ≥ 0.
 
 ---
 
 ```julia
-get_index(cfg::SHTnsConfig, l::Int, m::Int) → Int
+lmidx(cfg::SHTnsConfig, l::Int, m::Int) → Int
 ```
-Get linear index for spherical harmonic Y_l^m.
-
-**Arguments:**
-- `l::Int`: Degree (0 ≤ l ≤ lmax)
-- `m::Int`: Order (-l ≤ m ≤ l)
-
-**Returns:** Linear index in spectral coefficient array
+Get linear index (1‑based) for spherical harmonic coefficient (l, m≥0).
 
 ### Grid Information
 
 ```julia
-get_coordinates(cfg::SHTnsConfig) → (θ::Matrix, φ::Matrix)
+get_theta(cfg::SHTnsConfig, i::Int) → Real
+get_phi(cfg::SHTnsConfig, j::Int) → Real
 ```
-Get colatitude and longitude coordinate matrices.
+Access single grid coordinates by index.
 
-**Returns:**
-- `θ::Matrix{Float64}`: Colatitude (0 to π)
-- `φ::Matrix{Float64}`: Longitude (0 to 2π)
+```julia
+SHTnsKit.create_coordinate_matrices(cfg::SHTnsConfig) → (θ::Matrix, φ::Matrix)
+```
+Create colatitude and longitude matrices for the grid.
 
 ---
 
@@ -136,7 +132,7 @@ Get Gaussian quadrature weights (for Gauss grids only).
 ### Configuration Cleanup
 
 ```julia
-free_config(cfg::SHTnsConfig) → Nothing
+destroy_config(cfg::SHTnsConfig) → Nothing
 ```
 Free memory associated with configuration. Always call after use.
 
@@ -144,7 +140,7 @@ Free memory associated with configuration. Always call after use.
 ```julia
 cfg = create_gauss_config(32, 32)
 # ... use configuration ...
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Scalar Field Transforms
@@ -308,69 +304,26 @@ Analyze vector field into spheroidal and toroidal components.
 - `S_lm::Vector{Float64}`: Spheroidal coefficients
 - `T_lm::Vector{Float64}`: Toroidal coefficients
 
-### Gradient and Curl Operations
+### Spatial Operators
 
 ```julia
-compute_gradient(cfg::SHTnsConfig, scalar_lm::Vector) → (∇θ::Matrix, ∇φ::Matrix)
+SHTnsKit.spatial_derivative_phi(cfg::SHTnsConfig, spatial::Matrix) → Matrix
 ```
-Compute gradient of scalar field (produces spheroidal vector field).
-
-**Arguments:**
-- `scalar_lm::Vector{Float64}`: Scalar field spectral coefficients
-
-**Returns:**
-- `∇θ::Matrix{Float64}`: ∂/∂θ component  
-- `∇φ::Matrix{Float64}`: (1/sin θ)∂/∂φ component
-
----
+Exact φ‑derivative using FFT in longitude.
 
 ```julia
-compute_curl(cfg::SHTnsConfig, toroidal_lm::Vector) → (curlθ::Matrix, curlφ::Matrix)
+SHTnsKit.spatial_divergence(cfg::SHTnsConfig, Vθ::Matrix, Vφ::Matrix) → Matrix
+SHTnsKit.spatial_vorticity(cfg::SHTnsConfig, Vθ::Matrix, Vφ::Matrix) → Matrix
 ```
-Compute curl of toroidal field.
-
-**Arguments:**
-- `toroidal_lm::Vector{Float64}`: Toroidal field coefficients
-
-**Returns:**  
-- `curlθ::Matrix{Float64}`: Curl θ component
-- `curlφ::Matrix{Float64}`: Curl φ component
+Divergence and vertical vorticity of tangential vector fields on the unit sphere.
 
 ## Field Rotations
 
-### Spectral Domain Rotation
-
 ```julia
-rotate_field(cfg::SHTnsConfig, sh::Vector, α::Real, β::Real, γ::Real) → Vector{Float64}
+rotate_real!(cfg::SHTnsConfig, real_coeffs; alpha=0.0, beta=0.0, gamma=0.0) → Vector
+rotate_complex!(cfg::SHTnsConfig, cplx_coeffs; alpha=0.0, beta=0.0, gamma=0.0) → Vector{Complex}
 ```
-Rotate field using Wigner D-matrices in spectral domain.
-
-**Arguments:**
-- `sh::Vector{Float64}`: Input spectral coefficients
-- `α, β, γ::Real`: Euler angles (ZYZ convention)
-
-**Returns:** Rotated spectral coefficients
-
-**Example:**
-```julia
-cfg = create_gauss_config(16, 16)  
-sh = rand(get_nlm(cfg))
-# Rotate by 45° around Z, 60° around Y, 30° around Z
-sh_rotated = rotate_field(cfg, sh, π/4, π/3, π/6)
-```
-
-### Spatial Domain Rotation
-
-```julia
-rotate_spatial_field(cfg::SHTnsConfig, spatial::Matrix, α::Real, β::Real, γ::Real) → Matrix{Float64}
-```
-Rotate spatial field (analysis → rotate → synthesis).
-
-**Arguments:**
-- `spatial::Matrix{Float64}`: Input spatial field
-- `α, β, γ::Real`: Euler angles
-
-**Returns:** Rotated spatial field
+Rotate spectral coefficients in‑place using ZYZ Euler angles. For real fields, use `rotate_real!` or convert with `real_to_complex_coeffs`/`complex_to_real_coeffs`.
 
 ## Power Spectrum Analysis
 
@@ -397,34 +350,20 @@ power = power_spectrum(cfg, sh)  # Length lmax+1
 ### Thread Management
 
 ```julia
-get_num_threads() → Int
+set_threading!(flag::Bool) → Bool
+get_threading() → Bool
+set_fft_threads(n::Integer) → Int
+get_fft_threads() → Int
+set_optimal_threads!() → (threads::Int, fft_threads::Int)
 ```
-Get current number of OpenMP threads.
-
----
-
-```julia
-set_num_threads(nthreads::Int) → Nothing
-```
-Set number of OpenMP threads for SHTns operations.
-
-**Arguments:**
-- `nthreads::Int`: Number of threads (≥ 1)
-
----
-
-```julia
-set_optimal_threads() → Nothing  
-```
-Set thread count to optimal value for current system.
+Enable/disable package parallel loops, control FFTW threads, or set a sensible configuration.
 
 **Example:**
 ```julia
-println("Default threads: ", get_num_threads())
-set_num_threads(4)
-println("Set to 4 threads: ", get_num_threads())
-set_optimal_threads()
-println("Optimal threads: ", get_num_threads())
+summary = set_optimal_threads!()
+println(summary)
+set_fft_threads(4)
+println(get_fft_threads())
 ```
 
 ## GPU Support (CUDA Extension)
@@ -502,40 +441,7 @@ Create MPI-distributed configuration.
 
 **Returns:** MPI-enabled configuration
 
-### Distributed Transforms
-
-```julia
-mpi_synthesize(cfg::SHTnsConfig, sh_local::Vector) → Matrix{Float64}
-```
-MPI-distributed synthesis.
-
----
-
-```julia
-mpi_analyze(cfg::SHTnsConfig, spatial_local::Matrix) → Vector{Float64}
-```
-MPI-distributed analysis.
-
-## Constants and Flags
-
-### SHTnsFlags Module
-
-```julia
-SHTnsFlags.SHT_GAUSS           # Gauss-Legendre grid
-SHTnsFlags.SHT_REGULAR_GRID    # Regular equiangular grid  
-SHTnsFlags.SHT_QUICK_INIT      # Fast initialization
-SHTnsFlags.SHT_REAL_NORM       # Real normalization
-SHTnsFlags.SHT_NO_CS_PHASE     # No Condon-Shortley phase
-SHTnsFlags.SHT_FOURPI          # 4π normalization
-SHTnsFlags.SHT_SCHMIDT         # Schmidt normalization
-```
-
-**Example:**
-```julia
-# Create configuration with specific flags
-flags = SHTnsFlags.SHT_GAUSS | SHTnsFlags.SHT_REAL_NORM
-cfg = create_config(32, 32, 65, flags)
-```
+<!-- MPI and SHTnsFlags are not applicable in this pure-Julia implementation. -->
 
 ## Error Handling
 
@@ -552,122 +458,18 @@ cfg = create_config(32, 32, 65, flags)
 @assert length(sh) == get_nlm(cfg) "Wrong spectral array size"
 @assert size(spatial) == (get_nlat(cfg), get_nphi(cfg)) "Wrong spatial array size"
 
-# Always free configurations
-try
-    cfg = create_gauss_config(32, 32)
-    # ... work with cfg ...
-finally
-    free_config(cfg)
-end
-
-# Or use do-block pattern (if implemented)
-with_config(create_gauss_config(32, 32)) do cfg
-    # ... work with cfg ...
-    # automatically freed
-end
+# Always destroy configurations
+cfg = create_gauss_config(32, 32)
+# ... work with cfg ...
+destroy_config(cfg)
 ```
 
-## Automatic Differentiation Support
+## Helper Functions
 
-### Helper Functions
-
-```julia
-get_lm_from_index(cfg::SHTnsConfig, idx::Int) → (l::Int, m::Int)
-```
-Get spherical harmonic degree and order from linear index.
-
-**Arguments:**
-- `idx::Int`: Linear index (1-based) in spectral coefficient array
-
-**Returns:**
-- `l::Int`: Spherical harmonic degree (0 ≤ l ≤ lmax)
-- `m::Int`: Spherical harmonic order (-l ≤ m ≤ l)
-
-**Example:**
-```julia
-cfg = create_gauss_config(8, 8)
-l, m = get_lm_from_index(cfg, 1)  # Returns (0, 0) for Y₀⁰
-l, m = get_lm_from_index(cfg, 4)  # Returns (1, 1) for Y₁¹
-```
+lm_from_index(cfg::SHTnsConfig, idx::Int) → (l::Int, m::Int)
 
 ---
 
-```julia
-get_index_from_lm(cfg::SHTnsConfig, l::Int, m::Int) → Int
-```
-Get linear index from spherical harmonic degree and order.
+lmidx(cfg::SHTnsConfig, l::Int, m::Int) → Int
 
-**Arguments:**
-- `l::Int`: Spherical harmonic degree
-- `m::Int`: Spherical harmonic order
-
-**Returns:**
-- `idx::Int`: Linear index in spectral coefficient array
-
-**Example:**
-```julia
-cfg = create_gauss_config(8, 8)
-idx = get_index_from_lm(cfg, 0, 0)  # Returns 1 for Y₀⁰
-idx = get_index_from_lm(cfg, 1, 1)  # Returns 4 for Y₁¹
-```
-
-### ForwardDiff.jl Integration
-
-When ForwardDiff.jl is available, all SHTnsKit transform functions automatically support forward-mode automatic differentiation:
-
-```julia
-using SHTnsKit, ForwardDiff
-
-cfg = create_gauss_config(16, 16)
-
-function objective(sh_params)
-    spatial = synthesize(cfg, sh_params)
-    return sum(spatial.^2)
-end
-
-sh = rand(get_nlm(cfg))
-gradient = ForwardDiff.gradient(objective, sh)
-```
-
-**Supported Functions:**
-- `synthesize`, `synthesize!`
-- `analyze`, `analyze!`  
-- `synthesize_complex`, `analyze_complex`
-- `synthesize_vector`, `analyze_vector`
-- `compute_gradient`, `compute_curl`
-- `power_spectrum`
-
-### Zygote.jl Integration
-
-When Zygote.jl is available, all SHTnsKit transform functions automatically support reverse-mode automatic differentiation:
-
-```julia
-using SHTnsKit, Zygote
-
-cfg = create_gauss_config(16, 16)
-
-function loss(spatial_field)
-    sh = analyze(cfg, spatial_field)  
-    return sum(sh[1:10].^2)  # Focus on low modes
-end
-
-spatial = rand(get_nlat(cfg), get_nphi(cfg))
-gradient = Zygote.gradient(loss, spatial)[1]
-```
-
-**Key Features:**
-- Leverages linearity of spherical harmonic transforms
-- Efficient adjoint computations using transform duality
-- Full support for complex and vector field operations
-- Memory-efficient implementation
-
-### Performance Notes
-
-**Forward vs Reverse Mode Selection:**
-- Use **ForwardDiff** when: `n_parameters < n_outputs`
-- Use **Zygote** when: `n_parameters > n_outputs`
-
-**Memory Optimization:**
-- Pre-allocate buffers for repeated AD computations
-- Use in-place operations (`synthesize!`, `analyze!`) when possible
-- Consider chunking for very large problems
+<!-- Automatic differentiation specifics are omitted; functions are pure Julia and generally AD-friendly. -->
