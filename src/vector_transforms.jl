@@ -250,13 +250,7 @@ function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, thet
         return zero(T)
     end
     # Find index for (l-1, m)
-    idx_lm1 = -1
-    @inbounds for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-        if ll == l - 1 && mm == m
-            idx_lm1 = k
-            break
-        end
-    end
+    idx_lm1 = SHTnsKit.find_plm_index(cfg, l-1, m)
     Plm1 = idx_lm1 > 0 ? cfg.plm_cache[lat_idx, idx_lm1] : zero(T)
     x = cos(theta)
     s = sin(theta)
