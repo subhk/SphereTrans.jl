@@ -76,19 +76,17 @@ This package does not depend on a system `libshtns` and does not call into C.
 ```julia
 using SHTnsKit
 
-using SHTnsKit
-
 # Create a spherical harmonic configuration
 lmax = 16              # Maximum spherical harmonic degree
 cfg = create_gauss_config(lmax, lmax)
 
-# Parity-accurate real-basis API
+# Real-Basis API (Primary)
 spatial = rand(get_nlat(cfg), get_nphi(cfg))
 rcoeffs = analyze_real(cfg, spatial)
 spatial_rt = synthesize_real(cfg, rcoeffs)
 println("Real roundtrip rel. error = ", maximum(abs.(spatial - spatial_rt)) / (maximum(abs.(spatial)) + eps()))
 
-# Complex API (canonical)
+# Complex API (Canonical)
 sh_cplx = allocate_complex_spectral(cfg)
 spatial_cplx = synthesize_complex(cfg, sh_cplx)
 recovered_cplx = analyze_complex(cfg, spatial_cplx)
@@ -130,7 +128,7 @@ println("Transform error: ", maximum(abs.(spatial - reconstructed)))
 destroy_config(cfg)
 ```
 
-### Vector Field Analysis (complex)
+## Vector Field Analysis (Complex)
 
 ```julia
 using SHTnsKit
@@ -182,7 +180,7 @@ plot(0:get_lmax(cfg), power,
 destroy_config(cfg)
 ```
 
-### Rotations (ZYZ Euler angles)
+## Rotations (ZYZ Euler angles)
 
 ```julia
 cfg = create_gauss_config(12, 12)
