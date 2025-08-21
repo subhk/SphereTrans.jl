@@ -1,5 +1,6 @@
 using Test
 using SHTnsKit
+using Random
 
 @testset "Spectral ops (complex basis)" begin
     cfg = create_gauss_config(8, 8)
