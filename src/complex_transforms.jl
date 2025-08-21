@@ -99,6 +99,7 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
     fill!(fourier_coeffs, zero(Complex{T}))
 
     # For each azimuthal mode m (including negative)
+    groups = _cplx_mode_groups_arr(cfg)
     for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
         (m == 0 || abs(m) % cfg.mres == 0) || continue
@@ -109,7 +110,7 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
         for i in 1:nlat
             value = zero(Complex{T})
             # Sum over pregrouped entries for this m
-            for (coeff_idx, k, l2) in get(_cplx_mode_groups(cfg), m, NTuple{3,Int}[])
+            for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
                 l2 >= abs(m) || continue
                 plm_val = cfg.plm_cache[i, k]
                 value += sh_coeffs[coeff_idx] * plm_val
@@ -145,11 +146,12 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
 
     # For each (l,m) coefficient over full m range
     fill!(sh_coeffs, zero(Complex{T}))
-    groups = _cplx_mode_groups(cfg)
-    for (m, entries) in groups
+    groups = _cplx_mode_groups_arr(cfg)
+    for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
         (m == 0 || abs(m) % cfg.mres == 0) || continue
         m_idx = m >= 0 ? m + 1 : nphi + m + 1
+        entries = groups[m + cfg.mmax + 1]
         # Precompute latitudinal weighted transform for this m
         for (coeff_idx, k, l) in entries
             l >= abs(m) || continue
@@ -276,7 +278,7 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
     fourier_f = Matrix{Complex{T}}(undef, nlat, nphi)
     fill!(fourier_f, zero(Complex{T}))
 
-    groups = _cplx_mode_groups(cfg)
+    groups = _cplx_mode_groups_arr(cfg)
     # Accumulate over m
     for m in -cfg.mmax:cfg.mmax
         abs(m) <= nphi ÷ 2 || continue
@@ -286,7 +288,7 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
             val_f = zero(Complex{T})
             val_dt = zero(Complex{T})
             theta = cfg.theta_grid[i]
-            for (coeff_idx, k, l) in get(groups, m, NTuple{3,Int}[])
+            for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
                 l >= abs(m) || continue
                 plm = cfg.plm_cache[i, k]
                 dplm = _plm_dtheta(cfg, l, m, theta, i)
