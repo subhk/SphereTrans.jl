@@ -43,6 +43,7 @@ export
     # Utility functions
     lmidx, nlm_calc, allocate_spectral, allocate_spatial,
     synthesize, analyze, synthesize!, analyze!,
+    real_nlm, analyze_real, synthesize_real, complex_to_real_coeffs, real_to_complex_coeffs,
     
     # Analysis functions
     evaluate_at_point, power_spectrum, total_power,

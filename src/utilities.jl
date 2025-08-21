@@ -412,3 +412,116 @@ function find_plm_index(cfg::SHTnsConfig, l::Int, m::Int)
     idx != 0 && return idx
     error("plm index not found for (l=$(l), m=$(m))")
 end
+
+"""
+    real_nlm(cfg) -> Int
+
+Number of real-basis coefficients with explicit cos/sin for m>0 and single for m=0.
+"""
+function real_nlm(cfg::SHTnsConfig)
+    total = 0
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # m=0
+        total += 1
+        # m > 0 in steps of mres: 2 per m (cos/sin)
+        total += 2 * (maxm ÷ cfg.mres)
+    end
+    return total
+end
+
+"""
+    complex_to_real_coeffs(cfg, cplx::AbstractVector{Complex{T}}) -> Vector{T}
+
+Convert canonical complex coefficients (±m) to real-basis cos/sin coefficients.
+Assumes orthonormal normalization. For m>0: a_c = √2·Re(c_{l,m}), a_s = -√2·Im(c_{l,m}); m=0: a_0 = Re(c_{l,0}).
+"""
+function complex_to_real_coeffs(cfg::SHTnsConfig{T}, cplx::AbstractVector{Complex{T}}) where T
+    length(cplx) == SHTnsKit._cplx_nlm(cfg) || error("complex coeff length mismatch")
+    out = Vector{T}(undef, real_nlm(cfg))
+    pos = 1
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # m = 0
+        # find complex index for (l,0)
+        c0 = zero(Complex{T})
+        for (idx, (ll, mm)) in enumerate(SHTnsKit._cplx_lm_indices(cfg))
+            if ll == l && mm == 0
+                c0 = cplx[idx]
+                break
+            end
+        end
+        out[pos] = real(c0)
+        pos += 1
+        # m = mres, 2mres, ..., maxm
+        for m in cfg.mres:cfg.mres:maxm
+            cm = zero(Complex{T})
+            for (idx, (ll, mm)) in enumerate(SHTnsKit._cplx_lm_indices(cfg))
+                if ll == l && mm == m
+                    cm = cplx[idx]
+                    break
+                end
+            end
+            out[pos] = sqrt(T(2)) * real(cm); pos += 1
+            out[pos] = -sqrt(T(2)) * imag(cm); pos += 1
+        end
+    end
+    return out
+end
+
+"""
+    real_to_complex_coeffs(cfg, real::AbstractVector{T}) -> Vector{Complex{T}}
+
+Convert real-basis cos/sin coefficients to canonical complex coefficients (±m).
+For m>0: c_{l,m} = (a_c - i a_s)/√2, c_{l,-m} will be implied by real field on synthesis.
+"""
+function real_to_complex_coeffs(cfg::SHTnsConfig{T}, real::AbstractVector{T}) where T
+    length(real) == real_nlm(cfg) || error("real coeff length mismatch")
+    cplx = Vector{Complex{T}}(undef, SHTnsKit._cplx_nlm(cfg))
+    fill!(cplx, zero(Complex{T}))
+    pos = 1
+    for l in 0:cfg.lmax
+        maxm = min(l, cfg.mmax)
+        # m = 0
+        a0 = real[pos]; pos += 1
+        for (idx, (ll, mm)) in enumerate(SHTnsKit._cplx_lm_indices(cfg))
+            if ll == l && mm == 0
+                cplx[idx] = Complex{T}(a0, 0)
+                break
+            end
+        end
+        for m in cfg.mres:cfg.mres:maxm
+            ac = real[pos]; as = real[pos+1]; pos += 2
+            cm = (ac - im*as)/sqrt(T(2))
+            for (idx, (ll, mm)) in enumerate(SHTnsKit._cplx_lm_indices(cfg))
+                if ll == l && mm == m
+                    cplx[idx] = cm
+                    break
+                end
+            end
+        end
+    end
+    return cplx
+end
+
+"""
+    analyze_real(cfg, spatial::AbstractMatrix{T}) -> Vector{T}
+
+Analyze real spatial field to real-basis coefficients via complex route.
+"""
+function analyze_real(cfg::SHTnsConfig{T}, spatial::AbstractMatrix{T}) where T
+    complex_spatial = Complex{T}.(spatial)
+    c = SHTnsKit.cplx_spat_to_sh(cfg, complex_spatial)
+    return complex_to_real_coeffs(cfg, c)
+end
+
+"""
+    synthesize_real(cfg, real_coeffs::AbstractVector{T}) -> Matrix{T}
+
+Synthesize real spatial field from real-basis coefficients via complex route.
+"""
+function synthesize_real(cfg::SHTnsConfig{T}, real_coeffs::AbstractVector{T}) where T
+    c = real_to_complex_coeffs(cfg, real_coeffs)
+    spat_c = SHTnsKit.cplx_sh_to_spat(cfg, c)
+    return real.(spat_c)
+end
