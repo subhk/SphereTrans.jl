@@ -346,6 +346,27 @@ function spectral_derivative_phi(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{
 end
 
 """
+    spatial_derivative_phi(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T}) -> Matrix{T}
+
+Compute φ-derivative of a scalar field in the spatial domain using FFT in φ.
+This is exact for the azimuthal direction given the grid and FFT plans.
+"""
+function spatial_derivative_phi(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T}) where T
+    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
+    nlat, nphi = cfg.nlat, cfg.nphi
+    nphi_modes = nphi ÷ 2 + 1
+    # Forward FFT
+    fourier = compute_fourier_coefficients_spatial(spatial_data, cfg)
+    # Multiply by im*m for each mode
+    for m in 0:(nphi_modes-1)
+        factor = Complex{T}(0, m)
+        @inbounds fourier[:, m+1] .= factor .* fourier[:, m+1]
+    end
+    # Inverse FFT to spatial
+    return compute_spatial_from_fourier(fourier, cfg)
+end
+
+"""
     filter_spectral(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}, 
                    l_cutoff::Int) -> Vector{T}
 

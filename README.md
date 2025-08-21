@@ -12,7 +12,7 @@
     </a>
 </p>
 
-A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. Includes a pure-Julia implementation and utilities to locate a system `libshtns` when desired.
+A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. This package is implemented purely in Julia (no C FFI required).
 
 ## Features
 
@@ -68,44 +68,7 @@ make && sudo make install
 
 ### Custom Library Path
 
-SHTnsKit.jl provides flexible options for specifying a custom `libshtns` path, allowing you to use your own compiled version or the `SHTns_jll` artifact when available:
-
-**Option 1: Environment Variable (Recommended)**
-```julia
-# Set before loading SHTnsKit
-ENV["SHTNS_LIBRARY_PATH"] = "/path/to/your/libshtns.so"
-using SHTnsKit
-```
-
-**Option 2: Runtime Configuration**
-```julia
-using SHTnsKit
-
-# Set custom library path (takes effect on next validation)
-SHTnsKit.set_library_path("/path/to/your/libshtns.so")
-
-# Check current library path
-current_path = SHTnsKit.get_library_path()
-println("Using library: $current_path")
-
-# Validate the library is working
-if SHTnsKit.validate_library()
-    println("SHTns library is reachable and valid")
-else
-    println("Library validation failed - check your SHTns installation")
-end
-```
-
-**Library Loading Priority:**
-1. Custom path (via `SHTNS_LIBRARY_PATH` environment variable)
-2. SHTns_jll package (if available)
-3. System library (`libshtns`)
-
-This flexibility allows you to:
-- Use optimized builds with specific compiler flags
-- Test against development versions of SHTns
-- Work in environments where system packages aren't available
-- Use custom installations with additional features enabled
+This package does not depend on a system `libshtns` and does not call into C.
 
 ## Quick Start
 

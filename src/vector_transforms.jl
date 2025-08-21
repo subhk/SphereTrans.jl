@@ -93,9 +93,13 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
     nphi_modes = nphi ÷ 2 + 1
     sph_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
     tor_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    sph_dtheta_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    tor_dtheta_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
     
     fill!(sph_fourier, zero(Complex{T}))
     fill!(tor_fourier, zero(Complex{T}))
+    fill!(sph_dtheta_fourier, zero(Complex{T}))
+    fill!(tor_dtheta_fourier, zero(Complex{T}))
     fill!(u_theta, zero(T))
     fill!(u_phi, zero(T))
     
@@ -106,8 +110,12 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
         # Compute Fourier coefficients for spheroidal component
         sph_mode = Vector{Complex{T}}(undef, nlat)
         tor_mode = Vector{Complex{T}}(undef, nlat)
+        dtheta_sph_mode = Vector{Complex{T}}(undef, nlat)
+        dtheta_tor_mode = Vector{Complex{T}}(undef, nlat)
         fill!(sph_mode, zero(Complex{T}))
         fill!(tor_mode, zero(Complex{T}))
+        fill!(dtheta_sph_mode, zero(Complex{T}))
+        fill!(dtheta_tor_mode, zero(Complex{T}))
         
         for i in 1:nlat
             theta = cfg.theta_grid[i]
@@ -115,7 +123,9 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
             
             sph_sum = zero(Complex{T})
             tor_sum = zero(Complex{T})
-            
+            dtheta_sph = zero(Complex{T})
+            dtheta_tor = zero(Complex{T})
+
             for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
                 if m_coeff == m && l >= 1  # Vector transforms start from l=1
                     plm_val = cfg.plm_cache[i, coeff_idx]
@@ -126,26 +136,34 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
                     # Spheroidal contribution
                     if abs(sph_coeffs[coeff_idx]) > 0
                         sph_sum += sph_coeffs[coeff_idx] * plm_val
+                        dtheta_sph += sph_coeffs[coeff_idx] * dplm_theta
                     end
                     
                     # Toroidal contribution  
                     if abs(tor_coeffs[coeff_idx]) > 0
                         tor_sum += tor_coeffs[coeff_idx] * plm_val
+                        dtheta_tor += tor_coeffs[coeff_idx] * dplm_theta
                     end
                 end
             end
             
             sph_mode[i] = sph_sum
             tor_mode[i] = tor_sum
+            dtheta_sph_mode[i] = dtheta_sph
+            dtheta_tor_mode[i] = dtheta_tor
         end
         
         # Insert into Fourier arrays
         insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
         insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
+        insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
+        insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
     end
     
     # Compute vector components
-    _compute_vector_components_from_fourier!(cfg, sph_fourier, tor_fourier, u_theta, u_phi)
+    _compute_vector_components_from_fourier!(cfg, sph_fourier, tor_fourier,
+                                             sph_dtheta_fourier, tor_dtheta_fourier,
+                                             u_theta, u_phi)
     
     return nothing
 end
@@ -221,38 +239,31 @@ end
                                  coeff_idx::Int, lat_idx::Int) where T
 
 Compute the theta derivative of associated Legendre polynomial P_l^m(cos θ).
-Uses finite differences for now - could be optimized with analytical derivatives.
+Uses analytical recurrence:
+∂θ P_l^m(cosθ) = (l*cosθ*P_l^m(cosθ) - (l+m) P_{l-1}^m(cosθ)) / sinθ
 """
 function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T,
                                       coeff_idx::Int, lat_idx::Int) where T
-    # Simple finite difference approximation
-    dtheta = T(1e-8)
-    
-    if lat_idx > 1 && lat_idx < cfg.nlat
-        # Central difference
-        theta_plus = cfg.theta_grid[lat_idx + 1]
-        theta_minus = cfg.theta_grid[lat_idx - 1]
-        
-        plm_plus = cfg.plm_cache[lat_idx + 1, coeff_idx]
-        plm_minus = cfg.plm_cache[lat_idx - 1, coeff_idx]
-        
-        return (plm_plus - plm_minus) / (theta_plus - theta_minus)
-    else
-        # Forward/backward difference at boundaries
-        if lat_idx == 1
-            plm_curr = cfg.plm_cache[lat_idx, coeff_idx]
-            plm_next = cfg.plm_cache[lat_idx + 1, coeff_idx]
-            theta_curr = cfg.theta_grid[lat_idx]
-            theta_next = cfg.theta_grid[lat_idx + 1]
-            return (plm_next - plm_curr) / (theta_next - theta_curr)
-        else
-            plm_curr = cfg.plm_cache[lat_idx, coeff_idx]
-            plm_prev = cfg.plm_cache[lat_idx - 1, coeff_idx]
-            theta_curr = cfg.theta_grid[lat_idx]
-            theta_prev = cfg.theta_grid[lat_idx - 1]
-            return (plm_curr - plm_prev) / (theta_curr - theta_prev)
+    # Fetch P_l^m and P_{l-1}^m at this latitude
+    Plm = cfg.plm_cache[lat_idx, coeff_idx]
+    if l == 0
+        return zero(T)
+    end
+    # Find index for (l-1, m)
+    idx_lm1 = -1
+    @inbounds for (k, (ll, mm)) in enumerate(cfg.lm_indices)
+        if ll == l - 1 && mm == m
+            idx_lm1 = k
+            break
         end
     end
+    Plm1 = idx_lm1 > 0 ? cfg.plm_cache[lat_idx, idx_lm1] : zero(T)
+    x = cos(theta)
+    s = sin(theta)
+    if abs(s) < T(1e-12)
+        return zero(T)
+    end
+    return (l * x * Plm - (l + m) * Plm1) / s
 end
 
 """
@@ -268,52 +279,40 @@ Applies the differential operators to convert spheroidal/toroidal to θ,φ compo
 function _compute_vector_components_from_fourier!(cfg::SHTnsConfig{T},
                                                  sph_fourier::AbstractMatrix{Complex{T}},
                                                  tor_fourier::AbstractMatrix{Complex{T}},
+                                                 sph_dtheta_fourier::AbstractMatrix{Complex{T}},
+                                                 tor_dtheta_fourier::AbstractMatrix{Complex{T}},
                                                  u_theta::AbstractMatrix{T},
                                                  u_phi::AbstractMatrix{T}) where T
     nlat, nphi = cfg.nlat, cfg.nphi
     
-    # Working arrays for spatial fields
+    # Inverse FFTs for S, T and their theta-derivatives
     sph_spatial = compute_spatial_from_fourier(sph_fourier, cfg)
     tor_spatial = compute_spatial_from_fourier(tor_fourier, cfg)
-    
-    # Apply differential operators
-    # This is simplified - full implementation needs proper derivatives
-    for i in 1:nlat
+    dsph_dtheta = compute_spatial_from_fourier(sph_dtheta_fourier, cfg)
+    dtor_dtheta = compute_spatial_from_fourier(tor_dtheta_fourier, cfg)
+
+    # Build phi-derivative in Fourier domain: multiply mode m by im*m
+    nphi_modes = size(sph_fourier, 2)
+    sph_dphi_fourier = similar(sph_fourier)
+    tor_dphi_fourier = similar(tor_fourier)
+    @inbounds for m in 0:(nphi_modes-1)
+        factor = Complex{T}(0, m)
+        sph_dphi_fourier[:, m+1] .= factor .* sph_fourier[:, m+1]
+        tor_dphi_fourier[:, m+1] .= factor .* tor_fourier[:, m+1]
+    end
+    dsph_dphi = compute_spatial_from_fourier(sph_dphi_fourier, cfg)
+    dtor_dphi = compute_spatial_from_fourier(tor_dphi_fourier, cfg)
+
+    # Compose vector components
+    @inbounds for i in 1:nlat
         theta = cfg.theta_grid[i]
         sint = sin(theta)
-        
+        inv_sint = sint > 1e-12 ? (one(T)/sint) : zero(T)
         for j in 1:nphi
-            # Simplified vector component computation
-            # Full implementation needs proper gradient calculations
-            
-            # Theta derivative (finite difference)
-            if i > 1 && i < nlat
-                dsph_dtheta = (sph_spatial[i+1, j] - sph_spatial[i-1, j]) / 
-                             (cfg.theta_grid[i+1] - cfg.theta_grid[i-1])
-                dtor_dtheta = (tor_spatial[i+1, j] - tor_spatial[i-1, j]) / 
-                             (cfg.theta_grid[i+1] - cfg.theta_grid[i-1])
-            else
-                dsph_dtheta = zero(T)
-                dtor_dtheta = zero(T)
-            end
-            
-            # Phi derivative (spectral)
-            phi_idx = j <= nphi÷2 ? j : nphi - j + 1
-            dphi = 2π / nphi
-            dsph_dphi = zero(T)  # Simplified
-            dtor_dphi = zero(T)  # Simplified
-            
-            # Vector components
-            if sint > 1e-12
-                u_theta[i, j] = dsph_dtheta + dtor_dphi / sint
-                u_phi[i, j] = dsph_dphi / sint - dtor_dtheta
-            else
-                u_theta[i, j] = zero(T)
-                u_phi[i, j] = zero(T)
-            end
+            u_theta[i, j] = dsph_dtheta[i, j] + inv_sint * dtor_dphi[i, j]
+            u_phi[i, j] = inv_sint * dsph_dphi[i, j] - dtor_dtheta[i, j]
         end
     end
-    
     return nothing
 end
 
