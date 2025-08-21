@@ -58,6 +58,8 @@ export
     # Complex spectral ops
     cplx_spectral_derivative_phi, cplx_spectral_laplacian, cplx_spatial_derivatives,
     cplx_spectral_gradient_spatial, cplx_divergence_spectral, cplx_vorticity_spectral,
+    cplx_vector_from_spheroidal, cplx_vector_from_toroidal, cplx_vector_from_potentials,
+    cplx_divergence_spatial_from_potentials, cplx_vorticity_spatial_from_potentials,
     
     # Internal functions (for testing)
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,

@@ -401,6 +401,73 @@ function _plm_dtheta(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int
 end
 
 """
+    cplx_vector_from_spheroidal(cfg, S_coeffs)
+
+Construct tangential vector field from spheroidal potential S (complex spectral coefficients).
+Returns (uθ, uφ) where uθ = ∂θ S and uφ = (1/sinθ) ∂φ S, both complex spatial matrices.
+"""
+function cplx_vector_from_spheroidal(cfg::SHTnsConfig{T}, S_coeffs::AbstractVector{Complex{T}}) where T
+    gθ, gφ = cplx_spectral_gradient_spatial(cfg, S_coeffs)
+    return gθ, gφ
+end
+
+"""
+    cplx_vector_from_toroidal(cfg, T_coeffs)
+
+Construct tangential vector field from toroidal potential T (complex spectral coefficients).
+Returns (uθ, uφ) where uθ = (1/sinθ) ∂φ T and uφ = -∂θ T, both complex spatial matrices.
+"""
+function cplx_vector_from_toroidal(cfg::SHTnsConfig{T}, T_coeffs::AbstractVector{Complex{T}}) where T
+    dθ, dφ = cplx_spatial_derivatives(cfg, T_coeffs)
+    nlat, nphi = cfg.nlat, cfg.nphi
+    uθ = Matrix{Complex{T}}(undef, nlat, nphi)
+    uφ = Matrix{Complex{T}}(undef, nlat, nphi)
+    @inbounds for i in 1:nlat
+        s = sin(cfg.theta_grid[i])
+        invs = s > 1e-12 ? (one(T)/s) : zero(T)
+        for j in 1:nphi
+            uθ[i, j] = invs * dφ[i, j]
+            uφ[i, j] = -dθ[i, j]
+        end
+    end
+    return uθ, uφ
+end
+
+"""
+    cplx_vector_from_potentials(cfg, S_coeffs, T_coeffs)
+
+Construct tangential vector field from spheroidal (S) and toroidal (T) potentials.
+Returns (uθ, uφ) as complex spatial matrices.
+"""
+function cplx_vector_from_potentials(cfg::SHTnsConfig{T}, S_coeffs::AbstractVector{Complex{T}}, T_coeffs::AbstractVector{Complex{T}}) where T
+    uθS, uφS = cplx_vector_from_spheroidal(cfg, S_coeffs)
+    uθT, uφT = cplx_vector_from_toroidal(cfg, T_coeffs)
+    return uθS .+ uθT, uφS .+ uφT
+end
+
+"""
+    cplx_divergence_spatial_from_potentials(cfg, S_coeffs, T_coeffs)
+
+Compute spatial divergence as complex field from spheroidal/toroidal potentials using spectral identity:
+div_lm = -l(l+1) S_lm; synthesize to spatial.
+"""
+function cplx_divergence_spatial_from_potentials(cfg::SHTnsConfig{T}, S_coeffs::AbstractVector{Complex{T}}, T_coeffs::AbstractVector{Complex{T}}) where T
+    div_spec = cplx_divergence_spectral(cfg, S_coeffs, T_coeffs)
+    return cplx_sh_to_spat(cfg, div_spec)
+end
+
+"""
+    cplx_vorticity_spatial_from_potentials(cfg, S_coeffs, T_coeffs)
+
+Compute spatial vertical vorticity (radial curl) as complex field from potentials using spectral identity:
+vort_lm = -l(l+1) T_lm; synthesize to spatial.
+"""
+function cplx_vorticity_spatial_from_potentials(cfg::SHTnsConfig{T}, S_coeffs::AbstractVector{Complex{T}}, T_coeffs::AbstractVector{Complex{T}}) where T
+    vort_spec = cplx_vorticity_spectral(cfg, S_coeffs, T_coeffs)
+    return cplx_sh_to_spat(cfg, vort_spec)
+end
+
+"""
     create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) -> Matrix{Complex{T}}
 
 Create a test complex field consisting of a single spherical harmonic Y_l^m.
