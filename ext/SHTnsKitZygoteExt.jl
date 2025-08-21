@@ -327,8 +327,8 @@ function ChainRulesCore.rrule(::typeof(power_spectrum), cfg::SHTnsKit.SHTnsConfi
             power_grad = ∂power[l + 1]  # Gradient w.r.t. P_l
             coeff_val = sh_coeffs[coeff_idx]
             
-            # For power spectrum P_l = Σ_m |c_{l,m}|²
-            # ∂P_l/∂c_{l,m} = 2 * c_{l,m} for all m (including m=0)
+            # For power spectrum P_l = Σ_m c_{l,m}² (where each c_{l,m} includes both +m and -m)
+            # ∂P_l/∂c_{l,m} = 2 * c_{l,m} for all m
             ∂sh_coeffs[coeff_idx] = 2 * coeff_val * power_grad
         end
         

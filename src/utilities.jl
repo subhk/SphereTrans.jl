@@ -86,11 +86,10 @@ function power_spectrum(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}) where
     
     for (idx, (l, m)) in enumerate(cfg.lm_indices)
         coeff = sh_coeffs[idx]
-        if m == 0
-            power[l + 1] += coeff^2
-        else
-            power[l + 1] += 2 * coeff^2  # Factor of 2 for m > 0
-        end
+        # For real spherical harmonics where only m ≥ 0 are stored,
+        # each coefficient for m > 0 already represents both +m and -m modes
+        # So no additional factor of 2 is needed
+        power[l + 1] += coeff^2
     end
     
     return power

@@ -318,8 +318,8 @@ function _power_spectrum_partial_derivative(cfg::SHTnsKit.SHTnsConfig{T},
         coeff_val = values[coeff_idx]
         coeff_partial = partials[coeff_idx][partial_idx]
         
-        # For power spectrum P_l = Σ_m |c_{l,m}|²
-        # ∂P_l/∂c_{l,m} = 2 * c_{l,m} for all m (including m=0)
+        # For power spectrum P_l = Σ_m c_{l,m}² (where each c_{l,m} includes both +m and -m)
+        # ∂P_l/∂c_{l,m} = 2 * c_{l,m} for all m
         # The factor of 2 comes from d/dx(x²) = 2x
         power_derivs[l + 1] += 2 * coeff_val * coeff_partial
     end

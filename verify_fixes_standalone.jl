@@ -51,12 +51,8 @@ try
     
     for (idx, (l, m)) in enumerate(cfg.lm_indices)
         coeff = sh_coeffs[idx]
-        if m == 0
-            manual_power[l + 1] += coeff^2
-        else
-            # This is the key test - should be 2*coeff^2, not 4*coeff^2
-            manual_power[l + 1] += 2 * coeff^2  
-        end
+        # Corrected: no factor of 2 needed since each coeff already includes +m and -m
+        manual_power[l + 1] += coeff^2
     end
     
     power_impl_error = norm(power - manual_power) / max(norm(power), 1e-15)
