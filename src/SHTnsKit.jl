@@ -61,6 +61,7 @@ export
     cplx_vector_from_spheroidal, cplx_vector_from_toroidal, cplx_vector_from_potentials,
     cplx_divergence_spatial_from_potentials, cplx_vorticity_spatial_from_potentials,
     cplx_sphtor_to_spat!, cplx_synthesize_vector, cplx_spat_to_sphtor!, cplx_analyze_vector,
+    rotate_complex!, rotate_real!,
     
     # Internal functions (for testing)
     compute_gauss_legendre_nodes_weights, compute_associated_legendre,
