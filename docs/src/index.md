@@ -1,12 +1,12 @@
 # SHTnsKit.jl
 
-*High-performance Julia wrapper for the SHTns C library*
+Pure Julia spherical harmonic transforms for scientific computing
 
 [![Build Status](https://github.com/subhk/SHTnsKit.jl/workflows/CI/badge.svg)](https://github.com/subhk/SHTnsKit.jl/actions)
 [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://subhk.github.io/SHTnsKit.jl/stable)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-SHTnsKit.jl provides a comprehensive Julia interface to the high-performance [SHTns](https://nschaeff.bitbucket.io/shtns/) (Spherical Harmonic Transform) library. It enables fast and efficient spherical harmonic transforms for scientific computing applications in fluid dynamics, geophysics, astrophysics, and climate science.
+SHTnsKit.jl is a native Julia implementation of spherical harmonic transforms (SHT). It provides fast and memory‑efficient scalar, vector, and complex transforms without external C dependencies, suitable for fluid dynamics, geophysics, astrophysics, and climate science.
 
 ## Features
 
@@ -23,15 +23,12 @@ SHTnsKit.jl provides a comprehensive Julia interface to the high-performance [SH
 - **Multipole Analysis**: Expansion coefficients for gravitational/magnetic fields
 
 ### Performance Optimizations
-- **OpenMP Multi-threading**: Automatic detection and optimal thread configuration
-- **GPU Acceleration**: CUDA support with host-device memory management
-- **Vectorization**: Support for SSE, AVX, and other SIMD instruction sets
-- **Memory Management**: Efficient allocation and thread-safe operations
+- **Threading Controls**: Julia `Threads.@threads` loops and FFTW thread tuning
+- **Vectorization**: Leverages Julia/LLVM auto‑vectorization and FFTW
+- **Memory Management**: Efficient allocation and thread‑safe operations
 
 ### Distributed Computing
-- **MPI Support**: Distributed transforms across multiple nodes
-- **Hybrid Parallelism**: Combined MPI + OpenMP + GPU acceleration
-- **Scalable**: Efficient scaling to large computational clusters
+- Not required. Focused on single‑process performance with Julia threads
 
 ## Quick Start
 
@@ -52,7 +49,7 @@ spatial_field = synthesize(cfg, sh_coeffs)
 recovered_coeffs = analyze(cfg, spatial_field)
 
 # Clean up
-free_config(cfg)
+destroy_config(cfg)
 ```
 
 ## Installation
@@ -62,7 +59,7 @@ using Pkg
 Pkg.add("SHTnsKit")
 ```
 
-See the [Installation Guide](installation.md) for detailed setup instructions including SHTns C library installation.
+See the [Installation Guide](installation.md) for detailed setup instructions.
 
 ## Documentation Overview
 
@@ -88,20 +85,14 @@ Depth = 2
 
 ## Performance
 
-SHTnsKit.jl achieves exceptional performance through:
-- Direct interface to optimized SHTns C library
-- Automatic SIMD vectorization (SSE, AVX, AVX-512)
-- OpenMP parallelization with optimal thread management
-- GPU acceleration for large-scale problems
-- Memory-efficient operations with minimal allocations
+SHTnsKit.jl achieves strong performance through:
+- Pure Julia kernels with SIMD‑friendly loops
+- FFTW‑backed azimuthal transforms with configurable threading
+- Memory‑efficient algorithms with minimal allocations
 
 ## Citation
 
-If you use SHTnsKit.jl in your research, please cite:
-
-**SHTns library**: Schaeffer, N. (2013). Efficient Spherical Harmonic Transforms aimed at pseudospectral numerical simulations. *Geochemistry, Geophysics, Geosystems*, 14(3), 751-758.
-
-**SHTnsKit.jl**: [Citation will be provided upon publication]
+If you use SHTnsKit.jl in your research, please cite the package (citation info forthcoming).
 
 ## License
 
@@ -111,11 +102,11 @@ SHTnsKit.jl is released under the GNU General Public License v3.0, ensuring comp
 
 - **Documentation**: Complete API reference and examples
 - **Examples**: Comprehensive example gallery covering all use cases
-- **Issues**: Report bugs and feature requests on [GitHub](https://github.com/username/SHTnsKit.jl/issues)
+- **Issues**: Report bugs and feature requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues)
 - **Discussions**: Community support and questions
 
 ## Related Packages
 
 - [FFTW.jl](https://github.com/JuliaMath/FFTW.jl) - Fast Fourier transforms
-- [SphericalHarmonics.jl](https://github.com/JuliaApproximation/SphericalHarmonics.jl) - Pure Julia implementation
+- [SphericalHarmonics.jl](https://github.com/JuliaApproximation/SphericalHarmonics.jl) - Alternative pure Julia implementation
 - [FastTransforms.jl](https://github.com/JuliaApproximation/FastTransforms.jl) - Various fast transforms
