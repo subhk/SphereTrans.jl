@@ -85,4 +85,33 @@ include("grid_utils.jl")
 include("threading.jl")
 
 
+function __init__()
+    # Optional environment-driven defaults
+    if haskey(ENV, "SHTNSKIT_THREADS")
+        val = lowercase(String(ENV["SHTNSKIT_THREADS"]))
+        flag = val in ("1", "true", "yes", "on")
+        try
+            set_threading!(flag)
+        catch
+        end
+    end
+    if haskey(ENV, "SHTNSKIT_FFT_THREADS")
+        s = String(ENV["SHTNSKIT_FFT_THREADS"]) 
+        try
+            set_fft_threads(parse(Int, s))
+        catch
+        end
+    end
+    if haskey(ENV, "SHTNSKIT_AUTO_THREADS")
+        val = lowercase(String(ENV["SHTNSKIT_AUTO_THREADS"]))
+        if val in ("1", "true", "yes", "on")
+            try
+                set_optimal_threads!()
+            catch
+            end
+        end
+    end
+end
+
+
 end # module SHTnsKit
