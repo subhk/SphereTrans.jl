@@ -388,6 +388,22 @@ julia --project examples/profile_complex.jl
 
 These print average timings (after warmup) for a few (lmax, mmax) pairs.
 
+### Threading Controls
+
+SHTnsKit parallelizes selected loops with Julia threads and can thread FFTs via FFTW. Start Julia with threads and set FFT threads:
+
+```julia
+using SHTnsKit
+using Base.Threads
+
+println("Julia threads: ", nthreads())
+set_threading!(true)              # enable parallel loops (default)
+set_fft_threads(nthreads())       # use same thread count in FFTW
+set_optimal_threads!()            # convenience helper
+```
+
+Note: OpenMP is not used directly; threading is pure Julia + FFTW. Avoid multiple concurrent transforms on the same `cfg` from different tasks.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues).

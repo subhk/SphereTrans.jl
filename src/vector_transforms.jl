@@ -104,8 +104,51 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
     fill!(u_phi, zero(T))
     
     # For each azimuthal mode m
-    for m in 0:min(cfg.mmax, nphi÷2)
-        (m == 0 || m % cfg.mres == 0) || continue
+    if SHTnsKit.get_threading() && Threads.nthreads() > 1
+        Threads.@threads :static for m in 0:min(cfg.mmax, nphi÷2)
+            (m == 0 || m % cfg.mres == 0) || continue
+            # Compute Fourier coefficients for spheroidal component
+            sph_mode = Vector{Complex{T}}(undef, nlat)
+            tor_mode = Vector{Complex{T}}(undef, nlat)
+            dtheta_sph_mode = Vector{Complex{T}}(undef, nlat)
+            dtheta_tor_mode = Vector{Complex{T}}(undef, nlat)
+            fill!(sph_mode, zero(Complex{T}))
+            fill!(tor_mode, zero(Complex{T}))
+            fill!(dtheta_sph_mode, zero(Complex{T}))
+            fill!(dtheta_tor_mode, zero(Complex{T}))
+            for i in 1:nlat
+                theta = cfg.theta_grid[i]
+                sph_sum = zero(Complex{T})
+                tor_sum = zero(Complex{T})
+                dtheta_sph = zero(Complex{T})
+                dtheta_tor = zero(Complex{T})
+                for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
+                    if m_coeff == m && l >= 1
+                        plm_val = cfg.plm_cache[i, coeff_idx]
+                        dplm_theta = _compute_plm_theta_derivative(cfg, l, m, theta, coeff_idx, i)
+                        if abs(sph_coeffs[coeff_idx]) > 0
+                            sph_sum += sph_coeffs[coeff_idx] * plm_val
+                            dtheta_sph += sph_coeffs[coeff_idx] * dplm_theta
+                        end
+                        if abs(tor_coeffs[coeff_idx]) > 0
+                            tor_sum += tor_coeffs[coeff_idx] * plm_val
+                            dtheta_tor += tor_coeffs[coeff_idx] * dplm_theta
+                        end
+                    end
+                end
+                sph_mode[i] = sph_sum
+                tor_mode[i] = tor_sum
+                dtheta_sph_mode[i] = dtheta_sph
+                dtheta_tor_mode[i] = dtheta_tor
+            end
+            insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
+            insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
+            insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
+            insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
+        end
+    else
+        for m in 0:min(cfg.mmax, nphi÷2)
+            (m == 0 || m % cfg.mres == 0) || continue
         
         # Compute Fourier coefficients for spheroidal component
         sph_mode = Vector{Complex{T}}(undef, nlat)
@@ -154,10 +197,11 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
         end
         
         # Insert into Fourier arrays
-        insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
-        insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
-        insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
-        insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
+            insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
+            insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
+            insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
+            insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
+        end
     end
     
     # Compute vector components
