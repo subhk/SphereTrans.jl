@@ -771,15 +771,19 @@ function _cplx_lm_indices(cfg::SHTnsConfig)
     idx = Tuple{Int,Int}[]
     for l in 0:cfg.lmax
         maxm = min(l, cfg.mmax)
-        # negative m down to -mres in steps of -mres
-        for m in -maxm:-cfg.mres:-cfg.mres
-            push!(idx, (l, m))
+        # negative m down to -maxm in steps of -mres (only if maxm > 0)
+        if maxm > 0
+            for m in -maxm:-cfg.mres:-cfg.mres
+                push!(idx, (l, m))
+            end
         end
-        # m=0
+        # m=0 (always included)
         push!(idx, (l, 0))
-        # positive m in steps of mres
-        for m in cfg.mres:cfg.mres:maxm
-            push!(idx, (l, m))
+        # positive m from mres up to maxm in steps of mres (only if maxm > 0)
+        if maxm > 0
+            for m in cfg.mres:cfg.mres:maxm
+                push!(idx, (l, m))
+            end
         end
     end
     return idx
@@ -812,8 +816,11 @@ function _cplx_mode_groups_arr(cfg::SHTnsConfig)
         arr = [NTuple{3,Int}[] for _ in 1:(2*mmax + 1)]
         idx_list = _cplx_lm_indices(cfg)
         for (idx, (l, m)) in enumerate(idx_list)
-            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
-            push!(arr[m + mmax + 1], (idx, k, l))
+            # Only include valid (l,m) combinations where |m| <= l
+            if abs(m) <= l
+                k = SHTnsKit.find_plm_index(cfg, l, abs(m))
+                push!(arr[m + mmax + 1], (idx, k, l))
+            end
         end
         arr
     end
