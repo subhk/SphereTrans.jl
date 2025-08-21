@@ -35,6 +35,15 @@ SHTnsKit.jl provides a complete interface to all SHTns features:
 - GPU acceleration and explicit OpenMP threading controls are not enabled at this time.
 - Normalization: default uses orthonormal spherical harmonics (L2-orthonormal basis). Real-basis conversion preserves energy under this convention.
 
+### Normalization and Conventions
+- `SHT_ORTHONORMAL` (default): Orthonormal Y_l^m with ∫ Y_l^m Y_{l'}^{m'*} dΩ = δ_{ll'} δ_{mm'}.
+- `SHT_FOURPI`: 4π normalization (Y_0^0 = 1, energy integrals include 1/4π factors).
+- `SHT_SCHMIDT`: Schmidt semi-normalization (common in geophysics).
+- `SHT_REAL_NORM`: Real normalization (real harmonics). The canonical implementation uses complex harmonics; real-basis API maps to/from complex with parity-accurate cos/sin components.
+
+For transforms and rotation support, the implementation assumes orthonormal normalization throughout; conversions preserve energy accordingly.
+- Normalization: default uses orthonormal spherical harmonics (L2-orthonormal basis). Real-basis conversion preserves energy under this convention.
+
 
 ## Installation
 
@@ -139,7 +148,6 @@ using LinearAlgebra
 cfg = create_gauss_config(16, 16)
 
 # Create a vector field (e.g., surface winds)
-using Complexes: ComplexF64
 u = rand(get_nlat(cfg), get_nphi(cfg))
 v = rand(get_nlat(cfg), get_nphi(cfg))
 Slm, Tlm = cplx_analyze_vector(cfg, ComplexF64.(u), ComplexF64.(v))
@@ -367,6 +375,18 @@ spat = allocate_spatial(cfg)
 
 @benchmark synthesize!($cfg, $sh, $spat)
 ```
+
+### Real vs Complex Roundtrip (examples)
+
+Run the example scripts to compare real-basis and complex roundtrip timings:
+
+```bash
+julia --project examples/compare_real_complex.jl
+julia --project examples/compare_vector_real_complex.jl
+julia --project examples/profile_complex.jl
+```
+
+These print average timings (after warmup) for a few (lmax, mmax) pairs.
 
 ## Contributing
 
