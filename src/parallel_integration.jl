@@ -5,7 +5,7 @@ This module provides seamless integration between serial and parallel operations
 allowing users to scale from single-process to massively parallel computations.
 """
 
-using MPI
+# MPI will be loaded conditionally through extensions
 
 # Conditional loading of parallel dependencies
 const PARALLEL_AVAILABLE = Ref(false)
