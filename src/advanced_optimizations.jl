@@ -9,9 +9,14 @@ This module implements cutting-edge optimizations including:
 - Non-blocking MPI communication patterns
 """
 
-using LoopVectorization
+# LoopVectorization loaded conditionally through extension
 using Base.Threads
 using LinearAlgebra
+
+# Fallback macro when LoopVectorization is not available
+macro turbo(expr)
+    return esc(expr)  # Just return the loop without vectorization
+end
 
 # Advanced memory pooling system
 mutable struct ComprehensiveWorkPool{T}
