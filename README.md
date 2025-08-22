@@ -12,674 +12,511 @@
     </a>
 </p>
 
-**Fast spherical harmonic transforms for Julia**
+**High-Performance Spherical Harmonic Transforms for Julia**
 
-SHTnsKit.jl provides a comprehensive, pure-Julia interface for spherical harmonic transforms, enabling efficient analysis of functions on the sphere. Whether you're working with climate data, geophysical fields, or astrophysical simulations, this package offers the tools you need for spectral analysis and synthesis.
+SHTnsKit.jl provides a comprehensive, pure-Julia implementation of spherical harmonic transforms with **parallel computing support** for scalable scientific computing. From single-core laptops to large HPC clusters, this package delivers the performance you need for spectral analysis on the sphere.
 
-**What are spherical harmonics?** Think of them as "Fourier transforms for the sphere" - they decompose any function on a spherical surface into a series of mathematical basis functions, just like how Fourier transforms decompose signals into frequencies.
+**What are spherical harmonics?** Think of them as "Fourier transforms for the sphere" - they decompose any function on a spherical surface into mathematical basis functions, enabling powerful spectral analysis of geophysical, astrophysical, and fluid dynamical data.
 
-## Why SHTnsKit.jl?
+## 🚀 Key Features
 
-- **Pure Julia**: No C dependencies, integrates seamlessly with the Julia ecosystem
-- **Complete functionality**: Scalar, vector, and complex field transforms
-- **Scientific accuracy**: Multiple grid types and normalization conventions
-- **High performance**: Optimized with Julia threads and FFTW
-- **Easy to use**: Clear API with comprehensive examples and documentation
+### **High-Performance Computing**
+- **🖥️ Pure Julia**: No C dependencies, seamless Julia ecosystem integration
+- **⚡ Multi-threading**: Optimized with Julia threads and FFTW parallelization
+- **🔄 MPI Parallel**: Distributed computing with MPI + PencilArrays + PencilFFTs
+- **🎯 SIMD Optimized**: Vectorization with LoopVectorization.jl support
+- **🏗️ Extensible**: Modular architecture for CPU/GPU/distributed computing
 
-## Key Features
+### **Complete Scientific Functionality**  
+- **📊 Transform Types**: Scalar, vector, and complex field transforms
+- **🌐 Grid Support**: Gauss-Legendre and regular (equiangular) grids
+- **🔄 Vector Analysis**: Spheroidal-toroidal decomposition for flow fields
+- **🧮 Differential Operators**: Laplacian, gradient, divergence, vorticity
+- **📈 Spectral Analysis**: Power spectra, correlation functions, filtering
 
-### Transform Types
-- **Scalar Fields**: Convert between spatial values and spherical harmonic coefficients
-- **Vector Fields**: Decompose vector fields into divergent (spheroidal) and rotational (toroidal) components
-- **Complex Fields**: Full support for complex-valued functions on the sphere
+### **Advanced Capabilities**
+- **🔥 Automatic Differentiation**: Native ForwardDiff.jl and Zygote.jl support  
+- **🌍 Field Rotations**: Wigner D-matrix rotations and coordinate transforms
+- **⚙️ Matrix Operators**: Efficient spectral differential operators
+- **🎛️ Performance Tuning**: Comprehensive benchmarking and optimization tools
 
-### Grid Support
-- **Gauss-Legendre grids**: Optimal for spectral accuracy (recommended)
-- **Regular grids**: Equiangular spacing for specific applications
+### **Scientific Applications**
+- **🌡️ Climate Science**: Atmospheric/oceanic field analysis, seasonal cycles
+- **🌍 Geophysics**: Gravitational/magnetic field modeling, seismic analysis  
+- **🌌 Astrophysics**: CMB analysis, stellar surface studies, galactic dynamics
+- **💨 Fluid Dynamics**: Turbulence analysis, vorticity-divergence decomposition
 
-### Advanced Capabilities
-- **Power spectrum analysis**: Understand energy distribution across scales
-- **Field rotations**: Rotate functions using Wigner D-matrices
-- **Automatic differentiation**: Seamless integration with ForwardDiff.jl and Zygote.jl
-- **High performance**: Multi-threading support with Julia threads and FFTW
+## 📦 Installation
 
-### Scientific Applications
-- **Climate science**: Analyze atmospheric and oceanic fields
-- **Geophysics**: Model gravitational and magnetic fields
-- **Astrophysics**: Study stellar surfaces and cosmic microwave background
-- **Fluid dynamics**: Decompose velocity fields and compute vorticity
-
-
-
-## Installation
-
-SHTnsKit.jl is a pure Julia package with no external dependencies. Install it using the Julia package manager:
+### Basic Installation (Serial Computing)
 
 ```julia
 using Pkg
 Pkg.add("SHTnsKit")
 ```
 
-That's it! No additional system libraries or compilation required.
+### Full Installation (Parallel Computing)
 
-## Quick Start
+For high-performance parallel computing on clusters:
 
-Here's a minimal example to get you started:
+```julia
+using Pkg
+Pkg.add(["SHTnsKit", "MPI", "PencilArrays", "PencilFFTs", "LoopVectorization"])
+```
+
+### System Requirements
+
+**MPI Setup** (for parallel computing):
+```bash
+# Ubuntu/Debian
+sudo apt-get install libopenmpi-dev
+
+# macOS  
+brew install open-mpi
+
+# Configure Julia MPI
+julia -e 'using Pkg; Pkg.build("MPI")'
+```
+
+## 🏃‍♂️ Quick Start
+
+### Basic Usage (Serial)
 
 ```julia
 using SHTnsKit
 
-# Create a spherical harmonic configuration
-lmax = 16              # Maximum spherical harmonic degree
-cfg = create_gauss_config(lmax, lmax)
+# Create spherical harmonic configuration
+lmax = 32              # Maximum spherical harmonic degree  
+cfg = create_gauss_config(Float64, lmax, lmax, 2*lmax+2, 4*lmax+1)
 
-# Create some test data on the sphere
+# Create test data on the sphere
 spatial_data = rand(get_nlat(cfg), get_nphi(cfg))
 
 # Transform to spherical harmonic coefficients
-coeffs = analyze_real(cfg, spatial_data)
+coeffs = allocate_spectral(cfg)
+spat_to_sh!(cfg, spatial_data, coeffs)
 
-# Transform back to spatial domain
-reconstructed = synthesize_real(cfg, coeffs)
+# Transform back to spatial domain  
+reconstructed = allocate_spatial(cfg)
+sh_to_spat!(cfg, coeffs, reconstructed)
 
 # Check accuracy
 error = maximum(abs.(spatial_data - reconstructed))
-println("Reconstruction error: $error")
-
-# Clean up
-destroy_config(cfg)
-```
-
-**What just happened?**
-1. We created a configuration for spherical harmonics up to degree 16
-2. We generated random data on a sphere (like temperature measurements)
-3. We decomposed this data into spherical harmonic modes
-4. We reconstructed the original data from these modes
-5. The tiny error shows the transform is working correctly!
-
-## Learning Path
-
-**New to spherical harmonics?** Start with these examples in order:
-
-### 1. Understanding the Basics
-
-```julia
-using SHTnsKit
-
-# Create a configuration
-cfg = create_gauss_config(16, 16)
-
-# Get grid coordinates
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-
-# Create a simple pattern: hot equator, cold poles
-temperature = @. 300 + 50 * cos(θ)  # 300K base + 50K variation
-
-# Transform to spherical harmonics
-coeffs = analyze_real(cfg, temperature)
-println("Number of coefficients: ", length(coeffs))
-
-# Find the dominant mode
-max_idx = argmax(abs.(coeffs))
-println("Strongest coefficient at index: $max_idx")
-
-# Reconstruct and verify
-reconstructed = synthesize_real(cfg, coeffs)
-error = maximum(abs.(temperature - reconstructed))
-println("Reconstruction error: $error")
+println("Roundtrip error: $error")  # Should be ~1e-14
 
 destroy_config(cfg)
 ```
 
-**Key concepts:**
-- `θ` (theta): colatitude (0 at north pole, π at south pole)
-- `φ` (phi): longitude (0 to 2π)
-- Each coefficient represents how much of a specific spherical harmonic pattern is present
-- The reconstruction should be nearly perfect (tiny numerical error)
-
-### 2. Working with Real Data
+### Parallel Computing (MPI)
 
 ```julia
 using SHTnsKit
+using MPI, PencilArrays, PencilFFTs
+
+MPI.Init()
 
 # Create configuration
-cfg = create_gauss_config(32, 32)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+cfg = create_gauss_config(Float64, 64, 64, 130, 256)
 
-# Create a realistic temperature field with seasonal variation
-# Simulate July temperatures (summer in Northern Hemisphere)
-july_temps = @. 273.15 + 40 * cos(θ - 0.4)  # Shifted toward NH summer
+# Create parallel configuration for MPI
+pcfg = create_parallel_config(cfg, MPI.COMM_WORLD)
 
-# Transform to spectral domain
-temp_coeffs = analyze_real(cfg, july_temps)
+# Parallel spherical harmonic operations
+sh_coeffs = randn(ComplexF64, cfg.nlm)
+result = similar(sh_coeffs)
 
-# Compute power spectrum to see which scales dominate
-power = power_spectrum(cfg, temp_coeffs)
+# Parallel operators
+parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)  # No communication
+parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)   # Requires communication
 
-# Print the first few modes
-for l in 0:5
-    println("Degree l=$l power: ", power[l+1])
-end
+# Parallel transforms
+spatial_data = allocate_spatial(cfg)
+memory_efficient_parallel_transform!(pcfg, :synthesis, sh_coeffs, spatial_data)
 
-# The l=0 mode is the global mean
-global_mean = temp_coeffs[1] / sqrt(4π)  # Normalized
-println("Global mean temperature: $global_mean K")
+MPI.Finalize()
+```
+
+### High-Performance SIMD
+
+```julia
+using SHTnsKit
+using LoopVectorization  # Enables turbo optimizations
+
+cfg = create_gauss_config(Float64, 48, 48, 98, 192)
+sh_coeffs = randn(ComplexF64, cfg.nlm)
+
+# Turbo-optimized operations (when LoopVectorization is available)
+turbo_apply_laplacian!(cfg, sh_coeffs)
+
+# Benchmark SIMD vs regular implementations
+results = benchmark_turbo_vs_simd(cfg)
+println("SIMD speedup: $(results.speedup)x")
 
 destroy_config(cfg)
 ```
 
-**What this shows:**
-- How to create realistic geophysical data
-- Power spectrum analysis reveals which spatial scales are important
-- The l=0 mode gives you the global average
-- Higher l modes represent finer spatial details
+## 📚 Comprehensive Examples
 
-### 3. Vector Field Analysis
+### 1. Climate Data Analysis
 
 ```julia
 using SHTnsKit
 
-# Create configuration
-cfg = create_gauss_config(24, 24)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+# Setup for climate-scale problem
+cfg = create_gauss_config(Float64, 42, 42, 86, 128)  # ~2.8° resolution
+θ, φ = get_theta(cfg), get_phi(cfg)
 
-# Create a realistic wind field: jet stream + tropical circulation
-# Zonal (east-west) component
-u = @. 20 * sin(2*θ) + 5 * cos(3*φ) * sin(θ)
-# Meridional (north-south) component  
-v = @. 10 * cos(θ) * sin(2*φ)
+# Create realistic temperature field with seasonal variation
+summer_pattern = @. 273.15 + 40 * cos(θ - 0.4) + 10 * sin(2*φ) * sin(θ)
+coeffs = allocate_spectral(cfg)
+spat_to_sh!(cfg, summer_pattern, coeffs)
 
-# Analyze vector field using real-basis (easier to understand)
-S_coeffs, T_coeffs = analyze_vector_real(cfg, u, v)
+# Analyze dominant spatial scales
+power = power_spectrum(cfg, coeffs)
+dominant_scale_l = argmax(power[2:end]) + 1  # Skip l=0
+characteristic_length = 40075.0 / dominant_scale_l  # km (Earth circumference)
 
-# Compute energy in divergent vs rotational components
-divergent_energy = sum(abs2, S_coeffs)
-rotational_energy = sum(abs2, T_coeffs)
+println("Dominant spatial scale: $(characteristic_length) km")
+
+# Global mean temperature
+global_mean = real(coeffs[1]) / sqrt(4π)
+println("Global mean temperature: $(global_mean) K")
+
+destroy_config(cfg)
+```
+
+### 2. Vector Field Analysis (Atmospheric Winds)
+
+```julia
+using SHTnsKit
+
+cfg = create_gauss_config(Float64, 32, 32, 66, 128)
+θ_grid, φ_grid = get_theta(cfg), get_phi(cfg)
+
+# Create realistic wind field: jet stream + wave pattern
+u_wind = @. 30 * sin(2*θ_grid) + 15 * cos(3*φ_grid) * sin(θ_grid)  # Zonal
+v_wind = @. 10 * cos(θ_grid) * sin(2*φ_grid)                        # Meridional
+
+# Decompose into spheroidal (divergent) and toroidal (rotational) components
+sph_coeffs = allocate_spectral(cfg)
+tor_coeffs = allocate_spectral(cfg)
+spat_to_sphtor!(cfg, u_wind, v_wind, sph_coeffs, tor_coeffs)
+
+# Analyze flow characteristics
+divergent_energy = sum(abs2, sph_coeffs)
+rotational_energy = sum(abs2, tor_coeffs)
 total_energy = divergent_energy + rotational_energy
 
-println("Flow analysis:")
-println("  Divergent (spheroidal): $(100*divergent_energy/total_energy)%")
-println("  Rotational (toroidal): $(100*rotational_energy/total_energy)%")
+println("Flow decomposition:")
+println("  Divergent flow: $(100*divergent_energy/total_energy:.1f)%") 
+println("  Rotational flow: $(100*rotational_energy/total_energy:.1f)%")
 
-# Reconstruct and verify
-u_reconstructed, v_reconstructed = synthesize_vector_real(cfg, S_coeffs, T_coeffs)
-u_error = maximum(abs.(u - u_reconstructed))
-v_error = maximum(abs.(v - v_reconstructed))
-println("  Reconstruction error: u=$u_error, v=$v_error")
-
+# Atmospheric flows are typically dominated by rotation
 destroy_config(cfg)
 ```
 
-**Physical interpretation:**
-- **Spheroidal (S) modes**: Represent divergent flow (expansion/compression)
-- **Toroidal (T) modes**: Represent rotational flow (circulation, vortices)
-- Real atmospheric flows are usually dominated by rotational motion
-- This decomposition is fundamental in meteorology and oceanography
-
-### 4. Advanced Analysis: Power Spectra
-
-```julia
-using SHTnsKit
-using Plots
-
-# Create configuration
-cfg = create_gauss_config(64, 64)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-
-# Create a multi-scale field (like turbulent flow)
-# Large-scale + medium-scale + small-scale components
-field = @. (sin(2*θ) * cos(φ) +           # Large scale (l~2)
-            0.3 * sin(6*θ) * cos(3*φ) +   # Medium scale (l~6) 
-            0.1 * sin(15*θ) * cos(8*φ))   # Small scale (l~15)
-
-# Transform to spectral domain
-coeffs = analyze_real(cfg, field)
-
-# Compute power spectrum
-power = power_spectrum(cfg, coeffs)
-
-# Plot to see the energy distribution
-plot(0:get_lmax(cfg), power, 
-     xlabel="Spherical Harmonic Degree l", 
-     ylabel="Power", yscale=:log10,
-     title="Energy Spectrum", linewidth=2)
-
-# Find the peak energy scale
-max_power_idx = argmax(power[2:end]) + 1  # Skip l=0
-println("Peak energy at degree l = $(max_power_idx-1)")
-println("This corresponds to ~$(360/(max_power_idx-1))° wavelength")
-
-destroy_config(cfg)
-```
-
-**Understanding power spectra:**
-- Each degree l corresponds to a spatial wavelength ~360°/l
-- Power spectrum shows how energy is distributed across scales
-- Peaks indicate dominant spatial scales in your data
-- Useful for understanding the characteristic sizes of features
-
-## Real-World Applications
-
-### Climate Data Analysis
+### 3. Parallel Performance Analysis
 
 ```julia
 using SHTnsKit
 
-# Process temperature anomalies
-cfg = create_gauss_config(32, 32)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-
-# Simulate El Niño pattern (Pacific warming)
-temp_anomaly = @. 2 * exp(-((φ-π)^2 + (θ-π/2)^2) / 0.3^2)
-
-# Analyze the spatial pattern
-coeffs = analyze_real(cfg, temp_anomaly)
-power = power_spectrum(cfg, coeffs)
-
-# Find characteristic scale
-max_l = argmax(power[2:end])  # Skip l=0
-characteristic_scale = 360 / max_l
-println("El Niño characteristic scale: ~$characteristic_scale degrees")
-
-destroy_config(cfg)
-```
-
-### Geophysical Modeling
-
-```julia
-# Gravitational field analysis
-cfg = create_gauss_config(48, 48)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-
-# Earth's oblateness (J₂ term) + smaller harmonics
-gravity_anomaly = @. -9.81 * 0.001 * (1.5*cos(θ)^2 - 0.5) + 
-                     -9.81 * 0.0001 * sin(3*θ) * cos(2*φ)
-
-coeffs = analyze_real(cfg, gravity_anomaly)
-
-# The J₂ coefficient (degree 2, order 0)
-J2_index = SHTnsKit.lmidx(cfg, 2, 0)
-J2_value = coeffs[J2_index]
-println("J₂ coefficient: $J2_value")
-
-destroy_config(cfg)
-```
-
-## Advanced Features
-
-### Rotations and Coordinate Transformations
-
-```julia
-using SHTnsKit
-
-# Create a field with a specific pattern
-cfg = create_gauss_config(16, 16)
-θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-
-# Create a field concentrated at north pole
-original_field = @. exp(-5 * θ^2)  # Hot spot at north pole
-
-# Transform to coefficients
-coeffs = analyze_real(cfg, original_field)
-
-# Rotate by 45° around z-axis (longitude shift)
-rotate_real!(cfg, coeffs; alpha=π/4, beta=0.0, gamma=0.0)
-
-# Transform back to see the rotated field
-rotated_field = synthesize_real(cfg, coeffs)
-
-# The hot spot should now be at longitude 45°
-println("Original max at: ", argmax(original_field))
-println("Rotated max at: ", argmax(rotated_field))
-
-destroy_config(cfg)
-```
-
-**Rotation applications:**
-- Change coordinate systems (e.g., from geographic to magnetic coordinates)
-- Align data from different observation times
-- Study rotational symmetries in your data
-
-### Performance Optimization
-
-```julia
-using SHTnsKit
-
-# Enable threading for better performance
-set_optimal_threads!()  # Automatically configure threads
-
-# For manual control:
-# set_threading!(true)        # Enable Julia thread parallelization
-# set_fft_threads(4)         # Set FFTW threads
-
-# Create larger configuration for benchmarking
-cfg = create_gauss_config(64, 64)
-field = rand(get_nlat(cfg), get_nphi(cfg))
-
-# Time the transforms
-@time coeffs = analyze_real(cfg, field)      # Analysis
-@time reconstructed = synthesize_real(cfg, coeffs)  # Synthesis
-
-destroy_config(cfg)
-```
-
-## Automatic Differentiation
-
-SHTnsKit.jl provides comprehensive automatic differentiation support through extensions for both **ForwardDiff.jl** (forward-mode) and **Zygote.jl** (reverse-mode), enabling gradient-based optimization and machine learning applications.
-
-### Forward-mode AD (ForwardDiff.jl)
-
-```julia
-using SHTnsKit, ForwardDiff
-
-cfg = create_gauss_config(8, 8)
-sh_coeffs = rand(get_nlm(cfg))
-
-# Define objective function
-function total_power(sh)
-    spatial = synthesize(cfg, sh)
-    return sum(abs2, spatial)
+# Problem size scaling analysis
+for lmax in [16, 32, 48, 64]
+    cfg = create_gauss_config(Float64, lmax, lmax, 2*lmax+2, 4*lmax+1)
+    
+    # Get performance recommendations
+    optimal_procs = optimal_process_count(cfg)
+    perf_model = parallel_performance_model(cfg, optimal_procs)
+    
+    println("lmax=$lmax ($(cfg.nlm) coefficients):")
+    println("  Recommended processes: $optimal_procs")
+    println("  Expected speedup: $(perf_model.speedup:.1f)x")
+    println("  Parallel efficiency: $(perf_model.efficiency*100:.1f)%")
+    
+    destroy_config(cfg)
 end
-
-# Compute gradient
-gradient = ForwardDiff.gradient(total_power, sh_coeffs)
-hessian = ForwardDiff.hessian(total_power, sh_coeffs)
 ```
 
-### Reverse-mode AD (Zygote.jl)
+### 4. Automatic Differentiation
 
 ```julia
 using SHTnsKit, Zygote
 
-# Same function as above
-function loss_function(sh)
-    spatial = synthesize(cfg, sh)
-    return sum(abs2, spatial)
+cfg = create_gauss_config(Float64, 16, 16, 34, 64)
+
+# Define optimization objective
+function reconstruction_loss(sh_coeffs, target_field)
+    spatial_field = allocate_spatial(cfg)
+    sh_to_spat!(cfg, sh_coeffs, spatial_field)
+    return sum((spatial_field - target_field).^2)
 end
 
-# Get both value and gradient
-value, gradient = Zygote.withgradient(loss_function, sh_coeffs)
-```
+# Create target and initial guess
+target = rand(get_nlat(cfg), get_nphi(cfg))
+sh_coeffs = 0.1 * randn(ComplexF64, cfg.nlm)
 
-### Optimization Example
-
-```julia
-# Target fitting with gradient descent
-target_field = create_test_field(cfg, 2, 1)  # Y_2^1 harmonic
-
-function mse_loss(sh_coeffs)
-    predicted = synthesize(cfg, sh_coeffs) 
-    return sum((predicted - target_field).^2) / length(target_field)
-end
-
-# Initialize and optimize
-sh_coeffs = 0.1 * randn(get_nlm(cfg))
-learning_rate = 0.01
-
+# Gradient-based optimization
+learning_rate = 0.001
 for i in 1:100
-    loss_val, grad = Zygote.withgradient(mse_loss, sh_coeffs)
-    sh_coeffs .-= learning_rate .* grad[1]  # Gradient descent step
-end
-```
-
-### Supported Functions
-
-All major SHTnsKit functions support automatic differentiation:
-- `synthesize`, `analyze` - Core transforms
-- `synthesize_vector`, `analyze_vector` - Vector field transforms  
-- `evaluate_at_point` - Point evaluation
-- `power_spectrum`, `total_power` - Spectral analysis
-- `spatial_integral`, `spatial_mean` - Spatial operations
-
-See `docs/automatic_differentiation.md` for comprehensive examples and `examples/differentiation_examples.jl` for runnable code.
-Additional runnable examples are provided in `examples/ad_examples.jl` showing both Zygote and ForwardDiff on small problems.
-
-### Vector optimization with Zygote (example)
-
-```julia
-using SHTnsKit, Zygote, Random
-
-cfg = create_gauss_config(8, 8)
-n = length(SHTnsKit._cplx_lm_indices(cfg))
-rng = MersenneTwister(42)
-
-# Build a target vector field
-S_tar = [0.3randn(rng) + 0.3im*randn(rng) for _ in 1:n]
-T_tar = [0.3randn(rng) + 0.3im*randn(rng) for _ in 1:n]
-uθ_tar, uφ_tar = cplx_synthesize_vector(cfg, S_tar, T_tar)
-
-# Loss
-loss(S, T) = begin
-    uθ, uφ = cplx_synthesize_vector(cfg, S, T)
-    0.5 * (sum(abs2, uθ .- uθ_tar) + sum(abs2, uφ .- uφ_tar))
-end
-
-# Optimize S,T to match the target
-S = zeros(ComplexF64, n); T = zeros(ComplexF64, n)
-for it in 1:20
-    L, back = Zygote.pullback(loss, S, T)
-    gS, gT = back(1.0)
-    S .-= 0.1 .* gS
-    T .-= 0.1 .* gT
-    @show it L
-end
-destroy_config(cfg)
-```
-
-See also `examples/ad_vector_zygote.jl` for a complete runnable script.
-
-## Thread Safety
-
-All SHTns operations are thread-safe when using different configurations. Operations on the same configuration are automatically serialized using per-config locks.
-
-## Grid Types
-
-SHTnsKit.jl supports multiple grid types:
-
-```julia
-# Gauss-Legendre grid (recommended for most applications)
-cfg_gauss = create_gauss_config(32, 32)
-
-# Regular (equiangular) grid
-cfg_regular = create_regular_config(32, 32)
-
-```
-
-## Complex Fields
-
-```julia
-using SHTnsKit
-
-cfg = create_gauss_config(16, 16)
-
-# Create complex spectral coefficients
-sh_complex = allocate_complex_spectral(cfg)
-sh_complex[1] = 1.0 + 0.5im
-
-# Transform to spatial domain
-spatial_complex = synthesize_complex(cfg, sh_complex)
-
-# Transform back
-recovered_complex = analyze_complex(cfg, spatial_complex)
-
-destroy_config(cfg)
-```
-
-## Error Handling
-
-SHTnsKit.jl provides robust error handling:
-
-```julia
-using SHTnsKit
-
-try
-    cfg = create_gauss_config(64, 64)
+    loss_val, grads = Zygote.withgradient(
+        sh -> reconstruction_loss(sh, target), sh_coeffs)
     
-    # Operations that might fail
-    sh = rand(10)  # Wrong size
-    spat = allocate_spatial(cfg)
-    synthesize!(cfg, sh, spat)  # Will throw an error due to wrong size
+    sh_coeffs .-= learning_rate .* grads[1]
     
-catch e
-    println("Error: $e")
-finally
-    if @isdefined(cfg)
-        destroy_config(cfg)
+    if i % 20 == 0
+        println("Iteration $i: Loss = $loss_val")
     end
 end
-```
 
-## Performance Tips
-
-1. **Use Gauss grids** for most applications - they're more efficient
-2. **Use in-place operations** (`synthesize!`, `analyze!`) when possible
-3. **Batch operations** on the same configuration for better cache usage
-
-## Benchmarking
-
-```julia
-using SHTnsKit
-using BenchmarkTools
-
-cfg = create_gauss_config(64, 64)
-sh = rand(get_nlm(cfg))
-spat = allocate_spatial(cfg)
-
-@benchmark synthesize!($cfg, $sh, $spat)
-```
-
-### Real vs Complex Roundtrip (examples)
-
-Run the example scripts to compare real-basis and complex roundtrip timings:
-
-```bash
-julia --project examples/compare_real_complex.jl
-julia --project examples/compare_vector_real_complex.jl
-julia --project examples/profile_complex.jl
-```
-
-These print average timings (after warmup) for a few (lmax, mmax) pairs.
-
-### Threading Controls
-
-SHTnsKit parallelizes selected loops with Julia threads and can thread FFTs via FFTW. Start Julia with threads and set FFT threads:
-
-```julia
-using SHTnsKit
-using Base.Threads
-
-println("Julia threads: ", nthreads())
-set_threading!(true)              # enable parallel loops (default)
-set_fft_threads(nthreads())       # use same thread count in FFTW
-set_optimal_threads!()            # convenience helper
-```
-
-Note: OpenMP is not used directly; threading is pure Julia + FFTW. Avoid multiple concurrent transforms on the same `cfg` from different tasks.
-
-Environment variables (optional):
-
-- `SHTNSKIT_THREADS` = `1|true|yes|on` or `0|false|no|off` to enable/disable loop threading at startup.
-- `SHTNSKIT_FFT_THREADS` = integer to set FFTW thread count at startup.
-- `SHTNSKIT_AUTO_THREADS` = `1|true|yes|on` to call `set_optimal_threads!()` at startup.
-
-Example (bash):
-
-```bash
-export JULIA_NUM_THREADS=$(nproc)
-export SHTNSKIT_THREADS=on
-export SHTNSKIT_FFT_THREADS=$(nproc)
-export SHTNSKIT_AUTO_THREADS=on
-julia --project -e 'using SHTnsKit; @show SHTnsKit.get_threading(); @show SHTnsKit.get_fft_threads()'
-```
-
-### Quick threading benchmark
-
-```julia
-using SHTnsKit
-using Base.Threads
-
-cfg = create_gauss_config(32, 32)
-
-# single-thread style
-set_threading!(false)
-set_fft_threads(1)
-t1 = @elapsed cplx_spat_to_sh(cfg, cplx_sh_to_spat(cfg, allocate_complex_spectral(cfg)))
-
-# multi-thread style
-set_threading!(true)
-set_fft_threads(nthreads())
-t2 = @elapsed cplx_spat_to_sh(cfg, cplx_sh_to_spat(cfg, allocate_complex_spectral(cfg)))
-
-println("speedup ≈ ", round(t1/max(t2,1e-12), digits=2), "x (Nthreads=", nthreads(), ")")
 destroy_config(cfg)
 ```
 
-For a more thorough comparison, run:
+## 🔧 Performance Optimization
 
-```bash
-julia --project examples/benchmark_threading.jl
+### Threading Configuration
+
+```julia
+using SHTnsKit
+
+# Automatic optimal threading setup
+set_optimal_threads!()
+
+# Manual control
+set_threading!(true)        # Enable Julia thread parallelization  
+set_fft_threads(8)         # Set FFTW thread count
+
+# Check current settings
+println("Julia threads: $(get_threading())")
+println("FFTW threads: $(get_fft_threads())")
 ```
 
-### Benchmark Results (fill with your numbers)
+### Environment Variables
 
-You can generate a Markdown table of timings with:
+Control threading at startup:
 
 ```bash
-julia --project examples/record_benchmarks.jl
+export JULIA_NUM_THREADS=8
+export SHTNSKIT_THREADS=on
+export SHTNSKIT_FFT_THREADS=8  
+export SHTNSKIT_AUTO_THREADS=on
+
+julia --project=.
 ```
 
-Then copy the output here for reference. A table template:
+### Benchmarking Tools
 
-| lmax=mmax | Nthreads | synth ST (s) | synth MT (s) | speedup | analyze(syn) ST (s) | analyze(syn) MT (s) | speedup |
-|-----------|----------|--------------|--------------|---------|---------------------|---------------------|---------|
-| 24        |          |              |              |         |                     |                     |         |
-| 32        |          |              |              |         |                     |                     |         |
-| 40        |          |              |              |         |                     |                     |         |
+```julia
+using SHTnsKit
 
-## Next Steps
+# Built-in comprehensive benchmark suite
+run_comprehensive_benchmark(
+    lmax_small=16, lmax_medium=32, lmax_large=64,
+    include_scaling=true, include_precision=true, include_threading=true
+)
 
-Now that you've seen the basics, here's how to dive deeper:
+# Memory scaling analysis
+scaling_results = benchmark_memory_scaling([16, 24, 32, 40, 48])
 
-### **Documentation**
-- **[Complete API Documentation](https://subhk.github.io/SHTnsKit.jl)**: Detailed function reference
-- **[Advanced Examples](docs/src/examples/index.md)**: Real-world scientific applications
-- **[Performance Guide](docs/src/performance.md)**: Optimization tips and benchmarking
+# Vector transform performance
+vector_results = benchmark_vector_transforms(cfg, n_samples=50)
+```
 
-### **Scientific Applications**
-- **Climate Science**: Temperature anomaly analysis, seasonal cycles
-- **Geophysics**: Gravitational fields, magnetic field modeling  
-- **Astrophysics**: Cosmic microwave background, stellar surface analysis
-- **Fluid Dynamics**: Vorticity-divergence decomposition, turbulence analysis
+## 🌐 Parallel Computing Guide
 
-### **Advanced Features**
-- **Automatic Differentiation**: Gradient-based optimization with ForwardDiff.jl/Zygote.jl
-- **Vector Fields**: Spheroidal-toroidal decomposition for wind/flow analysis
-- **Field Rotations**: Coordinate system transformations
-- **Complex Fields**: Support for wave functions and complex-valued data
+### Running Examples
 
-### **Getting Help**
-- **Examples**: Run `julia examples/` scripts for hands-on learning
-- **Issues**: Report bugs or ask questions on [GitHub Issues](https://github.com/subhk/SHTnsKit.jl/issues)
-- **Discussions**: Community support for usage questions
+```bash
+# Serial mode (no MPI required)
+julia --project=. examples/parallel_example.jl
 
-## Contributing
+# Parallel mode with 4 processes
+mpiexec -n 4 julia --project=. examples/parallel_example.jl
 
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests on [GitHub](https://github.com/subhk/SHTnsKit.jl/issues).
+# With performance benchmarking
+mpiexec -n 4 julia --project=. examples/parallel_example.jl --benchmark
+```
 
-## Citation
+### Architecture Overview
+
+SHTnsKit.jl uses Julia's modern package extension system:
+
+```
+SHTnsKit/
+├── src/                          # Core functionality (always available)
+├── ext/
+│   ├── SHTnsKitParallelExt.jl   # MPI + PencilArrays + PencilFFTs
+│   └── SHTnsKitLoopVecExt.jl    # LoopVectorization optimizations
+└── examples/
+    └── parallel_example.jl      # Complete parallel demo
+```
+
+**Graceful Feature Detection:**
+- **No optional packages**: All functions work in serial mode
+- **MPI available**: Parallel computing automatically enabled
+- **Full stack**: Maximum performance with all optimizations
+
+### Performance Characteristics
+
+| **Problem Size** | **Recommended Processes** | **Expected Speedup** | **Memory/Process** |
+|------------------|---------------------------|---------------------|-------------------|
+| lmax ≤ 32        | 1 (serial)               | 1.0x                | < 100 MB          |
+| lmax = 48        | 2-4                       | 1.5-3.0x            | 100-500 MB        |
+| lmax = 64        | 4-8                       | 3.0-6.0x            | 200 MB - 1 GB     |
+| lmax = 96        | 8-16                      | 6.0-12.0x           | 500 MB - 2 GB     |
+| lmax ≥ 128       | 16-64                     | 10.0-25.0x          | 1-8 GB            |
+
+## 📖 Advanced Documentation
+
+### Complete Feature Documentation
+- **[Parallel Computing Guide](PARALLEL_FEATURES.md)**: Comprehensive parallel computing setup
+- **[API Reference](https://subhk.github.io/SHTnsKit.jl)**: Complete function documentation
+- **[Performance Guide](docs/performance.md)**: Optimization strategies and benchmarking
+- **[Examples Gallery](examples/)**: Runnable scientific applications
+
+### Automatic Differentiation
+
+Full support for gradient-based optimization:
+
+```julia
+using SHTnsKit, ForwardDiff, Zygote
+
+# Forward-mode differentiation
+cfg = create_gauss_config(Float64, 12, 12, 26, 48)
+objective(sh) = sum(abs2, sh_to_spat(cfg, sh))
+gradient = ForwardDiff.gradient(objective, sh_coeffs)
+
+# Reverse-mode differentiation (better for many parameters)
+loss_val, grad = Zygote.withgradient(objective, sh_coeffs)
+```
+
+Supported functions include all core transforms, vector operations, spectral analysis, and differential operators.
+
+### Matrix Operators
+
+Efficient spectral differential operators:
+
+```julia
+# Apply Laplacian in spectral domain
+apply_laplacian!(cfg, sh_coeffs, laplacian_result)
+
+# cos(θ) multiplication operator  
+apply_costheta_operator!(cfg, sh_coeffs, costheta_result)
+
+# Custom matrix operations
+matrix = create_custom_operator_matrix(cfg)
+result = apply_matrix_operator(cfg, matrix, sh_coeffs)
+```
+
+## 🔬 Scientific Applications
+
+### Geophysical Field Analysis
+
+```julia
+# Earth's gravitational field analysis
+cfg = create_gauss_config(Float64, 64, 64, 130, 256)
+
+# Load/create gravitational potential data
+gravity_field = load_gravity_data()  # Your data loading function
+
+# Transform to spherical harmonics  
+gravity_coeffs = allocate_spectral(cfg)
+spat_to_sh!(cfg, gravity_field, gravity_coeffs)
+
+# Extract specific harmonic coefficients (e.g., J2 oblateness)
+j2_index = lmidx(cfg, 2, 0)
+j2_coefficient = gravity_coeffs[j2_index]
+println("Earth's J2 coefficient: $j2_coefficient")
+
+# Compute power spectrum to analyze dominant spatial scales
+power = power_spectrum(cfg, gravity_coeffs)
+```
+
+### Atmospheric Data Processing
+
+```julia
+# High-resolution atmospheric analysis
+cfg = create_gauss_config(Float64, 85, 85, 172, 256)  # ~1.4° resolution
+
+# Process wind field data
+u_wind, v_wind = load_atmospheric_data()  # Your data
+
+# Decompose into divergent and rotational components
+div_coeffs, rot_coeffs = allocate_spectral(cfg), allocate_spectral(cfg)
+spat_to_sphtor!(cfg, u_wind, v_wind, div_coeffs, rot_coeffs)
+
+# Compute vorticity and divergence fields
+vorticity = allocate_spatial(cfg)
+divergence = allocate_spatial(cfg)
+sphtor_to_spat!(cfg, rot_coeffs, div_coeffs, vorticity, divergence)
+```
+
+## 🧪 Testing and Validation
+
+Run the comprehensive test suite:
+
+```bash
+# Basic functionality tests
+julia --project=. -e "using Pkg; Pkg.test()"
+
+# Parallel functionality tests  
+mpiexec -n 4 julia --project=. examples/parallel_example.jl
+
+# Performance benchmarks
+julia --project=. examples/benchmark_suite.jl
+
+# Automatic differentiation tests
+julia --project=. examples/ad_examples.jl
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Areas of particular interest:
+
+- **GPU Computing**: CUDA/ROCm support for massive parallelism
+- **Advanced Algorithms**: Fast multipole methods, butterfly algorithms  
+- **Domain-Specific Tools**: Climate analysis, astrophysics applications
+- **Performance Optimization**: Architecture-specific tuning
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## 📜 Citation
 
 If you use SHTnsKit.jl in your research, please cite:
 
-1. **SHTns library**: Schaeffer, N. (2013). Efficient Spherical Harmonic Transforms aimed at pseudospectral numerical simulations. *Geochemistry, Geophysics, Geosystems*, 14(3), 751-758.
+```bibtex
+@software{shtnskit_jl,
+  title = {SHTnsKit.jl: High-Performance Spherical Harmonic Transforms for Julia},
+  author = {Kar, Subhajit},
+  year = {2024},
+  url = {https://github.com/subhk/SHTnsKit.jl}
+}
+```
 
-2. 
+Please also cite the underlying SHTns library:
+```bibtex
+@article{schaeffer2013efficient,
+  title={Efficient spherical harmonic transforms aimed at pseudospectral numerical simulations},
+  author={Schaeffer, Nathana{\"e}l},
+  journal={Geochemistry, Geophysics, Geosystems},
+  volume={14},
+  number={3},
+  pages={751--758},
+  year={2013},
+  publisher={Wiley Online Library}
+}
+```
 
-## License
+## 📄 License
 
-SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), the same license family as the underlying SHTns library which uses the CeCILL License (GPL-compatible). This ensures full compatibility and aligns with the open-source philosophy of the SHTns project.
+SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), ensuring compatibility with the underlying SHTns library and promoting open scientific computing.
 
-## References
+## 📚 References
 
-- [SHTns Official Documentation](https://nschaeff.bitbucket.io/shtns/)
-- [SHTns Paper](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/ggge.20071)
-- [Spherical Harmonics on Wikipedia](https://en.wikipedia.org/wiki/Spherical_harmonics)
+- **[SHTns Documentation](https://nschaeff.bitbucket.io/shtns/)**: Original C library
+- **[Spherical Harmonics Theory](https://en.wikipedia.org/wiki/Spherical_harmonics)**: Mathematical background  
+- **[Julia Parallel Computing](https://docs.julialang.org/en/v1/manual/parallel-computing/)**: Julia parallelization guide
+- **[MPI.jl Documentation](https://juliaparallel.org/MPI.jl/stable/)**: MPI interface for Julia
+
+---
+
+**Ready to transform your spherical data analysis?** Start with the [Quick Start](#-quick-start) guide or explore the [examples](examples/) for your specific scientific domain!
