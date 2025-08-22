@@ -102,7 +102,19 @@ export
     
     # Robert form functions
     set_robert_form!, is_robert_form, sphtor_to_spat_robert!, spat_to_sphtor_robert!,
-    robert_form_factor, apply_robert_form_to_field!
+    robert_form_factor, apply_robert_form_to_field!,
+    
+    # Performance optimized functions
+    sh_to_spat_optimized!, spat_to_sh_optimized!, sphtor_to_spat_optimized!,
+    get_work_pool, clear_work_pools!, resize_work_pools!,
+    
+    # Type-stable functions  
+    create_config_stable, set_grid_stable!, allocate_spectral_stable, allocate_spatial_stable,
+    validate_config_stable, nlm_calc_stable, lmidx_stable, compute_legendre_stable,
+    
+    # Benchmarking suite
+    benchmark_transform_performance, benchmark_vector_transforms, benchmark_memory_scaling,
+    benchmark_different_precisions, benchmark_threading_performance, run_comprehensive_benchmark
 
 include("types.jl")
 include("gauss_legendre.jl") 
@@ -120,6 +132,9 @@ include("single_m_transforms.jl")
 include("truncated_transforms.jl")
 include("profiling.jl")
 include("robert_form.jl")
+include("performance_optimizations.jl")
+include("type_stability_fixes.jl")
+include("benchmarking_suite.jl")
 
 
 function __init__()

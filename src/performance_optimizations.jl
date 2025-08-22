@@ -3,8 +3,9 @@ High-performance optimizations for SHTns transforms.
 This module provides allocation-free, type-stable, and CPU-optimized implementations.
 """
 
-using SIMD
 using Base.Threads
+# SIMD operations using Julia's built-in vectorization
+# If SIMD.jl is available, it can be used for additional optimizations
 
 # Memory pool for work arrays to avoid allocations
 mutable struct WorkArrayPool{T<:AbstractFloat}
@@ -101,10 +102,14 @@ function sh_to_spat_optimized!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Co
     # Legendre synthesis - vectorized over latitude points
     @inbounds for m in 0:cfg.mmax
         m_coeff_indices = get(pool.m_indices_cache, m, Int[])
-        isempty(m_coeff_indices) && continue
+        if isempty(m_coeff_indices)
+            continue
+        end
         
         m_fourier_idx = m + 1
-        m_fourier_idx > nphi_modes && continue
+        if m_fourier_idx > nphi_modes
+            continue
+        end
         
         # Vectorized Legendre evaluation
         @simd for j in 1:nlat
@@ -172,10 +177,14 @@ function spat_to_sh_optimized!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix
     # Legendre analysis - optimized integration
     @inbounds for m in 0:cfg.mmax
         m_coeff_indices = get(pool.m_indices_cache, m, Int[])
-        isempty(m_coeff_indices) && continue
+        if isempty(m_coeff_indices)
+            continue
+        end
         
         m_fourier_idx = m + 1
-        m_fourier_idx > size(fourier_coeffs, 2) && continue
+        if m_fourier_idx > size(fourier_coeffs, 2)
+            continue
+        end
         
         # Vectorized integration over latitude
         for coeff_idx in m_coeff_indices
@@ -481,10 +490,14 @@ function sphtor_to_spat_optimized!(cfg::SHTnsConfig{T},
     # Optimized vector Legendre synthesis
     @inbounds for m in 0:cfg.mmax
         m_coeff_indices = get(pool.m_indices_cache, m, Int[])
-        isempty(m_coeff_indices) && continue
+        if isempty(m_coeff_indices)
+            continue
+        end
         
         m_fourier_idx = m + 1
-        m_fourier_idx > nphi_modes && continue
+        if m_fourier_idx > nphi_modes
+            continue
+        end
         
         # Vectorized computation over latitude points
         @simd for j in 1:nlat
@@ -499,24 +512,24 @@ function sphtor_to_spat_optimized!(cfg::SHTnsConfig{T},
             # Inner loop over l for this m
             for coeff_idx in m_coeff_indices
                 l, _ = cfg.lm_indices[coeff_idx]
-                l == 0 && continue  # Skip l=0 for vector fields
-                
-                plm_val = _fast_legendre_eval(cfg, l, m, cost, j, pool)
-                dplm_val = _fast_legendre_deriv_eval(cfg, l, m, cost, sint, j, pool)
-                
-                s_coeff = sph_coeffs[coeff_idx]  
-                t_coeff = tor_coeffs[coeff_idx]
-                
-                # Spheroidal contributions: vθ = ∂S/∂θ, vφ = (im/sin θ) * S
-                sph_t_sum += s_coeff * dplm_val
-                if sint > T(1e-12)
-                    sph_p_sum += s_coeff * (Complex{T}(0, m) / sint) * plm_val
-                end
-                
-                # Toroidal contributions: vθ = -(im/sin θ) * T, vφ = ∂T/∂θ  
-                tor_p_sum += t_coeff * dplm_val
-                if sint > T(1e-12)
-                    tor_t_sum -= t_coeff * (Complex{T}(0, m) / sint) * plm_val
+                if l != 0  # Process only l > 0 for vector fields
+                    plm_val = _fast_legendre_eval(cfg, l, m, cost, j, pool)
+                    dplm_val = _fast_legendre_deriv_eval(cfg, l, m, cost, sint, j, pool)
+                    
+                    s_coeff = sph_coeffs[coeff_idx]  
+                    t_coeff = tor_coeffs[coeff_idx]
+                    
+                    # Spheroidal contributions: vθ = ∂S/∂θ, vφ = (im/sin θ) * S
+                    sph_t_sum += s_coeff * dplm_val
+                    if sint > T(1e-12)
+                        sph_p_sum += s_coeff * (Complex{T}(0, m) / sint) * plm_val
+                    end
+                    
+                    # Toroidal contributions: vθ = -(im/sin θ) * T, vφ = ∂T/∂θ  
+                    tor_p_sum += t_coeff * dplm_val
+                    if sint > T(1e-12)
+                        tor_t_sum -= t_coeff * (Complex{T}(0, m) / sint) * plm_val
+                    end
                 end
             end
             
