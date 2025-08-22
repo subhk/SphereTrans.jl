@@ -26,35 +26,7 @@ function create_config(lmax::Int, mmax::Int=lmax, mres::Int=1;
                       grid_type::SHTnsGrid=SHT_GAUSS,
                       norm::SHTnsNorm=SHT_ORTHONORMAL,
                       T::Type=Float64)
-    # Input validation
-    lmax >= 0 || error("lmax must be non-negative")
-    mmax >= 0 || error("mmax must be non-negative")
-    mmax <= lmax || error("mmax must not exceed lmax")
-    mres >= 1 || error("mres must be positive")
-    
-    cfg = SHTnsConfig{T}()
-    cfg.lmax = lmax
-    cfg.mmax = mmax
-    cfg.mres = mres
-    cfg.grid_type = grid_type
-    cfg.norm = norm
-    
-    # Calculate number of spectral coefficients
-    cfg.nlm = nlm_calc(lmax, mmax, mres)
-    
-    # Create (l,m) index mapping
-    cfg.lm_indices = Tuple{Int,Int}[]
-    for l in 0:lmax
-        for m in 0:min(l, mmax)
-            if m % mres == 0 || m == 0
-                push!(cfg.lm_indices, (l, m))
-            end
-        end
-    end
-    
-    length(cfg.lm_indices) == cfg.nlm || error("Inconsistent nlm calculation")
-    
-    return cfg
+    return create_config(T, lmax, mmax, mres; grid_type=grid_type, norm=norm)
 end
 
 """
@@ -69,50 +41,7 @@ This precomputes all grid-dependent quantities.
 - `nphi`: Number of longitude points
 """
 function set_grid!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
-    # Validation
-    nlat > 0 || error("nlat must be positive")
-    nphi > 0 || error("nphi must be positive")
-    
-    if cfg.grid_type == SHT_GAUSS
-        nlat > cfg.lmax || error("For Gauss grid: nlat must be > lmax")
-    else
-        nlat >= 2*cfg.lmax + 1 || error("For regular grid: nlat must be >= 2*lmax + 1")
-    end
-    
-    nphi >= 2*cfg.mmax + 1 || error("nphi must be >= 2*mmax + 1")
-    
-    cfg.nlat = nlat
-    cfg.nphi = nphi
-    
-    # Setup spatial grid coordinates
-    if cfg.grid_type == SHT_GAUSS
-        # Gauss-Legendre nodes and weights
-        nodes, weights = compute_gauss_legendre_nodes_weights(nlat, T)
-        cfg.gauss_nodes = nodes          # cos(θ) values
-        cfg.gauss_weights = weights      # quadrature weights
-        cfg.theta_grid = acos.(nodes)    # θ = acos(cos(θ))
-    else
-        # Regular equiangular grid
-        cfg.theta_grid = T[π * (i - 0.5) / nlat for i in 1:nlat]
-        cfg.gauss_nodes = cos.(cfg.theta_grid)
-        cfg.gauss_weights = ones(T, nlat) * (T(2) / nlat)  # Uniform weights
-    end
-    
-    # Longitude grid (always equispaced)
-    cfg.phi_grid = T[2π * (j - 1) / nphi for j in 1:nphi]
-    
-    # Precompute Legendre polynomials for all grid points
-    cfg.plm_cache = Matrix{T}(undef, nlat, cfg.nlm)
-    for (i, theta) in enumerate(cfg.theta_grid)
-        cost = cos(theta)
-        plm_values = compute_associated_legendre(cfg.lmax, cost, cfg.norm)
-        cfg.plm_cache[i, :] = plm_values
-    end
-    
-    # Setup FFT plans
-    setup_fft_plans!(cfg)
-    
-    return cfg
+    return set_grid_stable!(cfg, nlat, nphi)
 end
 
 """
@@ -146,7 +75,7 @@ This is the fundamental backward transform: spectral → spatial.
 """
 function sh_to_spat!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     spatial_data::AbstractMatrix{T}) where T
-    validate_config(cfg)
+    validate_config_stable(cfg)
     length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
     size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
     
@@ -171,7 +100,7 @@ This is the fundamental forward transform: spatial → spectral.
 """
 function spat_to_sh!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                     sh_coeffs::AbstractVector{T}) where T
-    validate_config(cfg)
+    validate_config_stable(cfg)
     size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
     length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
     

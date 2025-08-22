@@ -116,7 +116,7 @@ export
     benchmark_transform_performance, benchmark_vector_transforms, benchmark_memory_scaling,
     benchmark_different_precisions, benchmark_threading_performance, run_comprehensive_benchmark
 
-include("types.jl")
+include("types_optimized.jl")
 include("gauss_legendre.jl") 
 include("fft_utils.jl")
 include("core_transforms.jl")
@@ -133,7 +133,6 @@ include("truncated_transforms.jl")
 include("profiling.jl")
 include("robert_form.jl")
 include("performance_optimizations.jl")
-include("type_stability_fixes.jl")
 include("benchmarking_suite.jl")
 
 
