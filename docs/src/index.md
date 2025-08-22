@@ -89,6 +89,7 @@ See the [Installation Guide](installation.md) for detailed setup instructions an
 ```@contents
 Pages = [
     "installation.md",
+    "parallel_installation.md",
     "quickstart.md", 
     "api/index.md",
     "examples/index.md",

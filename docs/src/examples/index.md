@@ -385,6 +385,276 @@ println("High variability regions: $(length(max_diff_locations)) grid points")
 destroy_config(cfg)
 ```
 
+## Parallel Computing Examples
+
+### MPI Distributed Computing
+
+**Goal:** Learn how to use MPI for large-scale parallel spherical harmonic computations
+
+```julia
+# Save as parallel_example.jl and run with: mpiexec -n 4 julia parallel_example.jl
+using SHTnsKit, MPI, PencilArrays, PencilFFTs
+
+MPI.Init()
+
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+size = MPI.Comm_size(comm)
+
+if rank == 0
+    println("Running SHTnsKit parallel example with $size processes")
+end
+
+# Create configuration (same on all processes)
+cfg = create_gauss_config(Float64, 30, 24, 64, 96)
+pcfg = create_parallel_config(cfg, comm)
+
+if rank == 0
+    println("Problem size: $(cfg.nlm) spectral coefficients")
+    println("Grid: $(cfg.nlat) × $(cfg.nphi) spatial points")
+end
+
+# Create test data
+sh_coeffs = randn(Complex{Float64}, cfg.nlm)
+result = similar(sh_coeffs)
+
+# Benchmark parallel Laplacian operator
+MPI.Barrier(comm)  # Synchronize timing
+start_time = MPI.Wtime()
+
+for i in 1:50
+    parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)
+end
+
+MPI.Barrier(comm)
+end_time = MPI.Wtime()
+
+if rank == 0
+    avg_time = (end_time - start_time) / 50
+    println("Parallel Laplacian: $(avg_time*1000) ms per operation")
+    
+    # Compare with performance model
+    perf_model = parallel_performance_model(cfg, size)
+    println("Expected speedup: $(perf_model.speedup)x")
+    println("Parallel efficiency: $(perf_model.efficiency*100)%")
+end
+
+# Test parallel transforms
+spatial_data = allocate_spatial(cfg)
+memory_efficient_parallel_transform!(pcfg, :synthesis, sh_coeffs, spatial_data)
+
+if rank == 0
+    println("✅ Parallel synthesis completed")
+end
+
+# Test communication-intensive operator (cos θ)
+parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)
+
+if rank == 0
+    println("✅ Parallel cos(θ) operator completed")
+end
+
+MPI.Finalize()
+```
+
+**Key concepts:**
+- MPI initialization and communicator setup
+- Creating parallel configurations with domain decomposition
+- Using parallel operators for distributed computation
+- Performance timing and comparison with models
+
+### SIMD Vectorization Example
+
+**Goal:** Leverage advanced SIMD optimizations for single-node performance
+
+```julia
+using SHTnsKit, LoopVectorization, BenchmarkTools
+
+cfg = create_gauss_config(Float64, 64, 64)
+sh_coeffs = randn(Complex{Float64}, cfg.nlm)
+
+println("SIMD Optimization Comparison")
+println("="^40)
+
+# Benchmark regular SIMD
+regular_time = @belapsed apply_laplacian!($cfg, copy($sh_coeffs))
+println("Regular SIMD: $(regular_time*1000) ms")
+
+# Benchmark turbo SIMD (with LoopVectorization)
+turbo_time = @belapsed turbo_apply_laplacian!($cfg, copy($sh_coeffs))
+println("Turbo SIMD:   $(turbo_time*1000) ms")
+
+speedup = regular_time / turbo_time
+println("Turbo speedup: $(speedup)x")
+
+# Verify results are identical
+result1 = copy(sh_coeffs)
+result2 = copy(sh_coeffs)
+
+apply_laplacian!(cfg, result1)
+turbo_apply_laplacian!(cfg, result2)
+
+max_diff = maximum(abs.(result1 - result2))
+println("Max difference: $max_diff (should be ~0)")
+
+# Benchmark comprehensive comparison
+results = benchmark_turbo_vs_simd(cfg)
+println("\nDetailed Benchmark Results:")
+println("  SIMD time: $(results.simd_time*1000) ms")
+println("  Turbo time: $(results.turbo_time*1000) ms") 
+println("  Speedup: $(results.speedup)x")
+println("  Accuracy: max diff = $(results.max_difference)")
+
+destroy_config(cfg)
+```
+
+**Key concepts:**
+- LoopVectorization.jl integration for enhanced SIMD
+- Performance benchmarking and verification
+- Automatic optimization selection
+
+### Hybrid MPI + SIMD Example
+
+**Goal:** Combine distributed and SIMD parallelization for maximum performance
+
+```julia
+# Save as hybrid_example.jl, run with: mpiexec -n 4 julia hybrid_example.jl
+using SHTnsKit, MPI, PencilArrays, PencilFFTs, LoopVectorization
+
+MPI.Init()
+
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+size = MPI.Comm_size(comm)
+
+# Large problem that benefits from both MPI and SIMD
+cfg = create_gauss_config(Float64, 128, 128, 256, 512)
+pcfg = create_parallel_config(cfg, comm)
+
+if rank == 0
+    println("Hybrid MPI + SIMD Example")
+    println("Problem: $(cfg.nlm) coefficients, $(cfg.nlat)×$(cfg.nphi) grid")
+    println("MPI processes: $size")
+    println("SIMD: LoopVectorization enabled")
+end
+
+# Test data
+sh_coeffs = randn(Complex{Float64}, cfg.nlm)
+result = similar(sh_coeffs)
+
+# Benchmark different approaches
+tests = [
+    ("Parallel standard", () -> parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)),
+    ("Parallel + turbo", () -> begin
+        # This would use turbo optimizations within parallel operations
+        parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)
+    end)
+]
+
+if rank == 0
+    println("\nPerformance Comparison:")
+end
+
+for (name, test_func) in tests
+    MPI.Barrier(comm)
+    start_time = MPI.Wtime()
+    
+    for i in 1:20
+        test_func()
+    end
+    
+    MPI.Barrier(comm)
+    end_time = MPI.Wtime()
+    
+    if rank == 0
+        avg_time = (end_time - start_time) / 20
+        println("$name: $(avg_time*1000) ms per operation")
+    end
+end
+
+# Test scaling efficiency
+if rank == 0
+    println("\nScaling Analysis:")
+    for test_size in [2, 4, 8, 16]
+        if test_size <= size * 2  # Don't test more than 2x current size
+            model = parallel_performance_model(cfg, test_size)
+            println("$test_size processes: $(model.speedup)x speedup, $(model.efficiency*100)% efficiency")
+        end
+    end
+end
+
+MPI.Finalize()
+```
+
+### Asynchronous Parallel Operations
+
+**Goal:** Use non-blocking communication for better performance overlap
+
+```julia
+using SHTnsKit, MPI, PencilArrays, PencilFFTs
+
+MPI.Init()
+
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+size = MPI.Comm_size(comm)
+
+cfg = create_gauss_config(Float64, 64, 48, 128, 192)
+pcfg = create_parallel_config(cfg, comm)
+
+if rank == 0
+    println("Asynchronous Parallel Operations Example")
+end
+
+sh_coeffs = randn(Complex{Float64}, cfg.nlm)
+result = similar(sh_coeffs)
+
+# Compare synchronous vs asynchronous operations
+if rank == 0
+    println("Benchmarking communication patterns...")
+end
+
+# Synchronous (blocking)
+MPI.Barrier(comm)
+sync_time = @elapsed begin
+    for i in 1:30
+        parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)
+    end
+end
+
+# Asynchronous (non-blocking, if available)
+MPI.Barrier(comm)
+async_time = @elapsed begin
+    for i in 1:30
+        try
+            # Try asynchronous version
+            async_parallel_costheta_operator!(pcfg, sh_coeffs, result)
+        catch
+            # Fall back to synchronous if not available
+            parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)
+        end
+    end
+end
+
+if rank == 0
+    println("Communication Performance:")
+    println("  Synchronous:  $(sync_time/30*1000) ms per operation")
+    println("  Asynchronous: $(async_time/30*1000) ms per operation")
+    if async_time < sync_time
+        println("  Async speedup: $(sync_time/async_time)x")
+    else
+        println("  No async improvement (likely using fallback)")
+    end
+end
+
+MPI.Finalize()
+```
+
+**Key concepts:**
+- Non-blocking MPI communication patterns
+- Communication-computation overlap
+- Performance analysis of different parallel strategies
+
 ## Advanced Applications
 
 ### Multiscale Analysis
