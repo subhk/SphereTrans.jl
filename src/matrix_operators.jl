@@ -141,16 +141,40 @@ function sh_mul_mx(cfg::SHTnsConfig{T}, matrix::AbstractMatrix{T},
     length(qlm_out) == cfg.nlm || error("qlm_out length must equal nlm") 
     qlm_in !== qlm_out || error("Input and output arrays must be different")
     
-    # Apply matrix to real and imaginary parts separately
-    for i in 1:cfg.nlm
-        qlm_out[i] = zero(Complex{T})
-        for j in 1:cfg.nlm
-            qlm_out[i] += matrix[i, j] * qlm_in[j]
+    # For sparse matrices, use optimized sparse matrix-vector product
+    if isa(matrix, AbstractSparseMatrix)
+        # Optimized sparse matrix-vector multiplication
+        mul!(qlm_out, matrix, qlm_in)
+    else
+        # For dense matrices, use BLAS-optimized multiplication
+        # Split complex vector into real and imaginary parts for better memory layout
+        n = cfg.nlm
+        real_in = Vector{T}(undef, n)
+        imag_in = Vector{T}(undef, n)
+        real_out = Vector{T}(undef, n)
+        imag_out = Vector{T}(undef, n)
+        
+        @inbounds @simd for i in 1:n
+            real_in[i] = real(qlm_in[i])
+            imag_in[i] = imag(qlm_in[i])
+        end
+        
+        # Use BLAS gemv for optimal performance
+        # real_out = matrix * real_in
+        # imag_out = matrix * imag_in
+        mul!(real_out, matrix, real_in)
+        mul!(imag_out, matrix, imag_in)
+        
+        @inbounds @simd for i in 1:n
+            qlm_out[i] = complex(real_out[i], imag_out[i])
         end
     end
     
     return qlm_out
 end
+
+# Cache for matrix operators to avoid recomputation
+const OPERATOR_CACHE = Dict{Tuple{Any,Symbol}, AbstractMatrix}()
 
 """
     apply_costheta_operator(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}) where T
@@ -164,11 +188,39 @@ Apply the cos(θ) multiplication operator to spherical harmonic coefficients.
 # Returns
 - Output SH coefficients representing cos(θ) * f(θ,φ)
 
-This is a convenience function that computes and applies the cos(θ) matrix.
+This optimized version caches the matrix and uses direct sparse operations when beneficial.
 """
 function apply_costheta_operator(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}) where T
-    matrix = mul_ct_matrix(cfg)
+    cache_key = (cfg, :costheta)
+    
+    if haskey(OPERATOR_CACHE, cache_key)
+        matrix = OPERATOR_CACHE[cache_key]
+    else
+        matrix = mul_ct_matrix(cfg)
+        OPERATOR_CACHE[cache_key] = matrix
+    end
+    
     qlm_out = similar(qlm_in)
+    return sh_mul_mx(cfg, matrix, qlm_in, qlm_out)
+end
+
+"""
+    apply_costheta_operator!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                            qlm_out::AbstractVector{Complex{T}}) where T
+
+In-place version that avoids allocation of output vector.
+"""
+function apply_costheta_operator!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                                 qlm_out::AbstractVector{Complex{T}}) where T
+    cache_key = (cfg, :costheta)
+    
+    if haskey(OPERATOR_CACHE, cache_key)
+        matrix = OPERATOR_CACHE[cache_key]
+    else
+        matrix = mul_ct_matrix(cfg)
+        OPERATOR_CACHE[cache_key] = matrix
+    end
+    
     return sh_mul_mx(cfg, matrix, qlm_in, qlm_out)
 end
 
