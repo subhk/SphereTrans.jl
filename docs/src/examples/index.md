@@ -1,34 +1,107 @@
 # Examples Gallery
 
-Real-world examples and tutorials demonstrating SHTnsKit.jl capabilities.
+Real-world examples and tutorials demonstrating SHTnsKit.jl capabilities, organized by difficulty level.
 
-## Basic Examples
+**How to use this guide:**
+- **Beginner**: Start here if you're new to spherical harmonics
+- **Intermediate**: For users comfortable with basic transforms
+- **Advanced**: Complex workflows and specialized applications
 
-### Simple Scalar Transform
+**Learning path:** Work through the examples in order for the best learning experience.
+
+## Beginner Examples
+
+Start here if you're new to spherical harmonics. These examples teach fundamental concepts with simple, well-explained code.
+
+### Example 1: Your First Transform
+
+**Goal:** Learn the basic workflow of spherical harmonic transforms
 
 ```julia
 using SHTnsKit
 
-# Create configuration for moderate resolution
-cfg = create_gauss_config(32, 32)
+# Step 1: Create a configuration (like setting up your workspace)
+cfg = create_gauss_config(16, 16)  # Start small for learning
+println("Created configuration for degree up to 16")
 
-# Create a test field: temperature variation
+# Step 2: Create a simple temperature pattern
 θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
-temperature = @. 273.15 + 30 * cos(2*θ) * (1 + 0.3 * cos(3*φ))
+# Simple pattern: warm equator (θ = π/2), cold poles (θ = 0, π)
+temperature = @. 273.15 + 30 * sin(θ)^2  # Base temp + equatorial warming
 
-# Transform to spectral domain
-T_lm = analyze(cfg, temperature)
-println("Dominant modes: ", findmax(abs.(T_lm)))
+println("Temperature range: $(extrema(temperature)) K")
 
-# Reconstruct and verify accuracy
-T_reconstructed = synthesize(cfg, T_lm)
-error = norm(temperature - T_reconstructed)
-println("Reconstruction error: $error")
+# Step 3: Transform to spherical harmonic coefficients (analysis)
+T_coeffs = analyze(cfg, temperature)
+println("Number of coefficients: ", length(T_coeffs))
+
+# Step 4: Find the most important coefficient
+max_coeff_idx = argmax(abs.(T_coeffs))
+l, m = SHTnsKit.lm_from_index(cfg, max_coeff_idx)
+println("Strongest mode: l=$l, m=$m")
+
+# Step 5: Reconstruct the original field (synthesis)
+T_reconstructed = synthesize(cfg, T_coeffs)
+error = maximum(abs.(temperature - T_reconstructed))
+println("Reconstruction error: $error (should be tiny!)")
 
 destroy_config(cfg)
 ```
 
-### Spherical Harmonic Visualization
+**Key concepts learned:**
+- Configuration setup (`create_gauss_config`)
+- Creating realistic data patterns
+- Analysis: spatial → spectral (`analyze`)
+- Synthesis: spectral → spatial (`synthesize`)
+- Understanding (l,m) mode indices
+
+### Example 2: Pure Spherical Harmonic Patterns
+
+**Goal:** Understand how individual spherical harmonic modes look
+
+```julia
+using SHTnsKit
+using Plots  # For visualization
+
+cfg = create_gauss_config(32, 32)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+
+# Create pure Y_2^0 spherical harmonic (zonal mode)
+sh = zeros(get_nlm(cfg))
+idx = SHTnsKit.lmidx(cfg, 2, 0)  # l=2, m=0 (depends only on latitude)
+sh[idx] = 1.0
+println("Creating Y₂⁰ pattern (zonal, m=0)")
+
+# Synthesize to spatial domain
+Y20_pattern = synthesize(cfg, sh)
+
+# This creates a pattern that varies only with latitude
+println("Pattern statistics:")
+println("  Min value: $(minimum(Y20_pattern))")
+println("  Max value: $(maximum(Y20_pattern))")
+println("  At north pole (θ=0): $(Y20_pattern[1,1])")
+println("  At equator (θ=π/2): $(Y20_pattern[div(end,2),1])")
+
+# Plot the pattern
+heatmap(φ*180/π, θ*180/π, Y20_pattern, 
+        xlabel="Longitude (°)", ylabel="Colatitude (°)",
+        title="Y₂⁰ Spherical Harmonic (Zonal Pattern)",
+        color=:RdBu)
+
+destroy_config(cfg)
+```
+
+**Key concepts learned:**
+- How to create pure spherical harmonic patterns
+- Understanding zonal (m=0) vs sectoral (m≠0) modes
+- The relationship between (l,m) indices and spatial patterns
+- Basic visualization of spherical data
+
+**Try this:** Change `(2,0)` to `(2,2)` to see a sectoral pattern!
+
+### Example 3: Understanding Power Spectra
+
+**Goal:** Learn how energy is distributed across different spatial scales
 
 ```julia
 using SHTnsKit
@@ -37,23 +110,48 @@ using Plots
 cfg = create_gauss_config(32, 32)
 θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Create pure Y_4^2 spherical harmonic
-sh = zeros(get_nlm(cfg))
-idx = lmidx(cfg, 4, 2)  # l=4, m=2
-sh[idx] = 1.0
+# Create a field with multiple scales (like weather patterns)
+field = @. (2*sin(2*θ)*cos(φ) +        # Large scale (continental)
+           0.5*sin(6*θ)*cos(3*φ) +     # Medium scale (regional)  
+           0.1*sin(12*θ)*cos(6*φ))     # Small scale (local)
 
-# Synthesize to spatial domain
-Y42 = synthesize(cfg, sh)
+println("Created multi-scale field with 3 different spatial scales")
 
-# Plot on sphere (requires plotting package)
-surface(φ*180/π, θ*180/π, Y42, 
-        xlabel="Longitude (°)", ylabel="Colatitude (°)",
-        title="Y₄² Spherical Harmonic")
+# Transform to spectral domain
+coeffs = analyze(cfg, field)
+
+# Compute power spectrum (energy at each degree l)
+power = power_spectrum(cfg, coeffs)
+
+# Find which scales dominate
+max_power_degree = argmax(power[2:end])  # Skip l=0 (global mean)
+println("Peak energy at degree l = $max_power_degree")
+println("This corresponds to ~$(360/max_power_degree)° wavelength")
+
+# Plot the power spectrum
+plot(0:length(power)-1, power, 
+     xlabel="Spherical Harmonic Degree l", 
+     ylabel="Power",
+     title="Energy vs Spatial Scale",
+     linewidth=2, marker=:circle)
+plot!(yscale=:log10)  # Log scale often reveals more details
 
 destroy_config(cfg)
 ```
 
-## Fluid Dynamics Applications
+**Key concepts learned:**
+- How to create multi-scale patterns
+- Power spectrum analysis shows energy distribution
+- Relationship between degree l and spatial wavelength
+- Using log scales for visualization
+
+**Physical meaning:** In meteorology, this tells you whether your weather system is dominated by large-scale patterns (like jet streams) or small-scale features (like thunderstorms).
+
+## Intermediate Examples
+
+Ready to tackle more complex problems? These examples introduce vector fields, real-world data patterns, and scientific applications.
+
+### Vector Field Decomposition
 
 ### Vorticity-Divergence Decomposition
 

@@ -640,24 +640,24 @@ Then copy the output here for reference. A table template:
 
 Now that you've seen the basics, here's how to dive deeper:
 
-### 📚 **Documentation**
+### **Documentation**
 - **[Complete API Documentation](https://subhk.github.io/SHTnsKit.jl)**: Detailed function reference
 - **[Advanced Examples](docs/src/examples/index.md)**: Real-world scientific applications
 - **[Performance Guide](docs/src/performance.md)**: Optimization tips and benchmarking
 
-### 🔬 **Scientific Applications**
+### **Scientific Applications**
 - **Climate Science**: Temperature anomaly analysis, seasonal cycles
 - **Geophysics**: Gravitational fields, magnetic field modeling  
 - **Astrophysics**: Cosmic microwave background, stellar surface analysis
 - **Fluid Dynamics**: Vorticity-divergence decomposition, turbulence analysis
 
-### 🚀 **Advanced Features**
+### **Advanced Features**
 - **Automatic Differentiation**: Gradient-based optimization with ForwardDiff.jl/Zygote.jl
 - **Vector Fields**: Spheroidal-toroidal decomposition for wind/flow analysis
 - **Field Rotations**: Coordinate system transformations
 - **Complex Fields**: Support for wave functions and complex-valued data
 
-### 💡 **Getting Help**
+### **Getting Help**
 - **Examples**: Run `julia examples/` scripts for hands-on learning
 - **Issues**: Report bugs or ask questions on [GitHub Issues](https://github.com/subhk/SHTnsKit.jl/issues)
 - **Discussions**: Community support for usage questions

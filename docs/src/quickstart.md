@@ -128,25 +128,53 @@ destroy_config(cfg_regular)
 
 ## Working with Real Data
 
-### Creating Test Fields
+Now let's move beyond random numbers and work with realistic geophysical data patterns.
+
+### Creating Realistic Test Fields
 
 ```julia
 cfg = create_gauss_config(24, 24)
 
 # Get grid coordinate matrices
 θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+println("Grid coordinates:")
+println("  θ (colatitude): 0 to π (north pole to south pole)")
+println("  φ (longitude): 0 to 2π (around the equator)")
 
-# Create a test field: Y_2^1 (illustrative)
-test_field = real.(sqrt(15/(4π)) * sin.(θ) .* cos.(θ) .* exp.(1im .* φ))
+# Create a realistic temperature pattern
+# Cold at poles, warm at equator, with some longitude variation
+base_temp = 273.15  # 0°C in Kelvin
+equatorial_warming = 30  # 30K warmer at equator
+longitude_variation = 5   # 5K variation with longitude
+
+temperature = @. base_temp + equatorial_warming * sin(θ)^2 + 
+                 longitude_variation * cos(3*φ) * sin(θ)
+
+println("Temperature field stats:")
+println("  Min: $(minimum(temperature)) K ($(minimum(temperature)-273.15)°C)")
+println("  Max: $(maximum(temperature)) K ($(maximum(temperature)-273.15)°C)")
 
 # Analyze to get spectral coefficients
-sh_result = analyze(cfg, test_field)
+temp_coeffs = analyze(cfg, temperature)
 
-# The coefficient index for (l=2, m=1)
-println("Y_2^1 coefficient: ", sh_result[lmidx(cfg, 2, 1)])
+# Find the most important modes
+coeffs_magnitude = abs.(temp_coeffs)
+sorted_indices = sortperm(coeffs_magnitude, rev=true)
+
+println("\nTop 5 most important modes:")
+for i in 1:5
+    idx = sorted_indices[i]
+    l, m = SHTnsKit.lm_from_index(cfg, idx)
+    println("  Mode $i: l=$l, m=$m, magnitude=$(coeffs_magnitude[idx])")
+end
 
 destroy_config(cfg)
 ```
+
+**What this shows:**
+- How to create realistic geophysical patterns using trigonometric functions
+- The relationship between spatial patterns and spherical harmonic modes
+- How to identify which modes are most important in your data
 
 ### Physical Fields
 
