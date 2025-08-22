@@ -12,76 +12,59 @@
     </a>
 </p>
 
-A comprehensive Julia interface for spherical harmonic transforms inspired by [SHTns](https://nschaeff.bitbucket.io/shtns/), providing fast and efficient spherical harmonic transforms for scientific computing applications. This package is implemented purely in Julia (no C FFI required). Complex coefficients are the canonical representation, with a parity-accurate real-basis API built on top.
+**Fast spherical harmonic transforms for Julia**
 
-## Features
+SHTnsKit.jl provides a comprehensive, pure-Julia interface for spherical harmonic transforms, enabling efficient analysis of functions on the sphere. Whether you're working with climate data, geophysical fields, or astrophysical simulations, this package offers the tools you need for spectral analysis and synthesis.
 
-SHTnsKit.jl provides a complete interface to all SHTns features:
+**What are spherical harmonics?** Think of them as "Fourier transforms for the sphere" - they decompose any function on a spherical surface into a series of mathematical basis functions, just like how Fourier transforms decompose signals into frequencies.
 
-### Core Transforms
-- **Complex Transforms (canonical)**: Analysis/synthesis for complex fields with full ±m modes
-- **Real-Basis Parity API**: `analyze_real` and `synthesize_real` with correct cos/sin storage for m>0
-- **Vector Transforms**: Complex spheroidal/toroidal analysis/synthesis with precise derivatives
-- **In-place Operations**: Memory-efficient transform operations
+## Why SHTnsKit.jl?
 
-### Analysis and Utilities
-- **Multiple Grid Types**: Gauss-Legendre and regular (equiangular) grids
-- **Power Spectrum Analysis**: Energy distribution across spherical harmonic modes
-- **Spatial Operations**: Area-weighted integrals, means, variance, regridding
-- **Rotation Support**: Rotate coefficients via Wigner-D (ZYZ Euler angles)
-- **Automatic Differentiation**: ForwardDiff.jl and Zygote.jl support (via extensions)
+- **Pure Julia**: No C dependencies, integrates seamlessly with the Julia ecosystem
+- **Complete functionality**: Scalar, vector, and complex field transforms
+- **Scientific accuracy**: Multiple grid types and normalization conventions
+- **High performance**: Optimized with Julia threads and FFTW
+- **Easy to use**: Clear API with comprehensive examples and documentation
 
-### Notes
-- GPU acceleration and explicit OpenMP threading controls are not enabled at this time.
-- Normalization: default uses orthonormal spherical harmonics (L2-orthonormal basis). Real-basis conversion preserves energy under this convention.
+## Key Features
 
-### Normalization and Conventions
-- `SHT_ORTHONORMAL` (default): Orthonormal Y_l^m with ∫ Y_l^m Y_{l'}^{m'*} dΩ = δ_{ll'} δ_{mm'}.
-- `SHT_FOURPI`: 4π normalization (Y_0^0 = 1, energy integrals include 1/4π factors).
-- `SHT_SCHMIDT`: Schmidt semi-normalization (common in geophysics).
-- `SHT_REAL_NORM`: Real normalization (real harmonics). The canonical implementation uses complex harmonics; real-basis API maps to/from complex with parity-accurate cos/sin components.
+### Transform Types
+- **Scalar Fields**: Convert between spatial values and spherical harmonic coefficients
+- **Vector Fields**: Decompose vector fields into divergent (spheroidal) and rotational (toroidal) components
+- **Complex Fields**: Full support for complex-valued functions on the sphere
 
-For transforms and rotation support, the implementation assumes orthonormal normalization throughout; conversions preserve energy accordingly.
-- Normalization: default uses orthonormal spherical harmonics (L2-orthonormal basis). Real-basis conversion preserves energy under this convention.
+### Grid Support
+- **Gauss-Legendre grids**: Optimal for spectral accuracy (recommended)
+- **Regular grids**: Equiangular spacing for specific applications
+
+### Advanced Capabilities
+- **Power spectrum analysis**: Understand energy distribution across scales
+- **Field rotations**: Rotate functions using Wigner D-matrices
+- **Automatic differentiation**: Seamless integration with ForwardDiff.jl and Zygote.jl
+- **High performance**: Multi-threading support with Julia threads and FFTW
+
+### Scientific Applications
+- **Climate science**: Analyze atmospheric and oceanic fields
+- **Geophysics**: Model gravitational and magnetic fields
+- **Astrophysics**: Study stellar surfaces and cosmic microwave background
+- **Fluid dynamics**: Decompose velocity fields and compute vorticity
+
 
 
 ## Installation
 
-SHTnsKit.jl can be installed using the Julia package manager:
+SHTnsKit.jl is a pure Julia package with no external dependencies. Install it using the Julia package manager:
 
 ```julia
 using Pkg
 Pkg.add("SHTnsKit")
 ```
 
-### Prerequisites
-
-SHTnsKit.jl requires the SHTns C library to be installed on your system. You can install it using:
-
-<!-- **Ubuntu/Debian:**
-```bash
-sudo apt-get install libshtns-dev
-``` -->
-
-<!-- **macOS (Homebrew):**
-```bash
-brew install shtns
-``` -->
-
-**From source:**
-```bash
-wget https://bitbucket.org/nschaeff/shtns/downloads/shtns-3.x.x.tar.gz
-tar -xzf shtns-3.x.x.tar.gz
-cd shtns-3.x.x
-./configure --enable-openmp --enable-ishioka --enable-magic-layout
-make && sudo make install
-```
-
-### Custom Library Path
-
-This package does not depend on a system `libshtns` and does not call into C.
+That's it! No additional system libraries or compilation required.
 
 ## Quick Start
+
+Here's a minimal example to get you started:
 
 ```julia
 using SHTnsKit
@@ -90,81 +73,150 @@ using SHTnsKit
 lmax = 16              # Maximum spherical harmonic degree
 cfg = create_gauss_config(lmax, lmax)
 
-# Real-Basis API (Primary)
-spatial = rand(get_nlat(cfg), get_nphi(cfg))
-rcoeffs = analyze_real(cfg, spatial)
-spatial_rt = synthesize_real(cfg, rcoeffs)
-println("Real roundtrip rel. error = ", maximum(abs.(spatial - spatial_rt)) / (maximum(abs.(spatial)) + eps()))
+# Create some test data on the sphere
+spatial_data = rand(get_nlat(cfg), get_nphi(cfg))
 
-# Complex API (Canonical)
-sh_cplx = allocate_complex_spectral(cfg)
-spatial_cplx = synthesize_complex(cfg, sh_cplx)
-recovered_cplx = analyze_complex(cfg, spatial_cplx)
+# Transform to spherical harmonic coefficients
+coeffs = analyze_real(cfg, spatial_data)
+
+# Transform back to spatial domain
+reconstructed = synthesize_real(cfg, coeffs)
+
+# Check accuracy
+error = maximum(abs.(spatial_data - reconstructed))
+println("Reconstruction error: $error")
 
 # Clean up
 destroy_config(cfg)
 ```
 
-## Examples
+**What just happened?**
+1. We created a configuration for spherical harmonics up to degree 16
+2. We generated random data on a sphere (like temperature measurements)
+3. We decomposed this data into spherical harmonic modes
+4. We reconstructed the original data from these modes
+5. The tiny error shows the transform is working correctly!
 
-### Basic Scalar Transform
+## Learning Path
+
+**New to spherical harmonics?** Start with these examples in order:
+
+### 1. Understanding the Basics
 
 ```julia
 using SHTnsKit
 
-# Set up configuration with Gauss-Legendre grid
-cfg = create_gauss_config(32, 32)  # lmax=32, mmax=32
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+# Create a configuration
+cfg = create_gauss_config(16, 16)
 
-# Create a test function: Y_2^1 spherical harmonic
-function create_Y21(cfg)
-    spat = zeros(get_nlat(cfg), get_nphi(cfg))
-    for i in 1:get_nlat(cfg)
-        theta = get_theta(cfg, i-1)
-        for j in 1:get_nphi(cfg)
-            phi = get_phi(cfg, j)
-            spat[i, j] = sqrt(15/(8π)) * sin(theta) * cos(theta) * cos(phi)
-        end
-    end
-    return spat
-end
+# Get grid coordinates
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Transform and analyze
-spatial = create_Y21(cfg)
-spectral = analyze(cfg, spatial)
-reconstructed = synthesize(cfg, spectral)
+# Create a simple pattern: hot equator, cold poles
+temperature = @. 300 + 50 * cos(θ)  # 300K base + 50K variation
 
-println("Transform error: ", maximum(abs.(spatial - reconstructed)))
+# Transform to spherical harmonics
+coeffs = analyze_real(cfg, temperature)
+println("Number of coefficients: ", length(coeffs))
+
+# Find the dominant mode
+max_idx = argmax(abs.(coeffs))
+println("Strongest coefficient at index: $max_idx")
+
+# Reconstruct and verify
+reconstructed = synthesize_real(cfg, coeffs)
+error = maximum(abs.(temperature - reconstructed))
+println("Reconstruction error: $error")
+
 destroy_config(cfg)
 ```
 
-## Vector Field Analysis (Complex)
+**Key concepts:**
+- `θ` (theta): colatitude (0 at north pole, π at south pole)
+- `φ` (phi): longitude (0 to 2π)
+- Each coefficient represents how much of a specific spherical harmonic pattern is present
+- The reconstruction should be nearly perfect (tiny numerical error)
+
+### 2. Working with Real Data
 
 ```julia
 using SHTnsKit
-using LinearAlgebra
 
 # Create configuration
-cfg = create_gauss_config(16, 16)
+cfg = create_gauss_config(32, 32)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Create a vector field (e.g., surface winds)
-u = rand(get_nlat(cfg), get_nphi(cfg))
-v = rand(get_nlat(cfg), get_nphi(cfg))
-Slm, Tlm = cplx_analyze_vector(cfg, ComplexF64.(u), ComplexF64.(v))
+# Create a realistic temperature field with seasonal variation
+# Simulate July temperatures (summer in Northern Hemisphere)
+july_temps = @. 273.15 + 40 * cos(θ - 0.4)  # Shifted toward NH summer
 
-# Compute energy in each component
-total_energy = sum(Slm.^2 + Tlm.^2)
-spheroidal_fraction = sum(Slm.^2) / total_energy
-toroidal_fraction = sum(Tlm.^2) / total_energy
+# Transform to spectral domain
+temp_coeffs = analyze_real(cfg, july_temps)
 
-println("Spheroidal (divergent) energy: $(spheroidal_fraction*100)%")
-println("Toroidal (rotational) energy: $(toroidal_fraction*100)%")
+# Compute power spectrum to see which scales dominate
+power = power_spectrum(cfg, temp_coeffs)
 
-# Reconstruct vector field
-u_reconstructed, v_reconstructed = cplx_synthesize_vector(cfg, Slm, Tlm)
+# Print the first few modes
+for l in 0:5
+    println("Degree l=$l power: ", power[l+1])
+end
 
-free_config(cfg)
+# The l=0 mode is the global mean
+global_mean = temp_coeffs[1] / sqrt(4π)  # Normalized
+println("Global mean temperature: $global_mean K")
+
+destroy_config(cfg)
 ```
+
+**What this shows:**
+- How to create realistic geophysical data
+- Power spectrum analysis reveals which spatial scales are important
+- The l=0 mode gives you the global average
+- Higher l modes represent finer spatial details
+
+### 3. Vector Field Analysis
+
+```julia
+using SHTnsKit
+
+# Create configuration
+cfg = create_gauss_config(24, 24)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+
+# Create a realistic wind field: jet stream + tropical circulation
+# Zonal (east-west) component
+u = @. 20 * sin(2*θ) + 5 * cos(3*φ) * sin(θ)
+# Meridional (north-south) component  
+v = @. 10 * cos(θ) * sin(2*φ)
+
+# Analyze vector field using real-basis (easier to understand)
+S_coeffs, T_coeffs = analyze_vector_real(cfg, u, v)
+
+# Compute energy in divergent vs rotational components
+divergent_energy = sum(abs2, S_coeffs)
+rotational_energy = sum(abs2, T_coeffs)
+total_energy = divergent_energy + rotational_energy
+
+println("Flow analysis:")
+println("  Divergent (spheroidal): $(100*divergent_energy/total_energy)%")
+println("  Rotational (toroidal): $(100*rotational_energy/total_energy)%")
+
+# Reconstruct and verify
+u_reconstructed, v_reconstructed = synthesize_vector_real(cfg, S_coeffs, T_coeffs)
+u_error = maximum(abs.(u - u_reconstructed))
+v_error = maximum(abs.(v - v_reconstructed))
+println("  Reconstruction error: u=$u_error, v=$v_error")
+
+destroy_config(cfg)
+```
+
+**Physical interpretation:**
+- **Spheroidal (S) modes**: Represent divergent flow (expansion/compression)
+- **Toroidal (T) modes**: Represent rotational flow (circulation, vortices)
+- Real atmospheric flows are usually dominated by rotational motion
+- This decomposition is fundamental in meteorology and oceanography
+
+### 4. Advanced Analysis: Power Spectra
 
 ### Power Spectrum Analysis
 
