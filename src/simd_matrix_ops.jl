@@ -184,13 +184,13 @@ function cache_optimized_coupling_computation!(cfg::SHTnsConfig{T},
 end
 
 """
-    prefetch_optimized_matvec!(A::SparseMatrixCSC{T}, x::Vector{Complex{T}}, 
-                               y::Vector{Complex{T}}) where T
+    optimized_sparse_matvec!(A::SparseMatrixCSC{T}, x::Vector{Complex{T}}, 
+                            y::Vector{Complex{T}}) where T
 
-Matrix-vector multiplication with manual prefetching for better cache performance.
+Cache-optimized sparse matrix-vector multiplication for complex vectors.
 """
-function prefetch_optimized_matvec!(A::SparseMatrixCSC{T}, x::Vector{Complex{T}}, 
-                                   y::Vector{Complex{T}}) where T
+function optimized_sparse_matvec!(A::SparseMatrixCSC{T}, x::Vector{Complex{T}}, 
+                                 y::Vector{Complex{T}}) where T
     rows = rowvals(A)
     vals = nonzeros(A)
     m, n = size(A)
@@ -200,29 +200,10 @@ function prefetch_optimized_matvec!(A::SparseMatrixCSC{T}, x::Vector{Complex{T}}
     @inbounds for col in 1:n
         x_val = x[col]
         
-        # Prefetch next column's data (if exists)
-        if col < n
-            Base.llvmcall("""
-                %ptr = inttoptr i64 %0 to i8*
-                call void @llvm.prefetch(i8* %ptr, i32 0, i32 3, i32 1)
-                ret void
-                """, Cvoid, Tuple{Ptr{Complex{T}}}, pointer(x, col + 1))
-        end
-        
-        for idx in nzrange(A, col)
+        # Optimized inner loop
+        @simd for idx in nzrange(A, col)
             row = rows[idx]
             val = vals[idx]
-            
-            # Prefetch next row data
-            if idx < length(nzrange(A, col))
-                next_row = rows[idx + 1]
-                Base.llvmcall("""
-                    %ptr = inttoptr i64 %0 to i8*
-                    call void @llvm.prefetch(i8* %ptr, i32 1, i32 3, i32 1)
-                    ret void
-                    """, Cvoid, Tuple{Ptr{Complex{T}}}, pointer(y, next_row))
-            end
-            
             y[row] += val * x_val
         end
     end
@@ -323,5 +304,6 @@ end
 export simd_apply_laplacian!,
        threaded_apply_costheta_operator!,
        vectorized_sparse_matvec!,
+       optimized_sparse_matvec!,
        auto_simd_dispatch,
        benchmark_simd_variants
