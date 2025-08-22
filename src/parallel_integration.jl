@@ -12,10 +12,11 @@ const PARALLEL_AVAILABLE = Ref(false)
 
 function __init_parallel__()
     try
-        # Check if MPI is initialized and parallel packages are available
-        if MPI.Initialized() && !MPI.Finalized()
+        # Check if parallel packages are available through extensions
+        if isdefined(Base, :get_extension) && 
+           !isnothing(Base.get_extension(SHTnsKit, :SHTnsKitParallelExt))
             PARALLEL_AVAILABLE[] = true
-            @info "Parallel matrix operations enabled with $(MPI.Comm_size(MPI.COMM_WORLD)) processes"
+            @info "Parallel matrix operations available (extension loaded)"
         end
     catch e
         @warn "Parallel operations not available: $e"
