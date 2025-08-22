@@ -70,7 +70,7 @@ function parallel_apply_operator(op::Symbol, pcfg::ParallelSHTConfig{T},
                                 qlm_out::Union{Nothing, AbstractVector{Complex{T}}}=nothing) where T
     # Parallel implementation
     if qlm_out === nothing
-        error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+        error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
     end
     
     if op === :costheta
@@ -208,7 +208,7 @@ function memory_efficient_parallel_transform!(pcfg::ParallelSHTConfig{T},
                                              qlm_in::AbstractVector{Complex{T}}, 
                                              qlm_out::AbstractVector{Complex{T}}) where T
     
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 """

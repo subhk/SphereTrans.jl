@@ -20,18 +20,17 @@ end
 
 # Stub functions - actual implementations in SHTnsKitParallelExt
 function create_parallel_config(cfg::SHTnsConfig{T}; kwargs...) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages. " *
-          "Please load these packages to enable parallel operations.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function parallel_apply_operator(pcfg::ParallelSHTConfig{T}, op::Symbol,
                                qlm_in::AbstractVector{Complex{T}},
                                qlm_out::AbstractVector{Complex{T}}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function auto_parallel_config(cfg::SHTnsConfig{T}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function optimal_process_count(cfg::SHTnsConfig{T}) where T
@@ -41,39 +40,39 @@ function optimal_process_count(cfg::SHTnsConfig{T}) where T
 end
 
 function parallel_performance_model(cfg::SHTnsConfig{T}, nprocs::Int) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function memory_efficient_parallel_transform!(pcfg::ParallelSHTConfig{T}, 
                                             operation::Symbol,
                                             input_data::AbstractArray{T},
                                             output_data::AbstractArray{T}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function parallel_apply_costheta_operator!(pcfg::ParallelSHTConfig{T}, 
                                          qlm_in::AbstractVector{Complex{T}},
                                          qlm_out::AbstractVector{Complex{T}}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function parallel_apply_laplacian_distributed!(pcfg::ParallelSHTConfig{T}, 
                                              qlm::AbstractVector{Complex{T}}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function parallel_fft_synthesis!(pcfg::ParallelSHTConfig{T}, 
                                 fourier_coeffs::AbstractMatrix{Complex{T}},
                                 spatial_data::AbstractMatrix{T}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function optimize_communication_pattern(pcfg::ParallelSHTConfig{T}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 function benchmark_parallel_performance(cfg::SHTnsConfig{T}, nprocs_range::AbstractVector{Int}) where T
-    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages")
 end
 
 # All exports handled by main module SHTnsKit.jl
