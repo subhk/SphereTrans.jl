@@ -114,7 +114,20 @@ export
     
     # Benchmarking suite
     benchmark_transform_performance, benchmark_vector_transforms, benchmark_memory_scaling,
-    benchmark_different_precisions, benchmark_threading_performance, run_comprehensive_benchmark
+    benchmark_different_precisions, benchmark_threading_performance, run_comprehensive_benchmark,
+    
+    # Advanced SIMD optimizations
+    simd_apply_laplacian!, threaded_apply_costheta_operator!, auto_simd_dispatch,
+    turbo_apply_laplacian!, turbo_threaded_costheta_operator!, turbo_auto_dispatch,
+    get_advanced_pool, benchmark_turbo_vs_simd, clear_advanced_pools,
+    
+    # Parallel matrix operations  
+    create_parallel_config, parallel_apply_operator, auto_parallel_config,
+    optimal_process_count, parallel_performance_model, memory_efficient_parallel_transform!,
+    
+    # Non-blocking parallel operations
+    async_parallel_costheta_operator!, pipeline_parallel_operators!,
+    benchmark_async_vs_sync_parallel
 
 include("types_optimized.jl")
 include("gauss_legendre.jl") 
@@ -134,6 +147,11 @@ include("profiling.jl")
 include("robert_form.jl")
 include("performance_optimizations.jl")
 include("benchmarking_suite.jl")
+include("simd_matrix_ops.jl")
+include("parallel_matrix_ops.jl") 
+include("parallel_integration.jl")
+include("advanced_optimizations.jl")
+include("nonblocking_parallel_ops.jl")
 
 
 function __init__()
