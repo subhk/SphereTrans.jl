@@ -2,62 +2,102 @@
 
 This tutorial will get you up and running with SHTnsKit.jl for spherical harmonic transforms in just a few minutes.
 
+**What you'll learn:**
+- Basic concepts: spectral vs spatial domains
+- How to perform your first transform
+- Working with real geophysical data
+- Vector field analysis
+- Performance optimization
+
+**Prerequisites:** Basic Julia knowledge and familiarity with arrays and functions.
+
 ## Your First Transform
+
+Let's start with a simple example to understand the basic workflow:
 
 ```julia
 using SHTnsKit
 
-# Create a spherical harmonic configuration
-lmax = 32        # Maximum degree
+# Step 1: Create a spherical harmonic configuration
+lmax = 32        # Maximum degree (controls resolution)
 mmax = 32        # Maximum order (typically same as lmax)
 cfg = create_gauss_config(lmax, mmax)
 
-# Generate some random spectral coefficients
+# Step 2: Generate some random spectral coefficients
+# These represent the "recipe" for building a function on the sphere
 sh_coeffs = rand(get_nlm(cfg))
+println("Number of coefficients: ", length(sh_coeffs))
 
-# Transform from spectral to spatial domain (synthesis)
+# Step 3: Transform from spectral to spatial domain (synthesis)
+# This builds the actual function values on a grid
 spatial_field = synthesize(cfg, sh_coeffs)
+println("Spatial field size: ", size(spatial_field))
 
-# Transform back to spectral domain (analysis)
+# Step 4: Transform back to spectral domain (analysis)
+# This recovers the coefficients from the spatial data
 recovered_coeffs = analyze(cfg, spatial_field)
 
-# Check accuracy (should be very small)
+# Step 5: Check accuracy (should be very small)
 error = norm(sh_coeffs - recovered_coeffs)
 println("Round-trip error: $error")
 
-# Clean up
+# Step 6: Always clean up
 destroy_config(cfg)
 ```
+
+**What just happened?**
+1. **Configuration**: We set up the transform parameters (resolution and grid type)
+2. **Coefficients**: Created random spherical harmonic coefficients 
+3. **Synthesis**: Converted coefficients → spatial values (spectral to physical)
+4. **Analysis**: Converted spatial values → coefficients (physical to spectral)
+5. **Verification**: The tiny error confirms the transforms are working correctly
 
 ## Understanding the Basics
 
 ### Spectral vs Spatial Domains
 
-- **Spectral Domain**: Coefficients of spherical harmonics Y_l^m(θ,φ)
-- **Spatial Domain**: Values on a grid of points on the sphere
+Understanding the two ways to represent data is key to using spherical harmonics effectively:
+
+- **Spatial Domain**: Values at specific points on the sphere
+  - Like having temperature measurements at weather stations
+  - 2D array: `field[latitude, longitude]`
+  - Easy to visualize and interpret physically
+
+- **Spectral Domain**: Coefficients of mathematical basis functions (spherical harmonics)
+  - Like having the "recipe" ingredients for recreating the field
+  - 1D array: `coeffs[mode_index]`
+  - Compact representation, efficient for analysis
+
+**Analogy**: Think of a recipe vs a finished dish
+- **Spatial** = the finished dish (what you see/taste)
+- **Spectral** = the recipe (ingredients that make the dish)
 
 ```julia
 cfg = create_gauss_config(16, 16)
 
-# Spectral: array of spherical harmonic coefficients
+# Spectral domain: 1D array of coefficients
 nlm = get_nlm(cfg)        # Number of (l,m) coefficients  
-sh = zeros(nlm)           # Spectral coefficients
-sh[1] = 1.0               # Set Y_0^0 = constant field
+sh = zeros(nlm)           # Initialize spectral coefficients
+sh[1] = 1.0               # Set Y_0^0 = constant field (global average)
+println("Spectral domain: ", length(sh), " coefficients")
 
-# Spatial: 2D array of values on sphere
+# Spatial domain: 2D array of values on sphere
 nlat, nphi = get_nlat(cfg), get_nphi(cfg)
-println("Grid size: $nlat × $nphi points")
+println("Spatial domain: $nlat × $nphi = $(nlat*nphi) grid points")
 
-# Transform: spectral → spatial
+# Transform: spectral → spatial (synthesis)
 spatial = synthesize(cfg, sh)
-println("Spatial field size: ", size(spatial))
+println("Result: all values should be the same (constant field)")
+println("Min/max values: ", extrema(spatial))
 
 destroy_config(cfg)
 ```
 
+**Key insight**: Setting only the first coefficient (`sh[1]`) creates a perfectly constant field over the entire sphere, demonstrating how spherical harmonics work as building blocks.
+
 ### Grid Types
 
-SHTnsKit supports different grid layouts:
+SHTnsKit supports different ways to arrange points on the sphere. Think of it like choosing between different types of graph paper:
 
 ```julia
 # Gauss-Legendre grid (optimal for spectral accuracy)
@@ -71,6 +111,20 @@ println("Regular grid: $(get_nlat(cfg_regular)) × $(get_nphi(cfg_regular))")
 destroy_config(cfg_gauss)
 destroy_config(cfg_regular)
 ```
+
+**Which grid should you use?**
+
+- **Gauss-Legendre grid** (`create_gauss_config`):
+  - **Best for**: Most scientific applications
+  - **Pros**: Optimal mathematical properties, highest accuracy
+  - **Cons**: Uneven spacing (denser near poles)
+  - **Use when**: You want the best accuracy and don't need uniform spacing
+
+- **Regular grid** (`create_regular_config`):
+  - **Best for**: Visualization, interfacing with other software  
+  - **Pros**: Uniform spacing, easier to understand
+  - **Cons**: Slightly less accurate
+  - **Use when**: You need uniform spacing or are working with external data
 
 ## Working with Real Data
 

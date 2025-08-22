@@ -218,64 +218,149 @@ destroy_config(cfg)
 
 ### 4. Advanced Analysis: Power Spectra
 
-### Power Spectrum Analysis
-
 ```julia
 using SHTnsKit
+using Plots
 
+# Create configuration
 cfg = create_gauss_config(64, 64)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Create some test data
-sh = rand(get_nlm(cfg))
+# Create a multi-scale field (like turbulent flow)
+# Large-scale + medium-scale + small-scale components
+field = @. (sin(2*θ) * cos(φ) +           # Large scale (l~2)
+            0.3 * sin(6*θ) * cos(3*φ) +   # Medium scale (l~6) 
+            0.1 * sin(15*θ) * cos(8*φ))   # Small scale (l~15)
+
+# Transform to spectral domain
+coeffs = analyze_real(cfg, field)
 
 # Compute power spectrum
-power = power_spectrum(cfg, sh)
+power = power_spectrum(cfg, coeffs)
 
-# Analyze spectral slope
-using Plots
+# Plot to see the energy distribution
 plot(0:get_lmax(cfg), power, 
      xlabel="Spherical Harmonic Degree l", 
-     ylabel="Power",
-     yscale=:log10, title="Energy Spectrum")
+     ylabel="Power", yscale=:log10,
+     title="Energy Spectrum", linewidth=2)
+
+# Find the peak energy scale
+max_power_idx = argmax(power[2:end]) + 1  # Skip l=0
+println("Peak energy at degree l = $(max_power_idx-1)")
+println("This corresponds to ~$(360/(max_power_idx-1))° wavelength")
 
 destroy_config(cfg)
 ```
 
-## Rotations (ZYZ Euler angles)
+**Understanding power spectra:**
+- Each degree l corresponds to a spatial wavelength ~360°/l
+- Power spectrum shows how energy is distributed across scales
+- Peaks indicate dominant spatial scales in your data
+- Useful for understanding the characteristic sizes of features
 
-```julia
-cfg = create_gauss_config(12, 12)
-coeffs = allocate_complex_spectral(cfg)
-# rotate in-place by (alpha, beta, gamma)
-rotate_complex!(cfg, coeffs; alpha=0.2, beta=0.3, gamma=0.1)
+## Real-World Applications
 
-# Real-basis rotation
-r = analyze_real(cfg, rand(get_nlat(cfg), get_nphi(cfg)))
-rotate_real!(cfg, r; alpha=0.2, beta=0.3, gamma=0.1)
-
-# End-to-end rotation workflow
-spat = rand(get_nlat(cfg), get_nphi(cfg))
-c = cplx_spat_to_sh(cfg, ComplexF64.(spat))
-rotate_complex!(cfg, c; alpha=0.1, beta=0.2, gamma=0.3)
-spat_rot = cplx_sh_to_spat(cfg, c)
-println("Rotated field stats: ", (minimum(real.(spat_rot)), maximum(real.(spat_rot))))
-```
-
-## Vector Field Analysis (Real-Basis)
+### Climate Data Analysis
 
 ```julia
 using SHTnsKit
 
+# Process temperature anomalies
+cfg = create_gauss_config(32, 32)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+
+# Simulate El Niño pattern (Pacific warming)
+temp_anomaly = @. 2 * exp(-((φ-π)^2 + (θ-π/2)^2) / 0.3^2)
+
+# Analyze the spatial pattern
+coeffs = analyze_real(cfg, temp_anomaly)
+power = power_spectrum(cfg, coeffs)
+
+# Find characteristic scale
+max_l = argmax(power[2:end])  # Skip l=0
+characteristic_scale = 360 / max_l
+println("El Niño characteristic scale: ~$characteristic_scale degrees")
+
+destroy_config(cfg)
+```
+
+### Geophysical Modeling
+
+```julia
+# Gravitational field analysis
+cfg = create_gauss_config(48, 48)
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
+
+# Earth's oblateness (J₂ term) + smaller harmonics
+gravity_anomaly = @. -9.81 * 0.001 * (1.5*cos(θ)^2 - 0.5) + 
+                     -9.81 * 0.0001 * sin(3*θ) * cos(2*φ)
+
+coeffs = analyze_real(cfg, gravity_anomaly)
+
+# The J₂ coefficient (degree 2, order 0)
+J2_index = SHTnsKit.lmidx(cfg, 2, 0)
+J2_value = coeffs[J2_index]
+println("J₂ coefficient: $J2_value")
+
+destroy_config(cfg)
+```
+
+## Advanced Features
+
+### Rotations and Coordinate Transformations
+
+```julia
+using SHTnsKit
+
+# Create a field with a specific pattern
 cfg = create_gauss_config(16, 16)
-u = rand(get_nlat(cfg), get_nphi(cfg))
-v = rand(get_nlat(cfg), get_nphi(cfg))
+θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
-# Real-basis spheroidal/toroidal coefficients
-S_real, T_real = analyze_vector_real(cfg, u, v)
+# Create a field concentrated at north pole
+original_field = @. exp(-5 * θ^2)  # Hot spot at north pole
 
-# Reconstruct
-u_rt, v_rt = synthesize_vector_real(cfg, S_real, T_real)
-println("Vector real-basis roundtrip error: ", maximum(abs.(u .- u_rt)) + maximum(abs.(v .- v_rt)))
+# Transform to coefficients
+coeffs = analyze_real(cfg, original_field)
+
+# Rotate by 45° around z-axis (longitude shift)
+rotate_real!(cfg, coeffs; alpha=π/4, beta=0.0, gamma=0.0)
+
+# Transform back to see the rotated field
+rotated_field = synthesize_real(cfg, coeffs)
+
+# The hot spot should now be at longitude 45°
+println("Original max at: ", argmax(original_field))
+println("Rotated max at: ", argmax(rotated_field))
+
+destroy_config(cfg)
+```
+
+**Rotation applications:**
+- Change coordinate systems (e.g., from geographic to magnetic coordinates)
+- Align data from different observation times
+- Study rotational symmetries in your data
+
+### Performance Optimization
+
+```julia
+using SHTnsKit
+
+# Enable threading for better performance
+set_optimal_threads!()  # Automatically configure threads
+
+# For manual control:
+# set_threading!(true)        # Enable Julia thread parallelization
+# set_fft_threads(4)         # Set FFTW threads
+
+# Create larger configuration for benchmarking
+cfg = create_gauss_config(64, 64)
+field = rand(get_nlat(cfg), get_nphi(cfg))
+
+# Time the transforms
+@time coeffs = analyze_real(cfg, field)      # Analysis
+@time reconstructed = synthesize_real(cfg, coeffs)  # Synthesis
+
+destroy_config(cfg)
 ```
 
 ## Automatic Differentiation
@@ -550,6 +635,32 @@ Then copy the output here for reference. A table template:
 | 24        |          |              |              |         |                     |                     |         |
 | 32        |          |              |              |         |                     |                     |         |
 | 40        |          |              |              |         |                     |                     |         |
+
+## Next Steps
+
+Now that you've seen the basics, here's how to dive deeper:
+
+### 📚 **Documentation**
+- **[Complete API Documentation](https://subhk.github.io/SHTnsKit.jl)**: Detailed function reference
+- **[Advanced Examples](docs/src/examples/index.md)**: Real-world scientific applications
+- **[Performance Guide](docs/src/performance.md)**: Optimization tips and benchmarking
+
+### 🔬 **Scientific Applications**
+- **Climate Science**: Temperature anomaly analysis, seasonal cycles
+- **Geophysics**: Gravitational fields, magnetic field modeling  
+- **Astrophysics**: Cosmic microwave background, stellar surface analysis
+- **Fluid Dynamics**: Vorticity-divergence decomposition, turbulence analysis
+
+### 🚀 **Advanced Features**
+- **Automatic Differentiation**: Gradient-based optimization with ForwardDiff.jl/Zygote.jl
+- **Vector Fields**: Spheroidal-toroidal decomposition for wind/flow analysis
+- **Field Rotations**: Coordinate system transformations
+- **Complex Fields**: Support for wave functions and complex-valued data
+
+### 💡 **Getting Help**
+- **Examples**: Run `julia examples/` scripts for hands-on learning
+- **Issues**: Report bugs or ask questions on [GitHub Issues](https://github.com/subhk/SHTnsKit.jl/issues)
+- **Discussions**: Community support for usage questions
 
 ## Contributing
 
