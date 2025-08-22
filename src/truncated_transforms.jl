@@ -483,13 +483,37 @@ function _get_integration_weight(cfg::SHTnsConfig{T}, j::Int) where T
 end
 
 function _get_analysis_normalization_factor(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    # Simplified normalization
-    return T(2π)  # Should be more sophisticated
+    """Truncated transform analysis normalization factor."""
+    if cfg.norm == SHT_ORTHONORMAL
+        # Orthonormal: standard integration factor
+        factor = T(4π)
+        if m > 0
+            factor *= T(2)  # Real coefficient handling
+        end
+        return factor
+    elseif cfg.norm == SHT_FOURPI
+        return T(4π)
+    elseif cfg.norm == SHT_SCHMIDT
+        # Schmidt semi-normalization
+        factor = T(4π)
+        if m > 0
+            factor /= sqrt(T(2))
+        end
+        return factor
+    else # SHT_REAL_NORM
+        return T(4π)
+    end
 end
 
 function _get_vector_analysis_normalization_factor(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    # Vector analysis normalization
-    return T(2π)  # Simplified  
+    """Vector field analysis normalization for truncated transforms."""
+    # Include l(l+1) scaling for vector fields
+    l_scaling = (l == 0) ? T(1) : T(l * (l + 1))
+    
+    base_factor = _get_analysis_normalization_factor(cfg, l, m)
+    
+    # Apply vector field correction
+    return base_factor / sqrt(l_scaling)
 end
 
 function _compute_legendre_derivative_basic(l::Int, m::Int, cost::T, sint::T) where T

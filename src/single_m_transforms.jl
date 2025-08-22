@@ -439,18 +439,87 @@ function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where 
     end
 end
 
-# Normalization helper functions (simplified versions)
+# Normalization helper functions
 function _get_analysis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    # This should match the normalization used in the main transforms
-    return T(2π)  # Simplified - should be more sophisticated
+    """Analysis normalization factor for spherical harmonic coefficients."""
+    if cfg.norm == SHT_ORTHONORMAL
+        # Orthonormal: includes factor of 4π for integration
+        factor = T(4π)
+        # Add m-dependent factor for proper orthogonality
+        if m > 0
+            factor *= T(2)  # Real part normalization for m > 0
+        end
+        return factor
+    elseif cfg.norm == SHT_FOURPI
+        # 4π normalization convention
+        return T(4π)
+    elseif cfg.norm == SHT_SCHMIDT
+        # Schmidt semi-normalized 
+        factor = T(4π)
+        if m > 0
+            # Schmidt normalization removes sqrt(2) for m > 0
+            factor /= sqrt(T(2))
+        end
+        return factor
+    else # SHT_REAL_NORM
+        # Real normalization (unit sphere integration)
+        return T(4π)
+    end
 end
 
 function _get_synthesis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    # This should match the normalization used in the main transforms  
-    return one(T)  # Simplified - should be more sophisticated
+    """Synthesis normalization factor for spatial reconstruction."""
+    if cfg.norm == SHT_ORTHONORMAL
+        # Orthonormal: direct coefficient usage
+        return one(T)
+    elseif cfg.norm == SHT_FOURPI
+        # 4π: coefficients need to be rescaled
+        factor = T(2*l + 1) / T(4π)
+        if m > 0
+            # Factorial correction for m > 0
+            for k in (l-m+1):(l+m)
+                factor /= T(k)
+            end
+            factor = sqrt(factor)
+        end
+        return factor
+    elseif cfg.norm == SHT_SCHMIDT
+        # Schmidt: includes degree-dependent factor
+        factor = sqrt(T(2*l + 1))
+        if m > 0
+            factor *= sqrt(T(2))  # Schmidt includes sqrt(2) for m > 0
+        end
+        return factor
+    else # SHT_REAL_NORM
+        # Real normalization
+        return sqrt(T(2*l + 1) / T(4π))
+    end
 end
 
 function _get_vector_analysis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    # Vector field normalization
-    return T(2π)  # Simplified
+    """Vector field analysis normalization accounting for gradient operations."""
+    # Vector spherical harmonics need l-dependent scaling
+    l_factor = (l == 0) ? T(1) : T(l * (l + 1))
+    
+    if cfg.norm == SHT_ORTHONORMAL
+        # Orthonormal with gradient scaling
+        factor = T(4π) / sqrt(l_factor)
+        if m > 0
+            factor *= T(2)  # Real part normalization
+        end
+        return factor
+    elseif cfg.norm == SHT_FOURPI
+        # 4π with vector scaling
+        return T(4π) / sqrt(l_factor)
+    elseif cfg.norm == SHT_SCHMIDT
+        # Schmidt semi-normalized with vector correction
+        factor = T(4π) / sqrt(l_factor)
+        if m > 0
+            factor /= sqrt(T(2))  # Schmidt m > 0 correction
+        end
+        return factor
+    else # SHT_REAL_NORM
+        # Real normalization with vector scaling
+        return T(4π) / sqrt(l_factor)
+    end
 end
