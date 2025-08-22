@@ -365,10 +365,10 @@ Create a configuration with Gauss-Legendre grid.
 Automatically sets nlat = lmax + 1, nphi = 2*mmax + 1.
 """
 function create_gauss_config(lmax::Int, mmax::Int=lmax; T::Type=Float64)
-    cfg = create_config(lmax, mmax, 1; grid_type=SHT_GAUSS, T=T)
+    cfg = create_config(T, lmax, mmax, 1; grid_type=SHT_GAUSS)
     nlat = max(lmax + 1, 16)  # Minimum of 16 for stability
     nphi = max(2*mmax + 1, 17)  # Odd number for efficiency
-    set_grid!(cfg, nlat, nphi)
+    set_grid_stable!(cfg, nlat, nphi)
     return cfg
 end
 
@@ -379,9 +379,9 @@ Create a configuration with regular equiangular grid.
 Automatically sets nlat = 2*lmax + 1, nphi = 2*mmax + 1.
 """
 function create_regular_config(lmax::Int, mmax::Int=lmax; T::Type=Float64)
-    cfg = create_config(lmax, mmax, 1; grid_type=SHT_REGULAR, T=T)
+    cfg = create_config(T, lmax, mmax, 1; grid_type=SHT_REGULAR)
     nlat = 2*lmax + 1
     nphi = 2*mmax + 1
-    set_grid!(cfg, nlat, nphi)
+    set_grid_stable!(cfg, nlat, nphi)
     return cfg
 end
