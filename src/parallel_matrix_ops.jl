@@ -4,7 +4,7 @@ Parallel matrix operations using PencilArrays and PencilFFTs for 2D parallelizat
 This module implements distributed spherical harmonic matrix operations that can
 scale across multiple processes with efficient 2D domain decomposition.
 
-Note: Requires MPI, PencilArrays, and PencilFFTs packages to be loaded for full functionality.
+Note: Requires MPI, PencilArrays, and PencilFFTs packages for full functionality.
 """
 
 using LinearAlgebra

@@ -5,7 +5,7 @@ This module provides seamless integration between serial and parallel operations
 allowing users to scale from single-process to massively parallel computations.
 """
 
-# MPI will be loaded conditionally through extensions
+# MPI loaded conditionally through extension
 
 # Conditional loading of parallel dependencies
 const PARALLEL_AVAILABLE = Ref(false)
@@ -29,7 +29,7 @@ end
 
 Create a parallel configuration from a serial SHTnsConfig.
 Automatically determines optimal 2D decomposition and initializes parallel data structures.
-Note: Requires MPI, PencilArrays, and PencilFFTs packages.
+Note: Requires MPI, PencilArrays, and PencilFFTs packages for full functionality.
 """
 function create_parallel_config(cfg::SHTnsConfig{T}; kwargs...) where T
     if !PARALLEL_AVAILABLE[]
