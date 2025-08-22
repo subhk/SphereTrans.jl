@@ -25,12 +25,13 @@ function __init_parallel__()
 end
 
 """
-    create_parallel_config(cfg::SHTnsConfig{T}, comm::MPI.Comm=MPI.COMM_WORLD) where T
+    create_parallel_config(cfg::SHTnsConfig{T}; kwargs...) where T
 
 Create a parallel configuration from a serial SHTnsConfig.
 Automatically determines optimal 2D decomposition and initializes parallel data structures.
+Note: Requires MPI, PencilArrays, and PencilFFTs packages.
 """
-function create_parallel_config(cfg::SHTnsConfig{T}, comm::MPI.Comm=MPI.COMM_WORLD) where T
+function create_parallel_config(cfg::SHTnsConfig{T}; kwargs...) where T
     if !PARALLEL_AVAILABLE[]
         error("Parallel operations not available. Ensure MPI is initialized and parallel packages are loaded.")
     end
@@ -65,11 +66,11 @@ function parallel_apply_operator(op::Symbol, cfg::SHTnsConfig{T}, qlm_in::Abstra
 end
 
 function parallel_apply_operator(op::Symbol, pcfg::ParallelSHTConfig{T}, 
-                                qlm_in::PencilArray{Complex{T}}, 
-                                qlm_out::Union{Nothing, PencilArray{Complex{T}}}=nothing) where T
+                                qlm_in::AbstractVector{Complex{T}}, 
+                                qlm_out::Union{Nothing, AbstractVector{Complex{T}}}=nothing) where T
     # Parallel implementation
     if qlm_out === nothing
-        qlm_out = allocate_array(pcfg.spectral_pencil, Complex{T})
+        error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
     end
     
     if op === :costheta
@@ -96,8 +97,8 @@ function auto_parallel_config(lmax::Int, mmax::Int=lmax; T::Type=Float64,
     cfg = create_config(T, lmax, mmax, 1; grid_type=SHT_GAUSS, norm=SHT_ORTHONORMAL)
     
     # Decide serial vs parallel based on problem size and availability
-    if cfg.nlm >= min_parallel_size && PARALLEL_AVAILABLE[] && MPI.Comm_size(MPI.COMM_WORLD) > 1
-        @info "Using parallel configuration for nlm=$(cfg.nlm) with $(MPI.Comm_size(MPI.COMM_WORLD)) processes"
+    if cfg.nlm >= min_parallel_size && PARALLEL_AVAILABLE[]
+        @info "Using parallel configuration for nlm=$(cfg.nlm)"
         return create_parallel_config(cfg)
     else
         @info "Using serial configuration for nlm=$(cfg.nlm)"
@@ -204,31 +205,10 @@ Optimizes for memory bandwidth and reduces intermediate allocations.
 """
 function memory_efficient_parallel_transform!(pcfg::ParallelSHTConfig{T}, 
                                              operators::Vector{Symbol},
-                                             qlm_in::PencilArray{Complex{T}}, 
-                                             qlm_out::PencilArray{Complex{T}}) where T
+                                             qlm_in::AbstractVector{Complex{T}}, 
+                                             qlm_out::AbstractVector{Complex{T}}) where T
     
-    # Pre-allocate single working array for all operations
-    work_array = allocate_array(pcfg.spectral_pencil, Complex{T})
-    
-    current_in = qlm_in
-    current_out = work_array
-    
-    for (i, op) in enumerate(operators)
-        # Alternate between work_array and qlm_out to minimize copies
-        if i == length(operators)
-            current_out = qlm_out  # Final result goes to output
-        elseif i > 1
-            current_in, current_out = current_out, current_in  # Swap
-        end
-        
-        # Apply operator
-        parallel_apply_operator(op, pcfg, current_in, current_out)
-        
-        # Memory fence to ensure operation completion before next
-        MPI.Barrier(pcfg.comm)
-    end
-    
-    return qlm_out
+    error("Parallel functionality requires MPI, PencilArrays, and PencilFFTs packages.")
 end
 
 """
@@ -258,7 +238,7 @@ end
 
 function estimate_communication_cost(pcfg::ParallelSHTConfig, op::Symbol)
     # Estimate based on operator sparsity and domain decomposition
-    nprocs = MPI.Comm_size(pcfg.comm)
+    nprocs = 1  # Default to serial, actual value from extension
     nlm = pcfg.base_cfg.nlm
     
     if op === :laplacian
