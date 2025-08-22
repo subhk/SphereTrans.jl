@@ -431,7 +431,7 @@ expected_idx = lmidx(cfg, case.l, case.m)
     println("  Coefficient value: $max_val")
     
     if max_idx == expected_idx
-        println("  ✓ PASS")
+        println("   PASS")
     else
         println("  ✗ FAIL")
     end

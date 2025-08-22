@@ -2,7 +2,7 @@
 
 This document summarizes the cutting-edge performance improvements implemented beyond the baseline parallel optimizations.
 
-## 🚀 **New Performance Achievements**
+##  **New Performance Achievements**
 
 ### **Enhanced SIMD with LoopVectorization.jl**
 - **Expected speedup**: 5-20x over basic `@simd`

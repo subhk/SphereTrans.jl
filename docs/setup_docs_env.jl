@@ -33,7 +33,7 @@ Pkg.instantiate()
 println("Precompiling packages...")
 Pkg.precompile()
 
-println("✓ Documentation environment setup complete!")
+println(" Documentation environment setup complete!")
 println()
 println("To build the documentation:")
 println("  cd docs/")

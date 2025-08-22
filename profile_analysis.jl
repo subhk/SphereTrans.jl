@@ -159,10 +159,10 @@ for (name, result) in results
     println("  Memory: ", BenchmarkTools.prettymemory(median(result.memory)))
     println("  Allocations: ", median(result.allocs))
     if median(result.memory) > 1024
-        println("  ⚠️  High memory usage detected!")
+        println("    High memory usage detected!")
     end
     if median(result.allocs) > 100
-        println("  ⚠️  High allocation count detected!")
+        println("    High allocation count detected!")
     end
     println()
 end
@@ -205,7 +205,7 @@ for field in fieldnames(typeof(cfg))
     field_type = typeof(getfield(cfg, field))
     println("    $field: $field_type")
     if field_type == Any || occursin("Union", string(field_type))
-        println("      ⚠️  Potential type instability!")
+        println("        Potential type instability!")
     end
 end
 

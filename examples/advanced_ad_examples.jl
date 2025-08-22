@@ -36,7 +36,7 @@ try
     
     println("  Laplacian loss: $(val)")
     println("  Gradient norm: $(norm(∇qlm))")
-    println("  ✓ Laplacian AD successful")
+    println("  OK Laplacian AD successful")
     
     # cos(θ) operator gradient
     function costheta_loss(qlm)
@@ -50,7 +50,7 @@ try
     
     println("  cos(θ) loss: $(val)")  
     println("  Gradient norm: $(norm(∇qlm))")
-    println("  ✓ cos(θ) operator AD successful")
+    println("  OK cos(θ) operator AD successful")
     
 catch e
     @warn "Zygote matrix operator AD failed" exception=(e, catch_backtrace())
@@ -81,7 +81,7 @@ try
     
     println("  PINN data loss: $(val)")
     println("  Point evaluation gradient norm: $(norm(∇qlm_pinn))")
-    println("  ✓ Point evaluation AD successful - ready for PINNs!")
+    println("  OK Point evaluation AD successful - ready for PINNs!")
     
 catch e
     @warn "Point evaluation AD failed" exception=(e, catch_backtrace())
@@ -104,7 +104,7 @@ try
     
     println("  Single-l (l=$l_test) loss: $(val)")
     println("  Single-l gradient norm: $(norm(∇qlm_single_l))")
-    println("  ✓ Single-l transform AD successful")
+    println("  OK Single-l transform AD successful")
     
 catch e
     @warn "Single-l transform AD failed" exception=(e, catch_backtrace())
@@ -132,7 +132,7 @@ try
     
     println("  Turbo Laplacian loss: $(val)")
     println("  Turbo gradient norm: $(norm(∇qlm_turbo))")
-    println("  ✓ Performance-optimized AD successful")
+    println("  OK Performance-optimized AD successful")
     
 catch e
     @warn "Performance-optimized AD failed" exception=(e, catch_backtrace())
@@ -155,7 +155,7 @@ try
     grad_fd = ForwardDiff.gradient(synthesis_loss_real, qlm_real_imag)
     
     println("  ForwardDiff synthesis gradient norm: $(norm(grad_fd))")
-    println("  ✓ ForwardDiff with optimized FFT successful")
+    println("  OK ForwardDiff with optimized FFT successful")
     
 catch e
     @warn "ForwardDiff example failed" exception=(e, catch_backtrace())
@@ -211,7 +211,7 @@ try
     println("  Initial energy: $(initial_energy)")
     println("  Final energy: $(final_energy)")
     println("  Energy reduction: $(initial_energy - final_energy)")
-    println("  ✓ Scientific optimization successful")
+    println("  OK Scientific optimization successful")
     
 catch e
     @warn "Scientific optimization failed" exception=(e, catch_backtrace())
@@ -241,7 +241,7 @@ try
         
         println("  Parallel loss: $(val)")
         println("  Parallel gradient norm: $(norm(∇qlm_parallel.data))")
-        println("  ✓ Parallel AD successful")
+        println("  OK Parallel AD successful")
     else
         println("  MPI not initialized - skipping parallel AD test")
     end
@@ -290,12 +290,12 @@ try
             error = test_gradient_accuracy(func, qlm_test)
             println("  $(name): Relative error = $(error)")
             if error < 1e-6
-                println("    ✓ $(name) gradient accurate")
+                println("    OK $(name) gradient accurate")
             else
-                println("    ⚠ $(name) gradient may have issues")
+                println("    Warning: $(name) gradient may have issues")
             end
         catch e
-            println("    ✗ $(name) gradient test failed")
+            println("    ERROR: $(name) gradient test failed")
         end
     end
     

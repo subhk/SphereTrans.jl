@@ -77,7 +77,7 @@ spat = synthesize(cfg, sh)
 println("Transform successful: ", size(spat))
 
 destroy_config(cfg)
-println("✓ SHTnsKit.jl installation verified!")
+println(" SHTnsKit.jl installation verified!")
 ```
 
 ### Extended Verification

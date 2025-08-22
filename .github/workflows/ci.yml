@@ -90,19 +90,19 @@ jobs:
         run: |
           julia --project=. -e '
             using SHTnsKit
-            println("🧪 Testing advanced optimizations...")
+            println(" Testing advanced optimizations...")
             try
               # Test LoopVectorization integration
               using LoopVectorization
-              println("✅ LoopVectorization.jl available")
+              println(" LoopVectorization.jl available")
             catch
-              println("⚠️  LoopVectorization.jl not available - skipping turbo tests")
+              println("  LoopVectorization.jl not available - skipping turbo tests")
             end
             
             try
               # Test AD extensions
               using Zygote, ForwardDiff
-              println("✅ AD packages available")
+              println(" AD packages available")
               
               # Basic AD test
               cfg = create_config(Float64, 10, 10, 1)
@@ -111,26 +111,26 @@ jobs:
               # Test Zygote AD
               loss(x) = sum(abs2, synthesize(cfg, real.(x)))
               grad_zygote = Zygote.gradient(loss, qlm)[1]
-              println("✅ Zygote AD working: gradient norm = $(norm(grad_zygote))")
+              println(" Zygote AD working: gradient norm = $(norm(grad_zygote))")
               
               # Test ForwardDiff AD (simplified)
               loss_real(x) = sum(abs2, synthesize(cfg, x))
               grad_fd = ForwardDiff.gradient(loss_real, real.(qlm))
-              println("✅ ForwardDiff AD working: gradient norm = $(norm(grad_fd))")
+              println(" ForwardDiff AD working: gradient norm = $(norm(grad_fd))")
               
             catch e
-              println("⚠️  AD testing failed: $(e)")
+              println("  AD testing failed: $(e)")
               println("This is acceptable - AD extensions are optional")
             end
             
-            println("🎉 Advanced optimization testing complete!")
+            println(" Advanced optimization testing complete!")
           '
           
       - name: Test performance optimizations
         run: |
           julia --project=. -e '
             using SHTnsKit
-            println("⚡ Testing performance optimizations...")
+            println(" Testing performance optimizations...")
             
             cfg = create_config(Float64, 30, 30, 1)
             qlm = randn(ComplexF64, cfg.nlm)
@@ -139,27 +139,27 @@ jobs:
               # Test SIMD operations
               qlm_copy = copy(qlm)
               result = simd_apply_laplacian!(cfg, qlm_copy)
-              println("✅ SIMD Laplacian working")
+              println(" SIMD Laplacian working")
               
               # Test threading if available
               if Threads.nthreads() > 1
                 qlm_out = similar(qlm)
                 threaded_apply_costheta_operator!(cfg, qlm, qlm_out)
-                println("✅ Threaded operations working with $(Threads.nthreads()) threads")
+                println(" Threaded operations working with $(Threads.nthreads()) threads")
               else
-                println("⚠️  Single-threaded environment - threading tests skipped")
+                println("  Single-threaded environment - threading tests skipped")
               end
               
               # Test advanced pooling
               pool = get_advanced_pool(cfg, :test)
-              println("✅ Advanced memory pooling working")
+              println(" Advanced memory pooling working")
               
             catch e
-              println("⚠️  Performance optimization test failed: $(e)")
+              println("  Performance optimization test failed: $(e)")
               println("This may indicate missing optimizations - check implementation")
             end
             
-            println("🚀 Performance testing complete!")
+            println(" Performance testing complete!")
           '
       
       - uses: julia-actions/julia-processcoverage@v1
@@ -185,7 +185,7 @@ jobs:
       - name: Test package loading without extensions
         run: |
           julia --project=. -e '
-            println("🔍 Testing package loading without optional dependencies...")
+            println(" Testing package loading without optional dependencies...")
             
             # Test core functionality without extensions
             ENV["JULIA_LOAD_PATH"] = "@stdlib"  # Minimal environment
@@ -195,25 +195,25 @@ jobs:
               
               # Load SHTnsKit - should work without AD packages
               using SHTnsKit
-              println("✅ SHTnsKit loaded successfully without extensions")
+              println(" SHTnsKit loaded successfully without extensions")
               
               # Test basic functionality
               cfg = create_config(Float64, 10, 10, 1)
               qlm = randn(ComplexF64, cfg.nlm)
               spatial = synthesize(cfg, real.(qlm))
-              println("✅ Basic transforms working: spatial size $(size(spatial))")
+              println(" Basic transforms working: spatial size $(size(spatial))")
               
               # Test matrix operations
               qlm_out = similar(qlm)
               apply_laplacian!(cfg, qlm, qlm_out)
-              println("✅ Matrix operations working")
+              println(" Matrix operations working")
               
             catch e
-              println("❌ Compatibility test failed: $(e)")
+              println(" Compatibility test failed: $(e)")
               exit(1)
             end
             
-            println("🎉 Compatibility tests passed!")
+            println(" Compatibility tests passed!")
           '
 
   benchmark:
@@ -242,7 +242,7 @@ jobs:
             using SHTnsKit
             using BenchmarkTools
             
-            println("📊 Running performance benchmarks...")
+            println(" Running performance benchmarks...")
             
             # Different problem sizes
             test_sizes = [10, 20, 30]
@@ -278,7 +278,7 @@ jobs:
               end
             end
             
-            println("\n🏁 Benchmark complete!")
+            println("\n Benchmark complete!")
           '
 
   docs:

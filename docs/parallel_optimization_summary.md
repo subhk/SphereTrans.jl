@@ -4,7 +4,7 @@ This document summarizes the comprehensive parallelization improvements made to 
 
 ## Performance Results Overview
 
-### 🚀 **Achieved Speedups**
+###  **Achieved Speedups**
 
 1. **SIMD Laplacian Operations**: **130-250x speedup**
    - Vectorized diagonal matrix operations

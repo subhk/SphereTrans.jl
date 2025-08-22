@@ -61,9 +61,9 @@ if has_literate
                                 documenter = true,
                                 execute = false)  # Set to true if examples should be executed
                                 
-                println("✓ Generated: $(replace(example, ".jl" => ".md"))")
+                println("OK Generated: $(replace(example, ".jl" => ".md"))")
             catch e
-                println("⚠ Failed to process $example: $e")
+                println("Warning: Failed to process $example: $e")
             end
         end
     else

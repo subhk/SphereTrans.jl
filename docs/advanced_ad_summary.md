@@ -2,16 +2,16 @@
 
 This document summarizes the comprehensive AD improvements for SHTnsKit.jl, enabling cutting-edge applications in scientific machine learning, PINNs, and inverse problems.
 
-## 🎯 **New AD Capabilities**
+##  **New AD Capabilities**
 
 ### **Complete Function Coverage**
-- ✅ **Basic transforms**: `synthesize`, `analyze`, `cplx_sh_to_spat`, `cplx_spat_to_sh`
-- ✅ **Matrix operators**: `apply_laplacian!`, `apply_costheta_operator!`, `apply_sintdtheta_operator!`
-- ✅ **Advanced transforms**: `sh_to_spat_l`, `spat_to_sh_l`, single-mode operations
-- ✅ **Point evaluation**: `sh_to_point` (critical for PINNs)
-- ✅ **Vector transforms**: `cplx_synthesize_vector`, `cplx_analyze_vector`
-- ✅ **Performance optimized**: `turbo_apply_laplacian!`, `turbo_auto_dispatch`
-- ✅ **Parallel operations**: `parallel_apply_operator`, `memory_efficient_parallel_transform!`
+-  **Basic transforms**: `synthesize`, `analyze`, `cplx_sh_to_spat`, `cplx_spat_to_sh`
+-  **Matrix operators**: `apply_laplacian!`, `apply_costheta_operator!`, `apply_sintdtheta_operator!`
+-  **Advanced transforms**: `sh_to_spat_l`, `spat_to_sh_l`, single-mode operations
+-  **Point evaluation**: `sh_to_point` (critical for PINNs)
+-  **Vector transforms**: `cplx_synthesize_vector`, `cplx_analyze_vector`
+-  **Performance optimized**: `turbo_apply_laplacian!`, `turbo_auto_dispatch`
+-  **Parallel operations**: `parallel_apply_operator`, `memory_efficient_parallel_transform!`
 
 ### **Enhanced ForwardDiff Support**
 - **Optimized FFT**: Cooley-Tukey algorithm instead of O(N²) DFT
@@ -168,12 +168,12 @@ end
 
 | Function Type | Before | After | Improvement |
 |---------------|--------|-------|-------------|
-| **Basic transforms** | ✅ 6 rules | ✅ 6 rules | Same |
-| **Matrix operators** | ❌ 0 rules | ✅ 8 rules | **+8 new** |
-| **Advanced transforms** | ❌ 0 rules | ✅ 12 rules | **+12 new** |
-| **Point evaluation** | ❌ 0 rules | ✅ 4 rules | **+4 new** |
-| **Performance optimized** | ❌ 0 rules | ✅ 6 rules | **+6 new** |
-| **Parallel operations** | ❌ 0 rules | ✅ 8 rules | **+8 new** |
+| **Basic transforms** |  6 rules |  6 rules | Same |
+| **Matrix operators** |  0 rules |  8 rules | **+8 new** |
+| **Advanced transforms** |  0 rules |  12 rules | **+12 new** |
+| **Point evaluation** |  0 rules |  4 rules | **+4 new** |
+| **Performance optimized** |  0 rules |  6 rules | **+6 new** |
+| **Parallel operations** |  0 rules |  8 rules | **+8 new** |
 | **Total coverage** | 6 functions | **44 functions** | **7.3x expansion** |
 
 ## **Scientific Applications**
