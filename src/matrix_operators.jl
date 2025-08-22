@@ -107,6 +107,7 @@ Equivalent to the C library function `SH_mul_mx()`.
 """
 function sh_mul_mx(cfg::SHTnsConfig{T}, matrix::AbstractMatrix{T},
                    qlm_in::AbstractVector{Complex{T}}, qlm_out::AbstractVector{Complex{T}}) where T
+                   
     validate_config(cfg)
     size(matrix) == (cfg.nlm, cfg.nlm) || error("Matrix size must be (nlm, nlm)")
     length(qlm_in) == cfg.nlm || error("qlm_in length must equal nlm")

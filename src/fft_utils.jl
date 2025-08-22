@@ -243,6 +243,7 @@ This is the inverse operation of extract_fourier_mode!.
 """
 function insert_fourier_mode!(output::AbstractMatrix{Complex{T}}, m::Int,
                               mode_coeffs::AbstractVector{Complex{T}}, nlat::Int) where T
+                              
     size(output, 1) >= nlat || error("output has insufficient latitude points")
     length(mode_coeffs) >= nlat || error("mode_coeffs array too short")
     
