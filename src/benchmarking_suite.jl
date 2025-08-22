@@ -231,7 +231,8 @@ function benchmark_memory_scaling(lmax_range::AbstractVector{Int}, ::Type{T}=Flo
             allocations = alloc_test
         ))
         
-        @printf "  lmax=%3d: nlm=%5d, memory=%6.2f MB, synth=%7.3f ms, anal=%7.3f ms, alloc=%8d bytes\n" lmax cfg.nlm memory_info.memory_mb (t_synth*1000) (t_anal*1000) alloc_test
+        @printf("  lmax=%3d: nlm=%5d, memory=%6.2f MB, synth=%7.3f ms, anal=%7.3f ms, alloc=%8d bytes\n",
+                lmax, cfg.nlm, memory_info.memory_mb, (t_synth*1000), (t_anal*1000), alloc_test)
     end
     
     return scaling_results

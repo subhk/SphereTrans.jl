@@ -24,7 +24,7 @@ function sh00_1(cfg::SHTnsConfig{T}) where T
     elseif cfg.norm == SHT_REAL_NORM
         return T(0.5)
     else
-        error("Unknown normalization: $(cfg.norm)")
+        throw(ArgumentError("Unknown normalization: $(cfg.norm)"))
     end
 end
 
@@ -49,7 +49,7 @@ function sh10_ct(cfg::SHTnsConfig{T}) where T
     elseif cfg.norm == SHT_REAL_NORM
         return sqrt(T(3)/2)
     else
-        error("Unknown normalization: $(cfg.norm)")
+        throw(ArgumentError("Unknown normalization: $(cfg.norm)"))
     end
 end
 
@@ -74,7 +74,7 @@ function sh11_st(cfg::SHTnsConfig{T}) where T
     elseif cfg.norm == SHT_REAL_NORM
         return -sqrt(T(3)/4)
     else
-        error("Unknown normalization: $(cfg.norm)")
+        throw(ArgumentError("Unknown normalization: $(cfg.norm)"))
     end
 end
 
@@ -107,7 +107,7 @@ function shlm_e1(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
         # Real normalization
         return 1/sqrt(T(2*l + 1))
     else
-        error("Unknown normalization: $(cfg.norm)")
+        throw(ArgumentError("Unknown normalization: $(cfg.norm)"))
     end
 end
 
@@ -357,6 +357,6 @@ function _get_normalization_factor(norm::SHTnsNorm, l::Int, m::Int)
         # Real normalization - no additional factors beyond the basic Legendre polynomial
         return 1.0
     else
-        error("Unknown normalization: $(norm)")
+        throw(ArgumentError("Unknown normalization: $(norm)"))
     end
 end

@@ -229,7 +229,7 @@ function _sh_to_spat_impl!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
     # Transform from Fourier coefficients to spatial domain
     spatial_temp = compute_spatial_from_fourier(fourier_coeffs, cfg)
     
-    # FFTW irfft scaling issue: need to multiply by nphi to get correct amplitude
+    # FFTW irfft scaling issue: Need to multiply by nphi to get correct amplitude
     spatial_data .= spatial_temp .* T(nphi)
     
     return nothing

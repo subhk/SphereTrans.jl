@@ -248,7 +248,7 @@ function auto_simd_dispatch(cfg::SHTnsConfig{T}, op::Symbol, qlm_in::AbstractVec
             return apply_costheta_operator_direct!(cfg, qlm_in, qlm_out)
         end
     else
-        error("Unknown operator: $op")
+        throw(ArgumentError("Unknown operator: $op"))
     end
 end
 

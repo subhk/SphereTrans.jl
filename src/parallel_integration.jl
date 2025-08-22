@@ -61,7 +61,7 @@ function parallel_apply_operator(op::Symbol, cfg::SHTnsConfig{T}, qlm_in::Abstra
     elseif op === :laplacian
         return apply_laplacian!(cfg, qlm_in, qlm_out)
     else
-        error("Unknown operator: $op")
+        throw(ArgumentError("Unknown operator: $op"))
     end
 end
 
@@ -80,7 +80,7 @@ function parallel_apply_operator(op::Symbol, pcfg::ParallelSHTConfig{T},
     elseif op === :laplacian
         return parallel_apply_laplacian_distributed!(pcfg, qlm_in)
     else
-        error("Unknown operator: $op")
+        throw(ArgumentError("Unknown operator: $op"))
     end
 end
 
