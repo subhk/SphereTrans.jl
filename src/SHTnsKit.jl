@@ -72,7 +72,37 @@ export
     create_gauss_config, create_regular_config,
     
     # Threading controls
-    set_threading!, get_threading, set_fft_threads, get_fft_threads, set_optimal_threads!
+    set_threading!, get_threading, set_fft_threads, get_fft_threads, set_optimal_threads!,
+    
+    # Point evaluation functions
+    sh_to_point, sh_to_point_cplx, shqst_to_point, sh_to_grad_point,
+    
+    # Special value functions
+    sh00_1, sh10_ct, sh11_st, shlm_e1, gauss_weights,
+    
+    # Legendre polynomial evaluation
+    legendre_sphPlm_array, legendre_sphPlm_deriv_array,
+    
+    # Matrix operators
+    mul_ct_matrix, st_dt_matrix, sh_mul_mx, 
+    apply_costheta_operator, apply_sintdtheta_operator,
+    laplacian_matrix, apply_laplacian,
+    
+    # Single-m transforms
+    spat_to_sh_ml, sh_to_spat_ml, spat_to_sphtor_ml, sphtor_to_spat_ml,
+    
+    # Truncated transforms
+    spat_to_sh_l, sh_to_spat_l, sphtor_to_spat_l, spat_to_sphtor_l,
+    sh_to_grad_spat_l, spat_to_shqst_l, shqst_to_spat_l,
+    
+    # Profiling functions
+    shtns_profiling, shtns_profiling_read_time, sh_to_spat_time, spat_to_sh_time,
+    benchmark_transform, profile_memory_usage, get_profiling_summary, reset_profiling,
+    compare_performance, print_profiling_report,
+    
+    # Robert form functions
+    set_robert_form!, is_robert_form, sphtor_to_spat_robert!, spat_to_sphtor_robert!,
+    robert_form_factor, apply_robert_form_to_field!
 
 include("types.jl")
 include("gauss_legendre.jl") 
@@ -83,6 +113,13 @@ include("complex_transforms.jl")
 include("utilities.jl")
 include("grid_utils.jl")
 include("threading.jl")
+include("point_evaluation.jl")
+include("special_functions.jl")
+include("matrix_operators.jl")
+include("single_m_transforms.jl")
+include("truncated_transforms.jl")
+include("profiling.jl")
+include("robert_form.jl")
 
 
 function __init__()
