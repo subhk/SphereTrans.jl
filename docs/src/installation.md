@@ -15,20 +15,28 @@ Pkg.add("SHTnsKit")
 
 - **Operating System**: Linux, macOS, or Windows with WSL
 - **Julia**: Version 1.9 or later (1.11+ recommended)
-- **Memory**: At least 4GB RAM recommended
-- **Storage**: 500MB free space for dependencies
+- **Memory**: At least 4GB RAM (16GB+ for large parallel problems)
+- **Storage**: 2GB free space for dependencies (including MPI)
+- **MPI Library**: OpenMPI or MPICH for parallel functionality
 
 ### Required Dependencies
 
-SHTnsKit.jl is pure Julia and does not require an external C library. The only runtime dependencies are Julia’s standard libraries and FFTW.jl (installed automatically).
+SHTnsKit.jl is pure Julia and does not require an external C library. Core functionality uses Julia's standard libraries and FFTW.jl (installed automatically). Parallel features require additional packages.
 
 ## Installing SHTnsKit.jl
 
-### Standard Installation
+### Basic Installation (Serial Only)
 
 ```julia
 using Pkg
 Pkg.add("SHTnsKit")
+```
+
+### Full Installation (Parallel + SIMD)
+
+```julia
+using Pkg
+Pkg.add(["SHTnsKit", "MPI", "PencilArrays", "PencilFFTs", "LoopVectorization"])
 ```
 
 ### Development Installation
@@ -47,16 +55,45 @@ using Pkg
 Pkg.develop(path="/path/to/SHTnsKit.jl")
 ```
 
-## Optional Dependencies
+## Parallel Computing Setup
 
-### Additional Performance Utilities
+### MPI Installation
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get update
+sudo apt-get install libopenmpi-dev openmpi-bin
+```
+
+**macOS:**
+```bash
+brew install open-mpi
+```
+
+**Configure Julia MPI:**
+```julia
+using Pkg
+Pkg.add("MPI")
+Pkg.build("MPI")
+```
+
+### Verify MPI Installation
+
+```julia
+using MPI
+MPI.Init()
+rank = MPI.Comm_rank(MPI.COMM_WORLD)
+size = MPI.Comm_size(MPI.COMM_WORLD)
+println("Process $rank of $size")
+MPI.Finalize()
+```
+
+### Optional Performance Packages
 
 ```julia
 using Pkg
-Pkg.add(["FFTW", "LinearAlgebra"])
+Pkg.add(["LoopVectorization", "BenchmarkTools"])
 ```
-
-These are automatically included but explicit installation ensures optimal versions.
 
 ## Verification
 
@@ -77,7 +114,40 @@ spat = synthesize(cfg, sh)
 println("Transform successful: ", size(spat))
 
 destroy_config(cfg)
-println(" SHTnsKit.jl installation verified!")
+println("✅ SHTnsKit.jl installation verified!")
+```
+
+### Parallel Functionality Test
+
+```julia
+# Test serial mode (no MPI required)
+using SHTnsKit
+
+cfg = create_gauss_config(Float64, 10, 8, 24, 32)
+sh_coeffs = randn(Complex{Float64}, cfg.nlm)
+
+# This should work without MPI packages
+try
+    auto_cfg = auto_parallel_config(cfg)
+    println("✅ Serial fallback working")
+catch
+    println("✅ Parallel packages not detected (expected)")
+end
+
+# Test with MPI packages (run with: mpiexec -n 2 julia script.jl)
+try
+    using MPI, PencilArrays, PencilFFTs
+    MPI.Init()
+    
+    pcfg = create_parallel_config(cfg, MPI.COMM_WORLD)
+    result = similar(sh_coeffs)
+    parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)
+    
+    println("✅ Parallel functionality verified!")
+    MPI.Finalize()
+catch e
+    println("ℹ️  Parallel packages not available: $e")
+end
 ```
 
 ### Extended Verification
