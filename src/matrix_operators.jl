@@ -1,7 +1,16 @@
 """
 Matrix operators for spherical harmonic transforms.
 These implement spectral operators like multiplication by cos(θ) and sin(θ)d/dθ.
+
+Performance optimizations:
+- Sparse matrix storage for coupling operators
+- BLAS-optimized matrix-vector products
+- Memory-efficient coefficient computation
+- Cached operator matrices for repeated use
 """
+
+using LinearAlgebra
+using SparseArrays
 
 """
     mul_ct_matrix(cfg::SHTnsConfig{T}) where T
@@ -20,7 +29,11 @@ function mul_ct_matrix(cfg::SHTnsConfig{T}) where T
     validate_config(cfg)
     
     n = cfg.nlm
-    matrix = zeros(T, n, n)
+    
+    # Use sparse matrix storage for efficiency
+    I_indices = Int[]
+    J_indices = Int[]  
+    coefficients = T[]
     
     for (idx_out, (l_out, m_out)) in enumerate(cfg.lm_indices)
         for (idx_in, (l_in, m_in)) in enumerate(cfg.lm_indices)
@@ -39,12 +52,17 @@ function mul_ct_matrix(cfg::SHTnsConfig{T}) where T
                     coeff += _costheta_coupling_coefficient(cfg, l_out, l_in, m_out)
                 end
                 
-                matrix[idx_out, idx_in] = coeff
+                # Only store non-zero coefficients
+                if abs(coeff) > eps(T)
+                    push!(I_indices, idx_out)
+                    push!(J_indices, idx_in)
+                    push!(coefficients, coeff)
+                end
             end
         end
     end
     
-    return matrix
+    return sparse(I_indices, J_indices, coefficients, n, n)
 end
 
 """
@@ -63,7 +81,11 @@ function st_dt_matrix(cfg::SHTnsConfig{T}) where T
     validate_config(cfg)
     
     n = cfg.nlm
-    matrix = zeros(T, n, n)
+    
+    # Use sparse matrix storage for efficiency
+    I_indices = Int[]
+    J_indices = Int[]
+    coefficients = T[]
     
     for (idx_out, (l_out, m_out)) in enumerate(cfg.lm_indices)
         for (idx_in, (l_in, m_in)) in enumerate(cfg.lm_indices)
@@ -82,12 +104,17 @@ function st_dt_matrix(cfg::SHTnsConfig{T}) where T
                     coeff += _sintdtheta_coupling_coefficient(cfg, l_out, l_in, m_out)
                 end
                 
-                matrix[idx_out, idx_in] = coeff
+                # Only store non-zero coefficients
+                if abs(coeff) > eps(T)
+                    push!(I_indices, idx_out)
+                    push!(J_indices, idx_in)
+                    push!(coefficients, coeff)
+                end
             end
         end
     end
     
-    return matrix
+    return sparse(I_indices, J_indices, coefficients, n, n)
 end
 
 """
