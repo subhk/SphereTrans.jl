@@ -239,9 +239,92 @@ Apply the sin(θ) * d/dθ operator to spherical harmonic coefficients.
 This is a convenience function that computes and applies the sin(θ) * d/dθ matrix.
 """
 function apply_sintdtheta_operator(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}) where T
-    matrix = st_dt_matrix(cfg)
+    cache_key = (cfg, :sintdtheta)
+    
+    if haskey(OPERATOR_CACHE, cache_key)
+        matrix = OPERATOR_CACHE[cache_key]
+    else
+        matrix = st_dt_matrix(cfg)
+        OPERATOR_CACHE[cache_key] = matrix
+    end
+    
     qlm_out = similar(qlm_in)  
     return sh_mul_mx(cfg, matrix, qlm_in, qlm_out)
+end
+
+"""
+    apply_sintdtheta_operator!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                              qlm_out::AbstractVector{Complex{T}}) where T
+
+In-place version of sin(θ) * d/dθ operator.
+"""
+function apply_sintdtheta_operator!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                                   qlm_out::AbstractVector{Complex{T}}) where T
+    cache_key = (cfg, :sintdtheta)
+    
+    if haskey(OPERATOR_CACHE, cache_key)
+        matrix = OPERATOR_CACHE[cache_key]
+    else
+        matrix = st_dt_matrix(cfg)
+        OPERATOR_CACHE[cache_key] = matrix
+    end
+    
+    return sh_mul_mx(cfg, matrix, qlm_in, qlm_out)
+end
+
+"""
+    clear_operator_cache!()
+
+Clear the cached operator matrices to free memory.
+"""
+function clear_operator_cache!()
+    empty!(OPERATOR_CACHE)
+    return nothing
+end
+
+"""
+    apply_costheta_operator_direct!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                                   qlm_out::AbstractVector{Complex{T}}) where T
+
+Matrix-free direct application of cos(θ) operator for maximum efficiency.
+This avoids matrix construction entirely for the best performance.
+"""
+function apply_costheta_operator_direct!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                                        qlm_out::AbstractVector{Complex{T}}) where T
+    validate_config(cfg)
+    length(qlm_in) == cfg.nlm || error("qlm_in length must equal nlm")
+    length(qlm_out) == cfg.nlm || error("qlm_out length must equal nlm")
+    
+    # Initialize output to zero
+    fill!(qlm_out, zero(Complex{T}))
+    
+    # Direct computation without matrix storage
+    @inbounds for (idx_out, (l_out, m_out)) in enumerate(cfg.lm_indices)
+        for (idx_in, (l_in, m_in)) in enumerate(cfg.lm_indices)
+            
+            # cos(θ) couples only same m, and l differing by ±1
+            if m_out == m_in
+                coeff = zero(T)
+                
+                # Contribution from l_in = l_out + 1 term
+                if l_in == l_out + 1 && l_in <= cfg.lmax
+                    coeff += _costheta_coupling_coefficient(cfg, l_out, l_in, m_out)
+                end
+                
+                # Contribution from l_in = l_out - 1 term  
+                if l_in == l_out - 1 && l_in >= 0
+                    coeff += _costheta_coupling_coefficient(cfg, l_out, l_in, m_out)
+                end
+                
+                # Apply coefficient directly
+                if abs(coeff) > eps(T)
+                    qlm_out[idx_out] += coeff * qlm_in[idx_in]
+                end
+            end
+        end
+    end
+    
+    return qlm_out
 end
 
 # Internal helper functions
@@ -364,13 +447,16 @@ function laplacian_matrix(cfg::SHTnsConfig{T}) where T
     validate_config(cfg)
     
     n = cfg.nlm
-    matrix = zeros(T, n, n)
     
-    for (idx, (l, m)) in enumerate(cfg.lm_indices)
-        matrix[idx, idx] = -T(l * (l + 1))
+    # Use sparse diagonal matrix for efficiency
+    diagonal_values = Vector{T}(undef, n)
+    
+    @inbounds for (idx, (l, m)) in enumerate(cfg.lm_indices)
+        diagonal_values[idx] = -T(l * (l + 1))
     end
     
-    return matrix
+    # Create sparse diagonal matrix
+    return spdiagm(0 => diagonal_values)
 end
 
 """
@@ -391,9 +477,44 @@ function apply_laplacian(cfg::SHTnsConfig{T}, qlm::AbstractVector{Complex{T}}) w
     
     result = similar(qlm)
     
-    for (idx, (l, m)) in enumerate(cfg.lm_indices)
+    @inbounds for (idx, (l, m)) in enumerate(cfg.lm_indices)
         result[idx] = -T(l * (l + 1)) * qlm[idx]
     end
     
     return result
+end
+
+"""
+    apply_laplacian!(cfg::SHTnsConfig{T}, qlm::AbstractVector{Complex{T}}) where T
+
+In-place application of Laplacian operator.
+"""
+function apply_laplacian!(cfg::SHTnsConfig{T}, qlm::AbstractVector{Complex{T}}) where T
+    validate_config(cfg)
+    length(qlm) == cfg.nlm || error("qlm length must equal nlm")
+    
+    @inbounds for (idx, (l, m)) in enumerate(cfg.lm_indices)
+        qlm[idx] *= -T(l * (l + 1))
+    end
+    
+    return qlm
+end
+
+"""
+    apply_laplacian!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                    qlm_out::AbstractVector{Complex{T}}) where T
+
+In-place application of Laplacian operator with separate input and output.
+"""
+function apply_laplacian!(cfg::SHTnsConfig{T}, qlm_in::AbstractVector{Complex{T}}, 
+                         qlm_out::AbstractVector{Complex{T}}) where T
+    validate_config(cfg)
+    length(qlm_in) == cfg.nlm || error("qlm_in length must equal nlm")
+    length(qlm_out) == cfg.nlm || error("qlm_out length must equal nlm")
+    
+    @inbounds for (idx, (l, m)) in enumerate(cfg.lm_indices)
+        qlm_out[idx] = -T(l * (l + 1)) * qlm_in[idx]
+    end
+    
+    return qlm_out
 end
