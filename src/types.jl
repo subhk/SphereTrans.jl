@@ -78,6 +78,9 @@ mutable struct SHTnsConfig{T<:AbstractFloat}
     # Thread safety
     lock::ReentrantLock
     
+    # Robert form flag for vector transforms
+    robert_form::Bool
+    
     # Inner constructor
     function SHTnsConfig{T}() where T<:AbstractFloat
         new{T}(
@@ -87,7 +90,8 @@ mutable struct SHTnsConfig{T<:AbstractFloat}
             Matrix{T}(undef, 0, 0),
             Tuple{Int,Int}[],
             Dict{Symbol,Any}(),
-            ReentrantLock()
+            ReentrantLock(),
+            false
         )
     end
 end
