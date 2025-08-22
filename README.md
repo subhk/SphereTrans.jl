@@ -16,37 +16,30 @@
 
 SHTnsKit.jl provides a comprehensive, pure-Julia implementation of spherical harmonic transforms with **parallel computing support** for scalable scientific computing. From single-core laptops to large HPC clusters, this package delivers the performance you need for spectral analysis on the sphere.
 
-**What are spherical harmonics?** Think of them as "Fourier transforms for the sphere" - they decompose any function on a spherical surface into mathematical basis functions, enabling powerful spectral analysis of geophysical, astrophysical, and fluid dynamical data.
-
-## 🚀 Key Features
+## Key Features
 
 ### **High-Performance Computing**
-- **🖥️ Pure Julia**: No C dependencies, seamless Julia ecosystem integration
-- **⚡ Multi-threading**: Optimized with Julia threads and FFTW parallelization
-- **🔄 MPI Parallel**: Distributed computing with MPI + PencilArrays + PencilFFTs
-- **🎯 SIMD Optimized**: Vectorization with LoopVectorization.jl support
-- **🏗️ Extensible**: Modular architecture for CPU/GPU/distributed computing
+- **Pure Julia**: No C dependencies, seamless Julia ecosystem integration
+- **Multi-threading**: Optimized with Julia threads and FFTW parallelization
+- **MPI Parallel**: Distributed computing with MPI + PencilArrays + PencilFFTs
+- **SIMD Optimized**: Vectorization with LoopVectorization.jl support
+- **Extensible**: Modular architecture for CPU/GPU/distributed computing
 
 ### **Complete Scientific Functionality**  
-- **📊 Transform Types**: Scalar, vector, and complex field transforms
-- **🌐 Grid Support**: Gauss-Legendre and regular (equiangular) grids
-- **🔄 Vector Analysis**: Spheroidal-toroidal decomposition for flow fields
-- **🧮 Differential Operators**: Laplacian, gradient, divergence, vorticity
-- **📈 Spectral Analysis**: Power spectra, correlation functions, filtering
+- **Transform Types**: Scalar, vector, and complex field transforms
+- **Grid Support**: Gauss-Legendre and regular (equiangular) grids
+- **Vector Analysis**: Spheroidal-toroidal decomposition for flow fields
+- **Differential Operators**: Laplacian, gradient, divergence, vorticity
+- **Spectral Analysis**: Power spectra, correlation functions, filtering
 
 ### **Advanced Capabilities**
-- **🔥 Automatic Differentiation**: Native ForwardDiff.jl and Zygote.jl support  
-- **🌍 Field Rotations**: Wigner D-matrix rotations and coordinate transforms
-- **⚙️ Matrix Operators**: Efficient spectral differential operators
-- **🎛️ Performance Tuning**: Comprehensive benchmarking and optimization tools
+- **Automatic Differentiation**: Native ForwardDiff.jl and Zygote.jl support  
+- **Field Rotations**: Wigner D-matrix rotations and coordinate transforms
+- **⚙Matrix Operators**: Efficient spectral differential operators
+- **Performance Tuning**: Comprehensive benchmarking and optimization tools
 
-### **Scientific Applications**
-- **🌡️ Climate Science**: Atmospheric/oceanic field analysis, seasonal cycles
-- **🌍 Geophysics**: Gravitational/magnetic field modeling, seismic analysis  
-- **🌌 Astrophysics**: CMB analysis, stellar surface studies, galactic dynamics
-- **💨 Fluid Dynamics**: Turbulence analysis, vorticity-divergence decomposition
 
-## 📦 Installation
+## Installation
 
 ### Basic Installation (Serial Computing)
 
@@ -78,7 +71,7 @@ brew install open-mpi
 julia -e 'using Pkg; Pkg.build("MPI")'
 ```
 
-## 🏃‍♂️ Quick Start
+## Quick Start
 
 ### Basic Usage (Serial)
 
@@ -155,7 +148,7 @@ println("SIMD speedup: $(results.speedup)x")
 destroy_config(cfg)
 ```
 
-## 📚 Comprehensive Examples
+## Comprehensive Examples
 
 ### 1. Climate Data Analysis
 
@@ -271,7 +264,7 @@ end
 destroy_config(cfg)
 ```
 
-## 🔧 Performance Optimization
+##  Performance Optimization
 
 ### Threading Configuration
 
@@ -321,7 +314,7 @@ scaling_results = benchmark_memory_scaling([16, 24, 32, 40, 48])
 vector_results = benchmark_vector_transforms(cfg, n_samples=50)
 ```
 
-## 🌐 Parallel Computing Guide
+## Parallel Computing Guide
 
 ### Running Examples
 
@@ -355,23 +348,6 @@ SHTnsKit/
 - **MPI available**: Parallel computing automatically enabled
 - **Full stack**: Maximum performance with all optimizations
 
-### Performance Characteristics
-
-| **Problem Size** | **Recommended Processes** | **Expected Speedup** | **Memory/Process** |
-|------------------|---------------------------|---------------------|-------------------|
-| lmax ≤ 32        | 1 (serial)               | 1.0x                | < 100 MB          |
-| lmax = 48        | 2-4                       | 1.5-3.0x            | 100-500 MB        |
-| lmax = 64        | 4-8                       | 3.0-6.0x            | 200 MB - 1 GB     |
-| lmax = 96        | 8-16                      | 6.0-12.0x           | 500 MB - 2 GB     |
-| lmax ≥ 128       | 16-64                     | 10.0-25.0x          | 1-8 GB            |
-
-## 📖 Advanced Documentation
-
-### Complete Feature Documentation
-- **[Parallel Computing Guide](PARALLEL_FEATURES.md)**: Comprehensive parallel computing setup
-- **[API Reference](https://subhk.github.io/SHTnsKit.jl)**: Complete function documentation
-- **[Performance Guide](docs/performance.md)**: Optimization strategies and benchmarking
-- **[Examples Gallery](examples/)**: Runnable scientific applications
 
 ### Automatic Differentiation
 
@@ -407,7 +383,7 @@ matrix = create_custom_operator_matrix(cfg)
 result = apply_matrix_operator(cfg, matrix, sh_coeffs)
 ```
 
-## 🔬 Scientific Applications
+## Scientific Applications
 
 ### Geophysical Field Analysis
 
@@ -450,7 +426,7 @@ divergence = allocate_spatial(cfg)
 sphtor_to_spat!(cfg, rot_coeffs, div_coeffs, vorticity, divergence)
 ```
 
-## 🧪 Testing and Validation
+##  Testing and Validation
 
 Run the comprehensive test suite:
 
@@ -468,7 +444,7 @@ julia --project=. examples/benchmark_suite.jl
 julia --project=. examples/ad_examples.jl
 ```
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Areas of particular interest:
 
@@ -479,20 +455,9 @@ Contributions are welcome! Areas of particular interest:
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
-## 📜 Citation
+## Citation
 
 If you use SHTnsKit.jl in your research, please cite:
-
-```bibtex
-@software{shtnskit_jl,
-  title = {SHTnsKit.jl: High-Performance Spherical Harmonic Transforms for Julia},
-  author = {Kar, Subhajit},
-  year = {2024},
-  url = {https://github.com/subhk/SHTnsKit.jl}
-}
-```
-
-Please also cite the underlying SHTns library:
 ```bibtex
 @article{schaeffer2013efficient,
   title={Efficient spherical harmonic transforms aimed at pseudospectral numerical simulations},
@@ -506,17 +471,13 @@ Please also cite the underlying SHTns library:
 }
 ```
 
-## 📄 License
+##  License
 
 SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), ensuring compatibility with the underlying SHTns library and promoting open scientific computing.
 
-## 📚 References
+## References
 
 - **[SHTns Documentation](https://nschaeff.bitbucket.io/shtns/)**: Original C library
 - **[Spherical Harmonics Theory](https://en.wikipedia.org/wiki/Spherical_harmonics)**: Mathematical background  
 - **[Julia Parallel Computing](https://docs.julialang.org/en/v1/manual/parallel-computing/)**: Julia parallelization guide
 - **[MPI.jl Documentation](https://juliaparallel.org/MPI.jl/stable/)**: MPI interface for Julia
-
----
-
-**Ready to transform your spherical data analysis?** Start with the [Quick Start](#-quick-start) guide or explore the [examples](examples/) for your specific scientific domain!
