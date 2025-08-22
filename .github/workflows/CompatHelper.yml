@@ -2,7 +2,7 @@ name: CompatHelper
 
 on:
   schedule:
-    - cron: 0 0 * * *  # Daily at midnight UTC
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC (less frequent)
   workflow_dispatch:
 
 permissions:
@@ -11,17 +11,28 @@ permissions:
 
 jobs:
   CompatHelper:
+    name: Update Package Compatibility
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
-      - name: Check if CompatHelper should run
-        run: echo "Running CompatHelper to update dependencies"
-      
-      - name: Pkg.add CompatHelper
+      - name: Install CompatHelper
         run: julia -e 'using Pkg; Pkg.add("CompatHelper")'
       
-      - name: CompatHelper.main
+      - name: Update package compatibility bounds
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMPATHELPER_PRIV: ${{ secrets.DOCUMENTER_KEY }}  # Optional private key
-        run: julia -e 'using CompatHelper; CompatHelper.main()'
+          COMPATHELPER_PRIV: ${{ secrets.DOCUMENTER_KEY }}
+        run: |
+          julia -e '
+            using CompatHelper
+            
+            # Only update specific packages that we care about
+            CompatHelper.main(;
+              subdirs=["", "docs"],  # Check both main and docs Project.toml
+              master_branch="main",
+              ignore=[  # Packages to ignore
+                "julia",  # Don"t update Julia version requirement
+              ]
+            )
+          '
