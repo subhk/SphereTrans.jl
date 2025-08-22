@@ -1,45 +1,31 @@
 name: Documentation
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    tags: '*'
   pull_request:
     branches:
       - main
       - master
+  workflow_dispatch:
 
-permissions:
-  actions: write
-  contents: read
-  pages: write
-  id-token: write
-
-# Cancel in-progress documentation builds for the same PR/branch
+# Cancel in-progress documentation builds for the same PR/branch  
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   docs:
-    name: Documentation
+    name: Documentation Preview
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
       - uses: actions/checkout@v4
         with:
-          # Fetch full history for GitHubActions deploydocs
           fetch-depth: 0
-      
+          
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11'
-      
+          version: '1'
+          
       - name: Cache Julia packages
         uses: actions/cache@v4
         with:
@@ -54,8 +40,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gfortran libfftw3-dev
-          # Note: SHTns C library would need to be installed for full functionality
-          # For docs-only build, we can skip this if examples don't execute
       
       - name: Set up documentation environment
         run: |
@@ -67,20 +51,16 @@ jobs:
             Pkg.precompile()
           '
       
-      - name: Build documentation
+      - name: Build documentation (preview)
         run: |
           cd docs
           julia --project=. make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-      
-      - name: Upload documentation artifacts
-        uses: actions/upload-pages-artifact@v3
+          
+      - name: Upload documentation preview
+        uses: actions/upload-artifact@v4
         with:
+          name: documentation-preview
           path: docs/build
-
-      - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
-        id: deployment
-        uses: actions/deploy-pages@v4
