@@ -382,61 +382,92 @@ end
 Compute basic (unnormalized) associated Legendre polynomial.
 """
 function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where T
-    if l == 0 && m == 0
-        return one(T)
-    elseif l == 1 && m == 0
-        return cost  
-    elseif l == 1 && m == 1
-        return -sint  # Includes Condon-Shortley phase
+    """
+    Compute associated Legendre polynomial P_l^m(cos θ) using stable recurrence relations.
+    
+    Uses the standard three-term recurrence relations:
+    - P_l^0 recurrence: (2l-1)x P_{l-1}^0 - (l-1) P_{l-2}^0 = l P_l^0
+    - P_m^m initialization: P_m^m = (-1)^m (2m-1)!! sin^m(θ)  
+    - P_l^m recurrence: (2l-1)x P_{l-1}^m - (l+m-1) P_{l-2}^m = (l-m) P_l^m
+    """
+    
+    # Input validation
+    @assert l >= 0 "l must be non-negative"
+    @assert abs(m) <= l "m must satisfy |m| <= l"
+    
+    # Handle absolute value of m (symmetry: P_l^{-m} = (-1)^m (l-m)!/(l+m)! P_l^m)
+    abs_m = abs(m)
+    
+    # Base cases for efficiency
+    if l == 0
+        return (abs_m == 0) ? one(T) : zero(T)
+    elseif l == 1
+        if abs_m == 0
+            return cost
+        elseif abs_m == 1
+            return -sint  # Includes Condon-Shortley phase (-1)^m
+        else
+            return zero(T)
+        end
     end
     
-    # Use recurrence - this is a simplified version
-    # In practice, you'd use the optimized version from gauss_legendre.jl
-    if m == 0
-        # Standard Legendre polynomial recurrence
-        p0 = one(T)
-        p1 = cost
+    # For m = 0, use standard Legendre polynomial recurrence
+    if abs_m == 0
+        p_prev2 = one(T)        # P_0^0 = 1
+        p_prev1 = cost          # P_1^0 = cos(θ)
         
-        for i in 2:l
-            p2 = ((2*i - 1) * cost * p1 - (i - 1) * p0) / i
-            p0 = p1
-            p1 = p2
-        end
-        return p1
-    else
-        # Associated Legendre polynomial - simplified computation
-        # Start with P_m^m
-        pmm = one(T)
-        if m > 0
-            fact = one(T)
-            for i in 1:m
-                fact *= (2*i - 1)
-            end
-            pmm = (-1)^m * fact * sint^m
+        @inbounds for n in 2:l
+            # Recurrence: n P_n^0 = (2n-1) cos(θ) P_{n-1}^0 - (n-1) P_{n-2}^0
+            p_curr = (T(2*n - 1) * cost * p_prev1 - T(n - 1) * p_prev2) / T(n)
+            p_prev2 = p_prev1
+            p_prev1 = p_curr
         end
         
-        if l == m
-            return pmm
-        end
-        
-        # P_{m+1}^m
-        pmp1m = cost * (2*m + 1) * pmm
-        
-        if l == m + 1
-            return pmp1m
-        end
-        
-        # General recurrence
-        p0 = pmm
-        p1 = pmp1m
-        for i in (m+2):l
-            p2 = ((2*i - 1) * cost * p1 - (i + m - 1) * p0) / (i - m)
-            p0 = p1
-            p1 = p2
-        end
-        
-        return p1
+        return p_prev1
     end
+    
+    # For m > 0, use associated Legendre recurrence
+    
+    # Step 1: Compute P_m^m using double factorial formula
+    # P_m^m = (-1)^m (2m-1)!! sin^m(θ)
+    pmm = one(T)
+    
+    # Compute (2m-1)!! = 1×3×5×...×(2m-1) efficiently
+    @inbounds for i in 1:abs_m
+        pmm *= T(2*i - 1)
+    end
+    
+    # Apply (-1)^m factor and sin^m(θ)
+    pmm *= ((-1)^abs_m) * (sint^abs_m)
+    
+    if l == abs_m
+        return pmm
+    end
+    
+    # Step 2: Compute P_{m+1}^m using first recurrence
+    # P_{m+1}^m = cos(θ) (2m+1) P_m^m
+    pmp1m = cost * T(2*abs_m + 1) * pmm
+    
+    if l == abs_m + 1
+        return pmp1m
+    end
+    
+    # Step 3: Use general recurrence for P_l^m with l > m+1
+    # (l-m) P_l^m = (2l-1) cos(θ) P_{l-1}^m - (l+m-1) P_{l-2}^m
+    p_prev2 = pmm      # P_m^m
+    p_prev1 = pmp1m    # P_{m+1}^m
+    
+    @inbounds for n in (abs_m + 2):l
+        # Apply recurrence relation
+        numerator = T(2*n - 1) * cost * p_prev1 - T(n + abs_m - 1) * p_prev2
+        p_curr = numerator / T(n - abs_m)
+        
+        # Shift for next iteration
+        p_prev2 = p_prev1
+        p_prev1 = p_curr
+    end
+    
+    return p_prev1
 end
 
 # Normalization helper functions
