@@ -300,10 +300,4 @@ function benchmark_simd_variants(cfg::SHTnsConfig{T}) where T
     return results
 end
 
-# Export SIMD-optimized functions
-export simd_apply_laplacian!,
-       threaded_apply_costheta_operator!,
-       vectorized_sparse_matvec!,
-       optimized_sparse_matvec!,
-       auto_simd_dispatch,
-       benchmark_simd_variants
+# All exports handled by main module SHTnsKit.jl

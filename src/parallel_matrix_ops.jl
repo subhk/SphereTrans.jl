@@ -479,10 +479,4 @@ function benchmark_parallel_performance(pcfg::ParallelSHTConfig{T},
     return results
 end
 
-# Export key parallel functions
-export ParallelSHTConfig, 
-       parallel_apply_costheta_operator!,
-       parallel_apply_laplacian_distributed!,
-       parallel_fft_synthesis!,
-       optimize_communication_pattern,
-       benchmark_parallel_performance
+# All exports handled by main module SHTnsKit.jl

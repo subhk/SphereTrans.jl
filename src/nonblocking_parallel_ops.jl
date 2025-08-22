@@ -351,11 +351,4 @@ function benchmark_async_vs_sync_parallel(pcfg::ParallelSHTConfig{T}) where T
     return results
 end
 
-export AsyncCommHandle,
-       create_async_comm_pattern,
-       async_start_boundary_exchange!,
-       async_compute_internal!,
-       async_finalize_boundary_exchange!,
-       async_parallel_costheta_operator!,
-       pipeline_parallel_operators!,
-       benchmark_async_vs_sync_parallel
+# All exports handled by main module SHTnsKit.jl

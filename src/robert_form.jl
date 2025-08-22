@@ -162,7 +162,7 @@ Get the Robert form factor sin(θ) for the j-th latitude point.
 """
 function robert_form_factor(cfg::SHTnsConfig{T}, j::Int) where T
     validate_config(cfg)
-    1 <= j <= cfg.nlat || error("j must be in [1, nlat]")
+    1 <= j <= cfg.nlat || error("j must be in range [1, $(cfg.nlat)]")
     
     return sin(cfg.theta_grid[j])
 end
@@ -181,7 +181,7 @@ This is a utility function for applying Robert form scaling to arbitrary fields.
 """
 function apply_robert_form_to_field!(cfg::SHTnsConfig{T}, field::AbstractMatrix{T}, synthesis::Bool=true) where T
     validate_config(cfg)
-    size(field) == (cfg.nlat, cfg.nphi) || error("field size must be (nlat, nphi)")
+    size(field) == (cfg.nlat, cfg.nphi) || error("field size must be ($(cfg.nlat), $(cfg.nphi))")
     
     nlat, nphi = cfg.nlat, cfg.nphi
     

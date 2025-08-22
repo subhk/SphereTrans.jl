@@ -415,13 +415,4 @@ function clear_advanced_pools()
     GC.gc()
 end
 
-# Export advanced optimization functions
-export turbo_apply_laplacian!,
-       turbo_sparse_matvec!,
-       turbo_threaded_costheta_operator!,
-       turbo_auto_dispatch,
-       get_advanced_pool,
-       build_cost_model,
-       dynamic_work_partition,
-       benchmark_turbo_vs_simd,
-       clear_advanced_pools
+# All exports handled by main module SHTnsKit.jl

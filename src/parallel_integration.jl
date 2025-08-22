@@ -282,10 +282,4 @@ end
 # Initialize parallel capabilities
 __init_parallel__()
 
-export create_parallel_config, 
-       parallel_apply_operator,
-       auto_parallel_config,
-       optimal_process_count,
-       parallel_performance_model,
-       memory_efficient_parallel_transform!,
-       parallel_operator_fusion
+# All exports handled by main module SHTnsKit.jl

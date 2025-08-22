@@ -36,8 +36,8 @@ Returns 1-based index for Julia arrays.
 - Linear index into coefficient arrays (1-based)
 """
 function lmidx(cfg::SHTnsConfig, l::Int, m::Int)
-    0 <= l <= cfg.lmax || error("l must be in range [0, lmax]")
-    abs(m) <= min(l, cfg.mmax) || error("m must be in range [-min(l,mmax), min(l,mmax)]")
+    0 <= l <= cfg.lmax || error("l must be in range [0, $(cfg.lmax)]")
+    abs(m) <= min(l, cfg.mmax) || error("m must be in range [-$(min(l, cfg.mmax)), $(min(l, cfg.mmax))]")
     
     # Use cached lookup for O(1) access
     return find_plm_index(cfg, l, abs(m))
@@ -56,7 +56,7 @@ Get the (l,m) values for a given linear index.
 - `(l, m)`: Spherical harmonic degree and order
 """
 function lm_from_index(cfg::SHTnsConfig, idx::Int)
-    1 <= idx <= cfg.nlm || error("Index must be in range [1, nlm]")
+    1 <= idx <= cfg.nlm || error("Index must be in range [1, $(cfg.nlm)]")
     return cfg.lm_indices[idx]
 end
 
@@ -74,7 +74,7 @@ Returns power as a function of degree l.
 - `power`: Power spectrum P(l) for l = 0, 1, ..., lmax
 """
 function power_spectrum(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}) where T
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal $(cfg.nlm)")
     
     power = zeros(T, cfg.lmax + 1)
     
@@ -176,8 +176,8 @@ Useful for testing and validation.
 - Real spatial field containing Y_l^m(θ,φ)
 """
 function create_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    0 <= l <= cfg.lmax || error("l must be in range [0, lmax]")
-    0 <= m <= min(l, cfg.mmax) || error("m must be in range [0, min(l,mmax)]")
+    0 <= l <= cfg.lmax || error("l must be in range [0, $(cfg.lmax)]")
+    0 <= m <= min(l, cfg.mmax) || error("m must be in range [0, $(min(l, cfg.mmax))]")
     
     # Create coefficients with single mode
     sh_coeffs = zeros(T, cfg.nlm)
@@ -238,7 +238,7 @@ function evaluate_at_point(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                           theta::T, phi::T) where T
     0 <= theta <= π || error("theta must be in range [0, π]")
     0 <= phi <= 2π || error("phi must be in range [0, 2π]")
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal $(cfg.nlm)")
     
     cost = cos(theta)
     plm_values = compute_associated_legendre(cfg.lmax, cost, cfg.norm)
@@ -299,7 +299,7 @@ Uses recurrence relations for associated Legendre polynomials.
 - Coefficients of ∂f/∂θ
 """
 function spectral_derivative_theta(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}) where T
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal $(cfg.nlm)")
     
     deriv_coeffs = zeros(T, cfg.nlm)
     
@@ -324,7 +324,7 @@ Simple multiplication by im for each m mode.
 - Coefficients of ∂f/∂φ
 """
 function spectral_derivative_phi(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}) where T
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal $(cfg.nlm)")
     
     deriv_coeffs = zeros(T, cfg.nlm)
     
@@ -376,7 +376,7 @@ Apply spectral filtering by setting coefficients with l > l_cutoff to zero.
 """
 function filter_spectral(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                         l_cutoff::Int) where T
-    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
+    length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal $(cfg.nlm)")
     0 <= l_cutoff <= cfg.lmax || error("l_cutoff must be in range [0, lmax]")
     
     filtered_coeffs = copy(sh_coeffs)

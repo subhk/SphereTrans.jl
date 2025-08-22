@@ -76,8 +76,8 @@ function cplx_sh_to_spat!(cfg::SHTnsConfig{T},
                          sh_coeffs::AbstractVector{Complex{T}},
                          spatial_data::AbstractMatrix{Complex{T}}) where T
     validate_config(cfg)
-    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal complex nlm")
-    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal $(_cplx_nlm(cfg))")
+    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size must be ($(cfg.nlat), $(cfg.nphi))")
     
     lock(cfg.lock) do
         _cplx_sh_to_spat_impl!(cfg, sh_coeffs, spatial_data)
@@ -103,8 +103,8 @@ function cplx_spat_to_sh!(cfg::SHTnsConfig{T},
                          spatial_data::AbstractMatrix{Complex{T}},
                          sh_coeffs::AbstractVector{Complex{T}}) where T
     validate_config(cfg)
-    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size mismatch")
-    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal complex nlm")
+    size(spatial_data) == (cfg.nlat, cfg.nphi) || error("spatial_data size must be ($(cfg.nlat), $(cfg.nphi))")
+    length(sh_coeffs) == _cplx_nlm(cfg) || error("sh_coeffs length must equal $(_cplx_nlm(cfg))")
     
     lock(cfg.lock) do
         _cplx_spat_to_sh_impl!(cfg, spatial_data, sh_coeffs)
@@ -813,8 +813,8 @@ Useful for testing and validation.
 - Complex spatial field containing Y_l^m(θ,φ)
 """
 function create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    0 <= l <= cfg.lmax || error("l must be in range [0, lmax]")
-    -min(l, cfg.mmax) <= m <= min(l, cfg.mmax) || error("m out of range for l and mmax")
+    0 <= l <= cfg.lmax || error("l must be in range [0, $(cfg.lmax)]")
+    -min(l, cfg.mmax) <= m <= min(l, cfg.mmax) || error("m must be in range [-$(min(l, cfg.mmax)), $(min(l, cfg.mmax))]")
     
     # Create coefficients with single mode
     sh_coeffs = zeros(Complex{T}, _cplx_nlm(cfg))
