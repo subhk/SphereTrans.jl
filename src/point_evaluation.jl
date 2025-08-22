@@ -22,6 +22,7 @@ This is equivalent to the C library function `SH_to_point()`.
 """
 function sh_to_point(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}}, 
                      cost::T, phi::T) where T
+
     validate_config(cfg)
     length(sh_coeffs) == cfg.nlm || error("sh_coeffs length must equal nlm")
     abs(cost) <= 1 || error("cost must be in [-1, 1]")
@@ -67,6 +68,7 @@ This is equivalent to the C library function `SH_to_point_cplx()`.
 """
 function sh_to_point_cplx(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{Complex{T}},
                           cost::T, phi::T) where T
+                          
     validate_config(cfg)
     
     result = zero(Complex{T})
@@ -127,6 +129,7 @@ function shqst_to_point(cfg::SHTnsConfig{T},
                        s_coeffs::AbstractVector{Complex{T}}, 
                        t_coeffs::AbstractVector{Complex{T}},
                        cost::T, phi::T) where T
+
     validate_config(cfg)
     length(q_coeffs) == cfg.nlm || error("q_coeffs length must equal nlm")
     length(s_coeffs) == cfg.nlm || error("s_coeffs length must equal nlm") 

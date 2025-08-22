@@ -516,14 +516,152 @@ function _get_vector_analysis_normalization_factor(cfg::SHTnsConfig{T}, l::Int, 
     return base_factor / sqrt(l_scaling)
 end
 
+# Local Legendre polynomial computation for derivatives
+function _compute_legendre_local(l::Int, m::Int, cost::T, sint::T) where T
+    """Local computation of P_l^m using recurrence relations."""
+    abs_m = abs(m)
+    
+    # Base cases
+    if l == 0
+        return (abs_m == 0) ? one(T) : zero(T)
+    elseif l == 1
+        if abs_m == 0
+            return cost
+        elseif abs_m == 1
+            return -sint
+        else
+            return zero(T)
+        end
+    end
+    
+    # For m = 0, standard Legendre recurrence
+    if abs_m == 0
+        p_prev2 = one(T)
+        p_prev1 = cost
+        
+        @inbounds for n in 2:l
+            p_curr = (T(2*n - 1) * cost * p_prev1 - T(n - 1) * p_prev2) / T(n)
+            p_prev2 = p_prev1
+            p_prev1 = p_curr
+        end
+        
+        return p_prev1
+    end
+    
+    # For m > 0, associated Legendre recurrence
+    pmm = one(T)
+    @inbounds for i in 1:abs_m
+        pmm *= T(2*i - 1)
+    end
+    pmm *= ((-1)^abs_m) * (sint^abs_m)
+    
+    if l == abs_m
+        return pmm
+    end
+    
+    pmp1m = cost * T(2*abs_m + 1) * pmm
+    
+    if l == abs_m + 1
+        return pmp1m
+    end
+    
+    p_prev2 = pmm
+    p_prev1 = pmp1m
+    
+    @inbounds for n in (abs_m + 2):l
+        numerator = T(2*n - 1) * cost * p_prev1 - T(n + abs_m - 1) * p_prev2
+        p_curr = numerator / T(n - abs_m)
+        p_prev2 = p_prev1
+        p_prev1 = p_curr
+    end
+    
+    return p_prev1
+end
+
 function _compute_legendre_derivative_basic(l::Int, m::Int, cost::T, sint::T) where T
-    # Simplified derivative computation - should use optimized version
+    """
+    Compute derivative of associated Legendre polynomial dP_l^m/dθ using recurrence relations.
+    
+    Uses the relation: dP_l^m/dθ = -sin(θ) × dP_l^m/d(cos(θ))
+    And the recurrence: dP_l^m/dx = [l cos(x) P_l^m(x) - (l+m) P_{l-1}^m(x)] / sin(x)
+    """
+    
+    # Input validation
+    @assert l >= 0 "l must be non-negative"
+    @assert abs(m) <= l "m must satisfy |m| <= l"
+    
+    abs_m = abs(m)
+    
+    # Base cases
     if l == 0
         return zero(T)
-    elseif l == 1 && m == 0
-        return -sint
+    elseif l == 1
+        if abs_m == 0
+            return -sint  # d/dθ [cos(θ)] = -sin(θ)
+        elseif abs_m == 1
+            return -cost  # d/dθ [-sin(θ)] = -cos(θ)
+        else
+            return zero(T)
+        end
+    end
+    
+    # For derivatives, we need both P_l^m and P_{l-1}^m
+    # Use the recurrence: dP_l^m/d(cos θ) = [l cos(θ) P_l^m - (l+m) P_{l-1}^m] / sin(θ)
+    
+    # First compute P_l^m(cos θ) using local computation
+    plm_current = _compute_legendre_local(l, abs_m, cost, sint)
+    
+    if l == abs_m
+        # Special case: P_m^m derivative
+        # For P_m^m, use the relation: dP_m^m/dθ = m cos(θ)/sin(θ) × P_m^m
+        if abs_m == 0
+            return zero(T)
+        else
+            # Note: The sign here is positive for the derivative dP_m^m/dθ
+            return T(abs_m) * cost / sint * plm_current
+        end
+    end
+    
+    # General case: compute P_{l-1}^m(cos θ)
+    plm_prev = _compute_legendre_local(l-1, abs_m, cost, sint)
+    
+    # Use proper derivative formula for associated Legendre polynomials
+    # dP_l^m/dθ = (1/sin θ) × [l cos(θ) P_l^m - (l+m) P_{l-1}^m]
+    if abs(sint) < eps(T)
+        # Near poles where sin(θ) ≈ 0, handle specially
+        if abs_m == 0
+            # For m=0, use standard polynomial derivative
+            return _compute_legendre_polynomial_derivative(l, cost)
+        else
+            # For m>0, derivative becomes infinite at poles
+            return T(Inf) * sign(cost)
+        end
     else
-        # Use recurrence relation - simplified version
-        return zero(T)  # Placeholder
+        # Standard derivative formula for P_l^m
+        # Note: This is the correct formula - no additional sin(θ) factor
+        numerator = T(l) * cost * plm_current - T(l + abs_m) * plm_prev
+        return numerator / sint
+    end
+end
+
+# Helper function for polynomial derivative at poles
+function _compute_legendre_polynomial_derivative(l::Int, cost::T) where T
+    """Compute dP_l^0/dθ for regular Legendre polynomials."""
+    if l == 0
+        return zero(T)
+    elseif l == 1
+        return -sqrt(one(T) - cost*cost)  # -sin(θ)
+    else
+        # Use recurrence for polynomial derivatives
+        # dP_l/dx = l[x P_l(x) - P_{l-1}(x)] / (x² - 1)
+        pl = _compute_legendre_local(l, 0, cost, sqrt(one(T) - cost*cost))
+        pl_prev = _compute_legendre_local(l-1, 0, cost, sqrt(one(T) - cost*cost))
+        
+        if abs(cost*cost - one(T)) < eps(T)
+            # At ±1, use special formula: dP_l/dx|_{x=±1} = ±l(l+1)/2
+            return T(l * (l + 1) / 2) * sign(cost) * (-sqrt(one(T) - cost*cost))
+        else
+            return -sqrt(one(T) - cost*cost) * T(l) * (cost * pl - pl_prev) / (cost*cost - one(T))
+        end
     end
 end
