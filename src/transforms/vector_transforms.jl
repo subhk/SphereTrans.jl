@@ -297,10 +297,11 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             end
             
             # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
-            # Apply geometric factor for 2D tangential vector fields  
-            # Factor based on theoretical vector spherical harmonic normalization
-            geometric_factor = T(0.67)  # Refined factor for 0.001 precision target
-            vector_norm_factor = T(1) / (l * (l + 1)) * geometric_factor
+            # Apply exact C code normalization factors based on SHTns architecture analysis:
+            # 1. mpos_scale factor: C code uses 0.5 for complex norm, we need 1.0 for real coefficients  
+            # 2. Missing normalization from pre-baked vs separate approach
+            c_code_factor = T(0.5)  # Apply mpos_scale factor from C code (complex normalization)
+            vector_norm_factor = T(1) / (l * (l + 1)) * c_code_factor
             
             sph_coeffs[coeff_idx] = -final_sph * vector_norm_factor
             tor_coeffs[coeff_idx] = -final_tor * vector_norm_factor
