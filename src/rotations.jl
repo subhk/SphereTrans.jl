@@ -42,6 +42,76 @@ Base.@kwdef mutable struct SHTRotation
 end
 
 """
+    SH_Yrotate(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
+
+Rotate a real-field SH expansion around the Y-axis by angle `alpha`.
+Uses Wigner-d mixing per l; dispatches to the general rotation engine.
+"""
+function SH_Yrotate(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
+    r = SHTRotation(cfg.lmax, cfg.mmax)
+    shtns_rotation_set_angles_ZYZ(r, 0.0, float(alpha), 0.0)
+    return shtns_rotation_apply_real(r, Qlm, Rlm)
+end
+
+"""
+    SH_Yrotate90(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Rlm::AbstractVector{<:Complex})
+"""
+function SH_Yrotate90(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Rlm::AbstractVector{<:Complex})
+    return SH_Yrotate(cfg, Qlm, π/2, Rlm)
+end
+
+"""
+    SH_Xrotate90(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Rlm::AbstractVector{<:Complex})
+
+Rotate around X-axis by 90 degrees using ZYZ equivalence: Rz(π/2)·Ry(π/2)·Rz(-π/2).
+"""
+function SH_Xrotate90(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Rlm::AbstractVector{<:Complex})
+    r = SHTRotation(cfg.lmax, cfg.mmax)
+    shtns_rotation_set_angles_ZYZ(r, π/2, π/2, -π/2)
+    return shtns_rotation_apply_real(r, Qlm, Rlm)
+end
+
+"""
+    shtns_rotation_set_angle_axis(r::SHTRotation, theta::Real, Vx::Real, Vy::Real, Vz::Real)
+
+Define rotation from angle-axis (theta around vector V).
+Angles are set in ZYZ convention.
+"""
+function shtns_rotation_set_angle_axis(r::SHTRotation, theta::Real, Vx::Real, Vy::Real, Vz::Real)
+    θ = float(theta)
+    v = collect(float.((Vx, Vy, Vz)))
+    n = hypot(v[1], hypot(v[2], v[3]))
+    if n == 0
+        r.α = 0.0; r.β = 0.0; r.γ = 0.0; r.conv = :ZYZ
+        return nothing
+    end
+    kx, ky, kz = v ./ n
+    c = cos(θ); s = sin(θ); t = 1 - c
+    # Rotation matrix R = c I + s [k]_x + t k k^T
+    R11 = c + t*kx*kx
+    R12 = t*kx*ky - s*kz
+    R13 = t*kx*kz + s*ky
+    R21 = t*ky*kx + s*kz
+    R22 = c + t*ky*ky
+    R23 = t*ky*kz - s*kx
+    R31 = t*kz*kx - s*ky
+    R32 = t*kz*ky + s*kx
+    R33 = c + t*kz*kz
+    # Extract ZYZ Euler angles
+    β = acos(clamp(R33, -1.0, 1.0))
+    if abs(sin(β)) > 1e-12
+        α = atan(R13, -R23)   # atan(y, x) = atan2(y,x)
+        γ = atan(R31, R32)
+    else
+        # β ~ 0 or π: set γ = 0 and α from R11,R21
+        α = atan(R21, R11)
+        γ = 0.0
+    end
+    r.α = α; r.β = β; r.γ = γ; r.conv = :ZYZ
+    return nothing
+end
+
+"""
     wigner_d_matrix(l::Int, beta::Float64) -> Matrix{Float64}
 
 Compute little Wigner-d matrix d^l_{m m'}(β) with m,m' in [-l..l], returned as a
