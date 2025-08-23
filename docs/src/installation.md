@@ -114,7 +114,7 @@ spat = synthesize(cfg, sh)
 println("Transform successful: ", size(spat))
 
 destroy_config(cfg)
-println("✅ SHTnsKit.jl installation verified!")
+println("SHTnsKit.jl installation verified!")
 ```
 
 ### Parallel Functionality Test
@@ -129,9 +129,9 @@ sh_coeffs = randn(Complex{Float64}, cfg.nlm)
 # This should work without MPI packages
 try
     auto_cfg = auto_parallel_config(cfg)
-    println("✅ Serial fallback working")
+    println("Serial fallback working")
 catch
-    println("✅ Parallel packages not detected (expected)")
+    println("Parallel packages not detected (expected)")
 end
 
 # Test with MPI packages (run with: mpiexec -n 2 julia script.jl)
@@ -143,10 +143,10 @@ try
     result = similar(sh_coeffs)
     parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)
     
-    println("✅ Parallel functionality verified!")
+    println("Parallel functionality verified!")
     MPI.Finalize()
 catch e
-    println("ℹ️  Parallel packages not available: $e")
+    println("INFO: Parallel packages not available: $e")
 end
 ```
 

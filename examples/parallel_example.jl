@@ -24,11 +24,11 @@ try
     using MPI
     using PencilArrays  
     using PencilFFTs
-    println("✓ Parallel packages loaded successfully")
+    println("Parallel packages loaded successfully")
     MPI.Init()
     PARALLEL_AVAILABLE = true
 catch e
-    println("⚠ Parallel packages not available: $e")
+    println("WARNING: Parallel packages not available: $e")
     println("  Running in serial mode")
     PARALLEL_AVAILABLE = false
 end
@@ -47,7 +47,7 @@ function run_parallel_example()
     
     # Create configuration
     cfg = create_gauss_config(T, lmax, mmax, nlat, nphi)
-    println("✓ Created SHT configuration with $(cfg.nlm) spectral coefficients")
+    println("Created SHT configuration with $(cfg.nlm) spectral coefficients")
     
     if PARALLEL_AVAILABLE
         # Get MPI info
@@ -65,7 +65,7 @@ function run_parallel_example()
         try
             pcfg = create_parallel_config(cfg, comm)
             if rank == 0
-                println("✓ Created parallel configuration")
+                println("Created parallel configuration")
                 println("  Local l range: $(pcfg.local_l_range)")
                 println("  Local m range: $(pcfg.local_m_range)")
             end
@@ -82,13 +82,13 @@ function run_parallel_example()
             # Test Laplacian (no communication)
             parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)
             if rank == 0
-                println("✓ Parallel Laplacian operator")
+                println("Parallel Laplacian operator")
             end
             
             # Test cos(θ) operator (requires communication)
             parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)
             if rank == 0
-                println("✓ Parallel cos(θ) operator")
+                println("Parallel cos(θ) operator")
             end
             
             # Test memory-efficient transforms
@@ -101,14 +101,14 @@ function run_parallel_example()
             # Parallel synthesis
             memory_efficient_parallel_transform!(pcfg, :synthesis, sh_coeffs, spatial_data)
             if rank == 0
-                println("✓ Parallel spherical harmonic synthesis")
+                println("Parallel spherical harmonic synthesis")
             end
             
             # Parallel analysis  
             sh_result = similar(sh_coeffs)
             memory_efficient_parallel_transform!(pcfg, :analysis, spatial_data, sh_result)
             if rank == 0
-                println("✓ Parallel spherical harmonic analysis")
+                println("Parallel spherical harmonic analysis")
                 
                 # Check roundtrip error
                 error = maximum(abs.(sh_coeffs - sh_result))
@@ -117,7 +117,7 @@ function run_parallel_example()
             
         catch e
             if rank == 0
-                println("✗ Parallel functionality error: $e")
+                println("ERROR: Parallel functionality error: $e")
                 println("  This may be due to missing package versions or MPI setup")
             end
         end
@@ -143,9 +143,9 @@ function run_parallel_example()
         # Test auto configuration (should fall back to serial)
         try
             auto_cfg = auto_parallel_config(cfg)
-            println("✓ Auto configuration created (serial fallback)")
+            println("Auto configuration created (serial fallback)")
         catch e
-            println("✓ Auto configuration correctly reports MPI not available")
+            println("Auto configuration correctly reports MPI not available")
         end
         
         # Show what would be optimal if parallel was available
@@ -165,25 +165,25 @@ function run_parallel_example()
     
     # Forward transform
     sh_to_spat!(cfg, sh_coeffs, spatial_data)
-    println("✓ Spherical harmonic synthesis")
+    println("Spherical harmonic synthesis")
     
     # Backward transform
     sh_result = similar(sh_coeffs)
     spat_to_sh!(cfg, spatial_data, sh_result)
-    println("✓ Spherical harmonic analysis")
+    println("Spherical harmonic analysis")
     
     # Check accuracy
     error = maximum(abs.(sh_coeffs - sh_result))
-    println("✓ Roundtrip error: $error")
+    println("Roundtrip error: $error")
     
     # Test matrix operators
     laplacian_result = similar(sh_coeffs)
     apply_laplacian!(cfg, sh_coeffs, laplacian_result)
-    println("✓ Laplacian operator")
+    println("Laplacian operator")
     
     costheta_result = similar(sh_coeffs)
     apply_costheta_operator!(cfg, sh_coeffs, costheta_result)
-    println("✓ cos(θ) operator")
+    println("cos(θ) operator")
     
     println("\n" * "="^60)
     if PARALLEL_AVAILABLE

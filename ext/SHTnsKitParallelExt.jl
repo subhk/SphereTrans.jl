@@ -8,7 +8,7 @@ using LinearAlgebra
 using SparseArrays
 
 # Override the main module's parallel configuration
-struct ParallelSHTConfig{T<:AbstractFloat}
+mutable struct ParallelSHTConfig{T<:AbstractFloat}
     # Base SHT configuration
     base_cfg::SHTnsKit.SHTnsConfig{T}
     
@@ -35,6 +35,9 @@ struct ParallelSHTConfig{T<:AbstractFloat}
     local_theta_range::UnitRange{Int}
     local_phi_range::UnitRange{Int}
     
+    # Local spectral coefficient indices for load balancing
+    local_spectral_indices::UnitRange{Int}
+    
     # Communication buffers
     send_buffers::Dict{Int, Vector{Complex{T}}}
     recv_buffers::Dict{Int, Vector{Complex{T}}}
@@ -42,6 +45,25 @@ struct ParallelSHTConfig{T<:AbstractFloat}
     # Performance options
     use_async_comm::Bool
     overlap_compute_comm::Bool
+    
+    # Constructor
+    function ParallelSHTConfig{T}(base_cfg, comm, rank, size,
+                                 spectral_decomp, spatial_decomp,
+                                 spectral_pencil, spatial_pencil,
+                                 fft_plan, ifft_plan,
+                                 local_l_range, local_m_range, 
+                                 local_theta_range, local_phi_range,
+                                 send_buffers, recv_buffers,
+                                 use_async_comm, overlap_compute_comm) where T
+        new{T}(base_cfg, comm, rank, size,
+               spectral_decomp, spatial_decomp,
+               spectral_pencil, spatial_pencil,
+               fft_plan, ifft_plan,
+               local_l_range, local_m_range, local_theta_range, local_phi_range,
+               1:0,  # Initialize empty range for local_spectral_indices
+               send_buffers, recv_buffers,
+               use_async_comm, overlap_compute_comm)
+    end
 end
 
 # Implementation of create_parallel_config
@@ -321,23 +343,55 @@ function _parallel_synthesis!(pcfg::ParallelSHTConfig{T},
                              sh_coeffs::AbstractVector{Complex{T}},
                              spatial_data::AbstractMatrix{T}) where T
     
-    # This is a simplified parallel synthesis
-    # In practice, this would involve:
-    # 1. Distribute spectral coefficients across processes
-    # 2. Perform local Legendre transforms
-    # 3. Redistribute for FFT transforms
-    # 4. Perform distributed FFTs using PencilFFTs
-    # 5. Gather results
-    
     cfg = pcfg.base_cfg
+    rank, size = pcfg.rank, pcfg.size
     
-    # For now, fall back to serial on each process for local data
-    local_spatial = zeros(T, size(spatial_data))
-    SHTnsKit.sh_to_spat!(cfg, sh_coeffs, local_spatial)
+    # Step 1: Distribute spectral coefficients across processes
+    # Each process gets a subset of (l,m) modes
+    local_coeffs = _distribute_spectral_coeffs(pcfg, sh_coeffs)
     
-    # Combine results using MPI reduction
-    MPI.Allreduce!(local_spatial, +, pcfg.comm)
-    spatial_data .= local_spatial
+    # Step 2: Perform local Legendre transforms for owned modes
+    nlat, nphi = cfg.nlat, cfg.nphi
+    nphi_modes = nphi ÷ 2 + 1
+    
+    # Allocate local Fourier workspace
+    local_fourier = zeros(Complex{T}, nlat, nphi_modes)
+    
+    # Process only locally owned spectral modes
+    @inbounds for (local_idx, global_idx) in enumerate(pcfg.local_spectral_indices)
+        if global_idx <= length(sh_coeffs)
+            l, m = SHTnsKit.lm_from_index(cfg, global_idx)
+            
+            # Skip if m is outside our local range
+            m ∈ pcfg.local_m_range || continue
+            
+            m_col = m + 1
+            if m_col <= nphi_modes
+                coeff_val = local_coeffs[local_idx]
+                
+                # Vectorized Legendre synthesis for this mode
+                @inbounds @simd for i in 1:nlat
+                    plm_val = _compute_legendre_value(cfg, i, l, m)
+                    local_fourier[i, m_col] += coeff_val * plm_val
+                end
+            end
+        end
+    end
+    
+    # Step 3: Reduce Fourier coefficients across processes
+    # Use segmented reduction to minimize communication
+    global_fourier = similar(local_fourier)
+    _segmented_allreduce!(local_fourier, global_fourier, pcfg)
+    
+    # Step 4: Distributed FFT using PencilFFTs
+    # Transform from Fourier modes to spatial domain
+    spatial_complex = similar(global_fourier, nlat, nphi)
+    PencilFFTs.mul!(spatial_complex, pcfg.ifft_plan, global_fourier)
+    
+    # Step 5: Extract real part and apply scaling
+    @inbounds @simd for i in 1:(nlat * nphi)
+        spatial_data[i] = real(spatial_complex[i]) * nphi
+    end
     
     return spatial_data
 end
@@ -347,16 +401,150 @@ function _parallel_analysis!(pcfg::ParallelSHTConfig{T},
                             sh_coeffs::AbstractVector{Complex{T}}) where T
     
     cfg = pcfg.base_cfg
+    nlat, nphi = cfg.nlat, cfg.nphi
     
-    # Simplified parallel analysis
-    local_coeffs = zeros(Complex{T}, length(sh_coeffs))
-    SHTnsKit.spat_to_sh!(cfg, spatial_data, local_coeffs)
+    # Step 1: Distributed FFT from spatial to Fourier domain
+    spatial_complex = Complex{T}.(spatial_data)
+    fourier_coeffs = similar(spatial_complex, nlat, nphi ÷ 2 + 1)
+    PencilFFTs.mul!(fourier_coeffs, pcfg.fft_plan, spatial_complex)
     
-    # Combine results
-    MPI.Allreduce!(local_coeffs, +, pcfg.comm)
-    sh_coeffs .= local_coeffs
+    # Step 2: Parallel Legendre analysis
+    fill!(sh_coeffs, zero(Complex{T}))
+    
+    # Each process works on its local spectral modes
+    @inbounds for (local_idx, global_idx) in enumerate(pcfg.local_spectral_indices)
+        if global_idx <= length(sh_coeffs)
+            l, m = SHTnsKit.lm_from_index(cfg, global_idx)
+            
+            # Skip if m is outside our range
+            m ∈ pcfg.local_m_range || continue
+            
+            m_col = m + 1
+            if m_col <= size(fourier_coeffs, 2)
+                # Vectorized integration over latitudes
+                integral = zero(Complex{T})
+                @inbounds @simd for i in 1:nlat
+                    plm_val = _compute_legendre_value(cfg, i, l, m)
+                    weight = cfg.gauss_weights[i]
+                    integral += fourier_coeffs[i, m_col] * plm_val * weight
+                end
+                
+                # Apply normalization
+                phi_normalization = T(2π) / nphi
+                integral *= phi_normalization
+                
+                # Store local result
+                sh_coeffs[global_idx] = m == 0 ? integral : integral * T(2)
+            end
+        end
+    end
+    
+    # Step 3: Reduce coefficients across all processes
+    MPI.Allreduce!(sh_coeffs, +, pcfg.comm)
     
     return sh_coeffs
+end
+
+# Helper functions for improved parallel implementation
+
+"""
+Distribute spectral coefficients across MPI processes with load balancing.
+"""
+function _distribute_spectral_coeffs(pcfg::ParallelSHTConfig{T}, 
+                                   sh_coeffs::AbstractVector{Complex{T}}) where T
+    
+    # Determine local coefficient indices for this process
+    coeffs_per_proc = length(sh_coeffs) ÷ pcfg.size
+    remainder = length(sh_coeffs) % pcfg.size
+    
+    # Calculate start and end indices for this process
+    if pcfg.rank < remainder
+        local_count = coeffs_per_proc + 1
+        local_start = pcfg.rank * local_count + 1
+    else
+        local_count = coeffs_per_proc
+        local_start = pcfg.rank * coeffs_per_proc + remainder + 1
+    end
+    local_end = local_start + local_count - 1
+    
+    # Store local indices for later use
+    pcfg.local_spectral_indices = local_start:local_end
+    
+    # Extract local coefficients
+    local_coeffs = Vector{Complex{T}}(undef, local_count)
+    @inbounds for (i, global_idx) in enumerate(local_start:local_end)
+        if global_idx <= length(sh_coeffs)
+            local_coeffs[i] = sh_coeffs[global_idx]
+        else
+            local_coeffs[i] = zero(Complex{T})
+        end
+    end
+    
+    return local_coeffs
+end
+
+"""
+Segmented all-reduce for better communication efficiency.
+Reduces communication volume by processing data in chunks.
+"""
+function _segmented_allreduce!(local_data::Matrix{Complex{T}}, 
+                             global_data::Matrix{Complex{T}},
+                             pcfg::ParallelSHTConfig{T}) where T
+    
+    # Process in segments to reduce memory pressure
+    segment_size = min(1024, length(local_data) ÷ 4)  # Tunable parameter
+    
+    @inbounds for start_idx in 1:segment_size:length(local_data)
+        end_idx = min(start_idx + segment_size - 1, length(local_data))
+        
+        # Create views for this segment
+        local_segment = @view local_data[start_idx:end_idx]
+        global_segment = @view global_data[start_idx:end_idx]
+        
+        # Perform reduction on segment
+        MPI.Allreduce!(local_segment, global_segment, +, pcfg.comm)
+    end
+    
+    return global_data
+end
+
+"""
+Fast computation of Legendre polynomial values using cached recurrence.
+"""
+function _compute_legendre_value(cfg::SHTnsKit.SHTnsConfig{T}, 
+                               lat_idx::Int, l::Int, m::Int) where T
+    
+    # Use precomputed cache if available
+    if haskey(cfg.plm_cache, (lat_idx, l, m))
+        return cfg.plm_cache[(lat_idx, l, m)]
+    end
+    
+    # Fall back to direct computation
+    theta = cfg.theta[lat_idx]
+    costheta = cos(theta)
+    sintheta = sin(theta)
+    
+    # Compute using recurrence relations (simplified)
+    if l == m
+        # P_m^m case
+        pmm = T(1)
+        for i in 1:m
+            pmm *= -sintheta * sqrt((2*i + 1) / (2*i))
+        end
+        return pmm
+    elseif l == m + 1
+        # P_{m+1}^m case
+        return sqrt(2*m + 3) * costheta * _compute_legendre_value(cfg, lat_idx, m, m)
+    else
+        # General recurrence
+        alpha = sqrt((4*l^2 - 1) / (l^2 - m^2))
+        beta = -sqrt(((l-1)^2 - m^2) / (4*(l-1)^2 - 1))
+        
+        plm_curr = _compute_legendre_value(cfg, lat_idx, l-1, m)
+        plm_prev = _compute_legendre_value(cfg, lat_idx, l-2, m)
+        
+        return alpha * costheta * plm_curr + beta * plm_prev
+    end
 end
 
 # Override other parallel functions

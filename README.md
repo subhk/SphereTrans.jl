@@ -35,7 +35,7 @@ SHTnsKit.jl provides a comprehensive, pure-Julia implementation of spherical har
 ### **Advanced Capabilities**
 - **Automatic Differentiation**: Native ForwardDiff.jl and Zygote.jl support  
 - **Field Rotations**: Wigner D-matrix rotations and coordinate transforms
-- **⚙Matrix Operators**: Efficient spectral differential operators
+- **Matrix Operators**: Efficient spectral differential operators
 - **Performance Tuning**: Comprehensive benchmarking and optimization tools
 
 

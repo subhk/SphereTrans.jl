@@ -133,21 +133,21 @@ using SHTnsKit
 # Test that packages load correctly
 try
     using MPI, PencilArrays, PencilFFTs, LoopVectorization
-    println("✅ All parallel packages loaded successfully")
+    println("All parallel packages loaded successfully")
     
     # Test configuration
     cfg = create_gauss_config(Float64, 16, 12, 36, 48)
     
     # Test serial fallback
     auto_cfg = auto_parallel_config(cfg)
-    println("✅ Auto configuration successful")
+    println("Auto configuration successful")
     
     # Test performance recommendations
     optimal_procs = optimal_process_count(cfg)
-    println("✅ Optimal process count: $optimal_procs")
+    println("Optimal process count: $optimal_procs")
     
 catch e
-    println("❌ Error: $e")
+    println("ERROR: $e")
 end
 ```
 
@@ -418,7 +418,7 @@ using SHTnsKit
     end
 end
 
-println("✅ All tests passed!")
+println("All tests passed!")
 ```
 
 ```bash

@@ -444,14 +444,14 @@ spatial_data = allocate_spatial(cfg)
 memory_efficient_parallel_transform!(pcfg, :synthesis, sh_coeffs, spatial_data)
 
 if rank == 0
-    println("✅ Parallel synthesis completed")
+    println("Parallel synthesis completed")
 end
 
 # Test communication-intensive operator (cos θ)
 parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)
 
 if rank == 0
-    println("✅ Parallel cos(θ) operator completed")
+    println("Parallel cos(θ) operator completed")
 end
 
 MPI.Finalize()
@@ -801,7 +801,7 @@ expected_idx = lmidx(cfg, case.l, case.m)
     if max_idx == expected_idx
         println("   PASS")
     else
-        println("  ✗ FAIL")
+        println("  FAIL")
     end
 end
 
