@@ -170,19 +170,13 @@ end
 
 Fill `mx` (length ≥ (2l+1)^2) with d^l in row-major order. Returns size 2l+1.
 """
-function shtns_rotation_wigner_d_matrix(::SHTRotation, l::Integer, mx::AbstractVector{<:Real})
+function shtns_rotation_wigner_d_matrix(r::SHTRotation, l::Integer, mx::AbstractVector{<:Real})
     l = Int(l)
     n = 2l + 1
     length(mx) ≥ n*n || throw(DimensionMismatch("mx must have length ≥ (2l+1)^2"))
-    d = wigner_d_matrix(l, 0.0) # will overwrite below
-    # use angle 0 to allocate; but actually compute with a function call
-    d = wigner_d_matrix(l, 0.0)
-    # Overwrite with zeros then fill from computed matrix with angle 0
-    # Better compute with proper β if needed by caller; keeping compatibility, we produce Y-axis rotation d(β) via separate API.
-    # Here fill identity rotation for β=0.
-    fill!(mx, 0.0)
-    for i in 1:n, j in 1:n
-        mx[(i-1)*n + j] = (i == j) ? 1.0 : 0.0
+    d = wigner_d_matrix(l, r.β)
+    @inbounds for i in 1:n, j in 1:n
+        mx[(i-1)*n + j] = d[i, j]
     end
     return n
 end
