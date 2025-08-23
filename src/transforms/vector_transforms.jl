@@ -3,6 +3,56 @@ Vector spherical harmonic transforms.
 Handles vector fields decomposed into spheroidal and toroidal components.
 """
 
+# Internal helpers to convert between packed real (m≥0, length = cfg.nlm) and
+# canonical complex coefficients (±m, length = _cplx_nlm(cfg)).
+function _packed_real_to_complex(cfg::SHTnsConfig{T}, real::AbstractVector{T}) where T
+    length(real) == cfg.nlm || error("packed real coeff length must equal nlm")
+    idx_list_cplx = SHTnsKit._cplx_lm_indices(cfg)
+    # Map (l,m) -> complex index
+    cmap = Dict{Tuple{Int,Int}, Int}()
+    for (i, (l, m)) in enumerate(idx_list_cplx)
+        cmap[(l, m)] = i
+    end
+    cplx = Vector{Complex{T}}(undef, length(idx_list_cplx))
+    fill!(cplx, zero(Complex{T}))
+    # Iterate packed real (m≥0)
+    for (k, (l, m)) in enumerate(cfg.lm_indices)
+        a = real[k]
+        if m == 0
+            i0 = cmap[(l, 0)]
+            cplx[i0] = Complex{T}(a, 0)
+        else
+            ip = cmap[(l, m)]
+            ineg = cmap[(l, -m)]
+            v = a / sqrt(T(2))
+            cplx[ip] = Complex{T}(v, 0)
+            cplx[ineg] = Complex{T}(v, 0)
+        end
+    end
+    return cplx
+end
+
+function _complex_to_packed_real(cfg::SHTnsConfig{T}, cplx::AbstractVector{Complex{T}}) where T
+    length(cplx) == SHTnsKit._cplx_nlm(cfg) || error("complex coeff length mismatch")
+    idx_list_cplx = SHTnsKit._cplx_lm_indices(cfg)
+    # Map (l,m) -> complex index
+    cmap = Dict{Tuple{Int,Int}, Int}()
+    for (i, (l, m)) in enumerate(idx_list_cplx)
+        cmap[(l, m)] = i
+    end
+    real_out = Vector{T}(undef, cfg.nlm)
+    for (k, (l, m)) in enumerate(cfg.lm_indices)
+        if m == 0
+            i0 = cmap[(l, 0)]
+            real_out[k] = real(cplx[i0])
+        else
+            ip = cmap[(l, m)]
+            real_out[k] = sqrt(T(2)) * real(cplx[ip])
+        end
+    end
+    return real_out
+end
+
 """
     sphtor_to_spat!(cfg::SHTnsConfig{T}, 
                    sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
@@ -31,9 +81,9 @@ function sphtor_to_spat!(cfg::SHTnsConfig{T},
     size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
     size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
     
-    # Route through complex vector synthesis for consistent normalization
-    S_c = SHTnsKit.real_to_complex_coeffs(cfg, sph_coeffs)
-    T_c = SHTnsKit.real_to_complex_coeffs(cfg, tor_coeffs)
+    # Route through complex vector synthesis with packed-real <-> complex conversion
+    S_c = _packed_real_to_complex(cfg, sph_coeffs)
+    T_c = _packed_real_to_complex(cfg, tor_coeffs)
     uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
     u_theta .= real.(uθ_c)
     u_phi  .= real.(uφ_c)
@@ -64,10 +114,10 @@ function spat_to_sphtor!(cfg::SHTnsConfig{T},
     length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
     
-    # Route through complex vector analysis for consistent normalization
+    # Route through complex vector analysis with packed-real <-> complex conversion
     S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
-    sph_coeffs .= SHTnsKit.complex_to_real_coeffs(cfg, S_c)
-    tor_coeffs .= SHTnsKit.complex_to_real_coeffs(cfg, T_c)
+    sph_coeffs .= _complex_to_packed_real(cfg, S_c)
+    tor_coeffs .= _complex_to_packed_real(cfg, T_c)
     return sph_coeffs, tor_coeffs
 end
 
