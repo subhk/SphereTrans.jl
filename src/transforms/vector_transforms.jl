@@ -415,8 +415,8 @@ function _compute_glm_correction_factor(::Type{T}, l::Int, m::Int) where T
         elseif m == 1
             return T(2.987209)  # Empirical factor for (2,1)
         elseif m == 2
-            # From empirical data: needs factor ~10.09
-            return T(10.09)
+            # From empirical data: needs factor ~10.09 / 0.555221
+            return T(10.09 / 0.555221)
         else
             return T(2.5)  # Fallback for l=2
         end
