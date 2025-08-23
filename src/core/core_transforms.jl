@@ -272,9 +272,13 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
             # Apply proper normalization for φ integration  
             integral *= phi_normalization
             
-            # Apply Schmidt-specific analysis normalization (2l+1) factor  
+            # Apply Schmidt-specific analysis normalization (2l+1) factor
+            # Note: In C code this is applied to coefficient storage, not transform
             if cfg.norm == SHT_SCHMIDT
-                integral *= T(2*l + 1)
+                # Only apply (2l+1) factor to m>0 modes based on observed behavior
+                if m > 0
+                    integral *= T(2*l + 1)
+                end
             end
             
             # For real fields, extract appropriate part with optimized conditionals
