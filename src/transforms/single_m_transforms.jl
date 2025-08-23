@@ -334,37 +334,114 @@ end
 Evaluate normalized associated Legendre polynomial for the given configuration.
 """
 function _evaluate_legendre_normalized(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
-    # For Schmidt, use simplified approach that matches C code exactly
+    # For Schmidt, use exact C code reproduction from legendre_sphPlm_array
     if cfg.norm == SHT_SCHMIDT
-        # Compute basic Legendre polynomial
-        plm_basic = _compute_single_legendre_basic(l, m, cost, sint)
-        
-        # Apply Schmidt normalization exactly as in C code
-        abs_m = abs(m)
-        
-        # Starting value computation matching C code lines 371-398  
-        factor = T(1.0)  # Y_0^0 = 1 for Schmidt
-        if abs_m > 0
-            factor *= T(0.5)  # mpos_renorm = 0.5 for real transforms with FFTW
-        end
-        
-        # Product ∏(k+0.5)/k for k=1..abs_m
-        for k in 1:abs_m
-            factor *= (T(k) + T(0.5)) / T(k)
-        end
-        
-        factor = sqrt(factor)
-        
-        # Schmidt-specific: divide by sqrt(2m+1) (C code line 430)
-        if abs_m > 0
-            factor /= sqrt(T(2*abs_m + 1))
-        end
-        
-        return plm_basic * factor
+        return _schmidt_legendre_exact_c_reproduction(cfg, l, m, cost, sint)
     else
         # Use recurrence for other normalizations
         return _compute_normalized_legendre_with_recurrence(cfg, l, m, cost, sint)
     end
+end
+
+"""
+Exact reproduction of C code legendre_sphPlm_array for Schmidt normalization.
+Based on shtns/sht_legendre.c lines 166-223.
+"""
+function _schmidt_legendre_exact_c_reproduction(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
+    abs_m = abs(m)
+    
+    # Reproduce C code starting value computation (lines 371-398)
+    # Y_0^0 = 1 for Schmidt (line 373)
+    t1 = T(1.0)
+    
+    # Apply mpos_renorm = 0.5 for real transforms (line 378)
+    t1 *= T(0.5)
+    
+    # Product ∏(k+0.5)/k for k=1..abs_m (lines 380-398)
+    for k in 1:abs_m
+        t1 *= (T(k) + T(0.5)) / T(k)
+    end
+    
+    # t2 = sqrt(t1) with Condon-Shortley phase (lines 395-397)
+    t2 = sqrt(t1)
+    if (abs_m & 1) != 0  # m is odd
+        t2 *= -T(1)
+    end
+    
+    # This is al[0] - the starting value
+    al_0 = t2
+    
+    # For Schmidt: divide starting value by sqrt(2m+1) (line 430)
+    if abs_m > 0
+        al_0 /= sqrt(T(2*abs_m + 1))
+    end
+    
+    # Now reproduce the recurrence exactly as C code (lines 182-221)
+    
+    # Line 182: ymm = al[0]
+    ymm = al_0
+    
+    # Line 183: if (m>0) ymm *= sint_pow_n_ext(x, m, &ny)
+    if abs_m > 0
+        ymm *= (sint^abs_m)  # Simplified sint_pow_n_ext for our case
+    end
+    
+    # Base case: l == m
+    if l == abs_m
+        return ymm
+    end
+    
+    # Y_{m+1}^m coefficient from line 431: alm[lm+1] = t2 = sqrt(2*m+1)
+    al_mp1 = sqrt(T(2*abs_m + 1))
+    
+    # Line 209: ymmp1 = ymm * (al[-1] * x) where al[-1] is al_mp1
+    ymmp1 = ymm * (al_mp1 * cost)
+    
+    if l == abs_m + 1
+        return ymmp1
+    end
+    
+    # Main recurrence for l >= m+2 (lines 433-438 for coefficients, 214-215 for recurrence)
+    t2_rec = sqrt(T(2*abs_m + 1))  # Initial value for recurrence coefficient computation
+    
+    curr_l = abs_m + 2
+    while curr_l <= l
+        # Compute recurrence coefficients exactly as C code (lines 434-437)
+        t1_rec = sqrt(T((curr_l + abs_m) * (curr_l - abs_m)))
+        a_coeff = T(2*curr_l - 1) / t1_rec      # al[lm+1] = a_l^m
+        b_coeff = -t2_rec / t1_rec              # al[lm] = b_l^m
+        
+        if curr_l == l
+            # Final step (line 220): yl[l] = (al[1]*x)*ymmp1 + (al[0]*ymm)
+            return (a_coeff * cost) * ymmp1 + b_coeff * ymm
+        else
+            # Intermediate step (line 214): ymm = (al[1]*x)*ymmp1 + al[0]*ymm
+            new_ymm = (a_coeff * cost) * ymmp1 + b_coeff * ymm
+            
+            # Prepare for next iteration
+            if curr_l + 1 <= l
+                # Next coefficients
+                t2_rec = t1_rec
+                t1_rec_next = sqrt(T((curr_l + 1 + abs_m) * (curr_l + 1 - abs_m)))
+                a_coeff_next = T(2*(curr_l + 1) - 1) / t1_rec_next
+                b_coeff_next = -t1_rec / t1_rec_next
+                
+                # Line 215: ymmp1 = (al[3]*x)*ymm + al[2]*ymmp1
+                new_ymmp1 = (a_coeff_next * cost) * new_ymm + b_coeff_next * ymmp1
+                
+                ymm = new_ymm
+                ymmp1 = new_ymmp1
+                curr_l += 2
+                t2_rec = t1_rec_next
+            else
+                ymm = new_ymm
+                curr_l += 1
+                t2_rec = t1_rec
+            end
+        end
+    end
+    
+    return ymm  # Should not reach here for valid inputs
 end
 
 """
