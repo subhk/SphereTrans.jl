@@ -91,6 +91,7 @@ function set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
     
     # Initialize FFT plans for this grid size
     empty!(cfg.fft_plans)
+    setup_fft_plans!(cfg)
     
     # Invalidate cached Legendre polynomials since grid changed
     cfg.plm_cache = Matrix{T}(undef, 0, 0)
