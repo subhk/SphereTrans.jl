@@ -884,9 +884,20 @@ function cplx_spat_to_sphtor!(cfg::SHTnsConfig{T},
         # Normalize φ integration to match continuous integral over [0,2π)
         sph_int *= (T(2π) / nphi)
         tor_int *= (T(2π) / nphi)
-        norm = T(1) / (l * (l + 1))
-        S_coeffs[idx] = sph_int * norm
-        T_coeffs[idx] = tor_int * norm
+        
+        # Apply C code normalization: al[l] * l_2[l]
+        # where al[l] from glm_analys = glm[...] * (2*l+1) for Schmidt normalization
+        vector_norm = T(1) / (l * (l + 1))  # l_2[l] factor
+        
+        # Apply Schmidt normalization factor like C code (missing from current implementation)
+        if cfg.norm == SHT_SCHMIDT
+            schmidt_factor = T(2*l + 1)
+        else
+            schmidt_factor = T(1)
+        end
+        
+        S_coeffs[idx] = sph_int * vector_norm * schmidt_factor
+        T_coeffs[idx] = tor_int * vector_norm * schmidt_factor
     end
     return S_coeffs, T_coeffs
 end
