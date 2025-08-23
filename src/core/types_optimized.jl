@@ -330,23 +330,22 @@ function compute_gauss_legendre_nodes_weights(n::Int, ::Type{T}) where T
 end
 
 """
-    nlm_calc(lmax::Int, mmax::Int, mres::Int)::Int
 
-Type-stable calculation of number of spherical harmonic coefficients.
-"""
 function nlm_calc(lmax::Int, mmax::Int, mres::Int)::Int
     @stable begin
-        total = 0
+        num_modes = 0
         @inbounds for l in 0:lmax
             for m in 0:min(l, mmax)
                 if m % mres == 0 || m == 0
-                    total += 1
+                    num_modes += 1
                 end
             end
         end
-        return total
+        return num_modes
     end
 end
+Type-stable calculation of number of spherical harmonic coefficients.
+"""
 
 """
     lmidx(l::Int, m::Int, lmax::Int)::Int
@@ -503,11 +502,11 @@ function get_gauss_weights(cfg::SHTnsConfig{T}) where T
 end
 
 # Accessors with type stability
-get_lmax(cfg::SHTnsConfig) = cfg.lmax::Int
-get_mmax(cfg::SHTnsConfig) = cfg.mmax::Int
-get_nlat(cfg::SHTnsConfig) = cfg.nlat::Int
-get_nphi(cfg::SHTnsConfig) = cfg.nphi::Int
-get_nlm(cfg::SHTnsConfig) = cfg.nlm::Int
+get_lmax(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.lmax::Int
+get_mmax(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.mmax::Int
+get_nlat(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.nlat::Int
+get_nphi(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.nphi::Int
+get_nlm(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.nlm::Int
 
 # Utility function for index mapping
 """
@@ -548,13 +547,14 @@ end
 
 Clean up resources associated with a configuration.
 """
-function destroy_config(cfg::SHTnsConfig)
+
+function destroy_config(cfg::SHTnsConfig{T}) where T<:AbstractFloat
     empty!(cfg.fft_plans)
-    cfg.gauss_weights = eltype(cfg.gauss_weights)[]
-    cfg.gauss_nodes = eltype(cfg.gauss_nodes)[]
-    cfg.theta_grid = eltype(cfg.theta_grid)[]
-    cfg.phi_grid = eltype(cfg.phi_grid)[]
-    cfg.plm_cache = Matrix{eltype(cfg.plm_cache)}(undef, 0, 0)
+    cfg.gauss_weights = T[]
+    cfg.gauss_nodes = T[]
+    cfg.theta_grid = T[]
+    cfg.phi_grid = T[]
+    cfg.plm_cache = Matrix{T}(undef, 0, 0)
     cfg.lm_indices = Tuple{Int,Int}[]
     return nothing
 end
