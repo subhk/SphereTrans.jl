@@ -118,10 +118,7 @@ for fname in (
     :mul_ct_matrix, :st_dt_matrix, :SH_mul_mx,
     :spat_cplx_to_SHsphtor, :SHsphtor_to_spat_cplx,
     
-    :SHsphtor_to_spat_l, :SHsph_to_spat_l, :SHtor_to_spat_l, :spat_to_SHsphtor_l,
-    :spat_to_SHqst_l, :SHqst_to_spat_l,
-    :spat_to_SHsphtor_ml, :SHsphtor_to_spat_ml, :SHsph_to_spat_ml, :SHtor_to_spat_ml,
-    :spat_to_SHqst_ml, :SHqst_to_spat_ml,
+    :SHsph_to_spat_l, :SHtor_to_spat_l,
     :SH_to_grad_point, :SHqst_to_point, :SH_to_lat, :SHqst_to_lat,
     :shtns_profiling, :shtns_profiling_read_time, :SH_to_spat_time, :spat_to_SH_time)
     @eval function ($fname)(args...)
