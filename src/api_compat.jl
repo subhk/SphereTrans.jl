@@ -111,7 +111,7 @@ end
 
 # Rotation and special-operator APIs: not yet implemented
 for fname in (
-    :SH_Zrotate, :SH_Yrotate, :SH_Yrotate90, :SH_Xrotate90,
+    :SH_Yrotate, :SH_Yrotate90, :SH_Xrotate90,
     :shtns_rotation_create, :shtns_rotation_destroy,
     :shtns_rotation_set_angles_ZYZ, :shtns_rotation_set_angles_ZXZ, :shtns_rotation_set_angle_axis,
     :shtns_rotation_wigner_d_matrix, :shtns_rotation_apply_cplx, :shtns_rotation_apply_real,
