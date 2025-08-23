@@ -34,8 +34,12 @@ export
     sh_to_spat!, spat_to_sh!,
     sh_to_spat, spat_to_sh,
     
-    # Vector transforms
+    # Vector transforms (2D tangential)
     sphtor_to_spat!, spat_to_sphtor!,
+    
+    # 3D Vector transforms (radial + tangential)
+    qst_to_spat!, spat_to_qst!,
+    synthesize_3d_vector, analyze_3d_vector,
     
     # Complex transforms
     cplx_sh_to_spat!, cplx_spat_to_sh!,
@@ -127,6 +131,7 @@ include("core/core_transforms.jl")
 
 # Transform algorithms
 include("transforms/vector_transforms.jl")
+include("transforms/vector_3d_transforms.jl")
 include("transforms/complex_transforms.jl")
 include("transforms/matrix_operators.jl")
 include("transforms/single_m_transforms.jl")
