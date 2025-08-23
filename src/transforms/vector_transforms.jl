@@ -31,9 +31,12 @@ function sphtor_to_spat!(cfg::SHTnsConfig{T},
     size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
     size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
     
-    lock(cfg.lock) do
-        _sphtor_to_spat_impl!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
-    end
+    # Use 3D approach with zero radial component for optimal accuracy (follows SHTns recommendations)
+    q_coeffs = zeros(T, cfg.nlm)  # No radial component
+    v_r = Matrix{T}(undef, cfg.nlat, cfg.nphi)
+    
+    # Leverage 3D transforms which use working complex transforms internally  
+    qst_to_spat!(cfg, q_coeffs, sph_coeffs, tor_coeffs, v_r, u_theta, u_phi)
     
     return u_theta, u_phi
 end
@@ -62,9 +65,12 @@ function spat_to_sphtor!(cfg::SHTnsConfig{T},
     length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
     
-    lock(cfg.lock) do
-        _spat_to_sphtor_impl!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
-    end
+    # Use 3D approach with zero radial component for optimal accuracy (follows SHTns recommendations)
+    v_r = zeros(T, cfg.nlat, cfg.nphi)  # No radial component
+    q_coeffs = Vector{T}(undef, cfg.nlm)
+    
+    # Leverage 3D transforms which use working complex transforms internally  
+    spat_to_qst!(cfg, v_r, u_theta, u_phi, q_coeffs, sph_coeffs, tor_coeffs)
     
     return sph_coeffs, tor_coeffs
 end
