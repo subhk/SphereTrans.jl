@@ -43,6 +43,31 @@ function Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
 end
 
 """
+    Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
+
+Fill `P[l+1] = P_l^m(x)` and `dPdx[l+1] = d/dx P_l^m(x)` for `l = m..lmax`.
+`dPdx` is derivative with respect to `x = cosθ` (not θ).
+"""
+function Plm_and_dPdx_row!(P::AbstractVector{T}, dPdx::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
+    Plm_row!(P, x, lmax, m)
+    @inbounds begin
+        fill!(dPdx, zero(T))
+        if lmax < m
+            return P, dPdx
+        end
+        x2m1 = x*x - one(T)
+        # l = m
+        l = m
+        dPdx[l+1] = (l == 0) ? zero(T) : (m * x * P[l+1]) / x2m1
+        # l ≥ m+1
+        for l in (m+1):lmax
+            dPdx[l+1] = (l * x * P[l+1] - (l + m) * P[l]) / x2m1
+        end
+    end
+    return P, dPdx
+end
+
+"""
     Nlm_table(lmax::Int, mmax::Int)
 
 Precompute normalization factors `N_{l,m} = sqrt((2l+1)/(4π) * (l-m)!/(l+m)!)` for 0≤m≤mmax, m≤l≤lmax.
@@ -63,4 +88,3 @@ function Nlm_table(lmax::Int, mmax::Int)
     end
     return N
 end
-
