@@ -149,7 +149,7 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
             Fθ_i = Fθ[i, col]
             Fφ_i = Fφ[i, col]
             wi = cfg.w[i]
-            @inbounds for l in m:lmax
+            @inbounds for l in max(1,m):lmax
                 N = cfg.Nlm[l+1, col]
                 dθY = -sθ * N * dPdx[l+1]
                 Y = N * P[l+1]
@@ -191,3 +191,187 @@ end
 Alias to `SHsph_to_spat`, for compatibility with SHTns macro.
 """
 SH_to_grad_spat(cfg::SHTConfig, Slm::AbstractMatrix; real_output::Bool=true) = SHsph_to_spat(cfg, Slm; real_output)
+
+"""
+    SHsphtor_to_spat_l(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+        -> Vt, Vp
+
+Truncated vector synthesis using only degrees l ≤ ltr.
+"""
+function SHsphtor_to_spat_l(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+    (0 ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("ltr must be within [0, lmax]"))
+    # Copy and zero out > ltr
+    S2 = copy(Slm); T2 = copy(Tlm)
+    @inbounds for m in 0:cfg.mmax
+        for l in (ltr+1):cfg.lmax
+            S2[l+1, m+1] = 0
+            T2[l+1, m+1] = 0
+        end
+    end
+    return SHsphtor_to_spat(cfg, S2, T2; real_output)
+end
+
+"""
+    spat_to_SHsphtor_l(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix, ltr::Int)
+        -> Slm, Tlm
+
+Truncated vector analysis; zeroes Slm/Tlm for l > ltr.
+"""
+function spat_to_SHsphtor_l(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix, ltr::Int)
+    (0 ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("ltr must be within [0, lmax]"))
+    Slm, Tlm = spat_to_SHsphtor(cfg, Vt, Vp)
+    @inbounds for m in 0:cfg.mmax
+        for l in (ltr+1):cfg.lmax
+            Slm[l+1, m+1] = 0
+            Tlm[l+1, m+1] = 0
+        end
+    end
+    return Slm, Tlm
+end
+
+"""
+    SHsph_to_spat_l(cfg::SHTConfig, Slm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+"""
+function SHsph_to_spat_l(cfg::SHTConfig, Slm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+    Z = zeros(ComplexF64, size(Slm))
+    return SHsphtor_to_spat_l(cfg, Slm, Z, ltr; real_output)
+end
+
+"""
+    SHtor_to_spat_l(cfg::SHTConfig, Tlm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+"""
+function SHtor_to_spat_l(cfg::SHTConfig, Tlm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+    Z = zeros(ComplexF64, size(Tlm))
+    return SHsphtor_to_spat_l(cfg, Z, Tlm, ltr; real_output)
+end
+
+"""
+    spat_to_SHsphtor_ml(cfg::SHTConfig, im::Int, Vt_m::AbstractVector{<:Complex}, Vp_m::AbstractVector{<:Complex}, ltr::Int)
+        -> Sl::Vector{ComplexF64}, Tl::Vector{ComplexF64}
+
+Per-m vector analysis (no FFT) truncated at ltr.
+"""
+function spat_to_SHsphtor_ml(cfg::SHTConfig, im::Int, Vt_m::AbstractVector{<:Complex}, Vp_m::AbstractVector{<:Complex}, ltr::Int)
+    nlat = cfg.nlat
+    length(Vt_m) == nlat && length(Vp_m) == nlat || throw(DimensionMismatch("per-m inputs must have length nlat"))
+    m = im * cfg.mres
+    (0 ≤ m ≤ cfg.mmax) || throw(ArgumentError("invalid m from im"))
+    lstart = max(1, m)
+    (lstart ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("require max(1,m) ≤ ltr ≤ lmax"))
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
+    Sl = zeros(ComplexF64, ltr - lstart + 1)
+    Tl = zeros(ComplexF64, ltr - lstart + 1)
+    for i in 1:nlat
+        x = cfg.x[i]
+        sθ = sqrt(max(0.0, 1 - x*x))
+        inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+        Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
+        wi = cfg.w[i]
+        Fθ_i = Vt_m[i]
+        Fφ_i = Vp_m[i]
+        @inbounds for l in lstart:ltr
+            N = cfg.Nlm[l+1, m+1]
+            dθY = -sθ * N * dPdx[l+1]
+            Y = N * P[l+1]
+            coeff = wi / (l*(l+1))
+            Sl[l - lstart + 1] += coeff * (Fθ_i * dθY + Fφ_i * (-(0 + 1im) * m * inv_sθ * Y))
+            Tl[l - lstart + 1] += coeff * (Fθ_i * ((0 + 1im) * m * inv_sθ * Y) + Fφ_i * (+sθ * N * dPdx[l+1]))
+        end
+    end
+    return Sl, Tl
+end
+
+"""
+    SHsphtor_to_spat_ml(cfg::SHTConfig, im::Int, Sl::AbstractVector{<:Complex}, Tl::AbstractVector{<:Complex}, ltr::Int)
+        -> Vt_m::Vector{ComplexF64}, Vp_m::Vector{ComplexF64}
+
+Per-m vector synthesis (no FFT) truncated at ltr.
+"""
+function SHsphtor_to_spat_ml(cfg::SHTConfig, im::Int, Sl::AbstractVector{<:Complex}, Tl::AbstractVector{<:Complex}, ltr::Int)
+    m = im * cfg.mres
+    lstart = max(1, m)
+    length(Sl) == ltr - lstart + 1 || throw(DimensionMismatch("Sl length must be ltr-max(1,m)+1"))
+    length(Tl) == ltr - lstart + 1 || throw(DimensionMismatch("Tl length must be ltr-max(1,m)+1"))
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
+    Vt_m = Vector{ComplexF64}(undef, cfg.nlat)
+    Vp_m = Vector{ComplexF64}(undef, cfg.nlat)
+    for i in 1:cfg.nlat
+        x = cfg.x[i]
+        sθ = sqrt(max(0.0, 1 - x*x))
+        inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+        Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
+        gθ = 0.0 + 0.0im
+        gφ = 0.0 + 0.0im
+        @inbounds for l in lstart:ltr
+            N = cfg.Nlm[l+1, m+1]
+            dθY = -sθ * N * dPdx[l+1]
+            Y = N * P[l+1]
+            Slv = Sl[l - lstart + 1]
+            Tlv = Tl[l - lstart + 1]
+            gθ += dθY * Slv + (0 + 1im) * m * inv_sθ * Y * Tlv
+            gφ += (0 + 1im) * m * inv_sθ * Y * Slv + (sθ * N * dPdx[l+1]) * Tlv
+        end
+        Vt_m[i] = gθ
+        Vp_m[i] = gφ
+    end
+    return Vt_m, Vp_m
+end
+
+"""
+    spat_to_SHqst_l(cfg::SHTConfig, Vr, Vt, Vp, ltr::Int)
+        -> Qlm, Slm, Tlm
+"""
+function spat_to_SHqst_l(cfg::SHTConfig, Vr::AbstractMatrix, Vt::AbstractMatrix, Vp::AbstractMatrix, ltr::Int)
+    (0 ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("ltr must be within [0, lmax]"))
+    Qlm = analysis(cfg, Vr)
+    Slm, Tlm = spat_to_SHsphtor(cfg, Vt, Vp)
+    @inbounds for m in 0:cfg.mmax
+        for l in (ltr+1):cfg.lmax
+            Qlm[l+1, m+1] = 0
+            Slm[l+1, m+1] = 0
+            Tlm[l+1, m+1] = 0
+        end
+    end
+    return Qlm, Slm, Tlm
+end
+
+"""
+    SHqst_to_spat_l(cfg::SHTConfig, Qlm, Slm, Tlm, ltr::Int; real_output::Bool=true)
+        -> Vr, Vt, Vp
+"""
+function SHqst_to_spat_l(cfg::SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix, ltr::Int; real_output::Bool=true)
+    (0 ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("ltr must be within [0, lmax]"))
+    Q2 = copy(Qlm); S2 = copy(Slm); T2 = copy(Tlm)
+    @inbounds for m in 0:cfg.mmax
+        for l in (ltr+1):cfg.lmax
+            Q2[l+1, m+1] = 0
+            S2[l+1, m+1] = 0
+            T2[l+1, m+1] = 0
+        end
+    end
+    Vr = synthesis(cfg, Q2; real_output)
+    Vt, Vp = SHsphtor_to_spat(cfg, S2, T2; real_output)
+    return Vr, Vt, Vp
+end
+
+"""
+    spat_to_SHqst_ml(cfg::SHTConfig, im::Int, Vr_m::AbstractVector{<:Complex}, Vt_m::AbstractVector{<:Complex}, Vp_m::AbstractVector{<:Complex}, ltr::Int)
+        -> Ql, Sl, Tl
+"""
+function spat_to_SHqst_ml(cfg::SHTConfig, im::Int, Vr_m::AbstractVector{<:Complex}, Vt_m::AbstractVector{<:Complex}, Vp_m::AbstractVector{<:Complex}, ltr::Int)
+    Ql = spat_to_SH_ml(cfg, im, Vr_m, ltr)
+    Sl, Tl = spat_to_SHsphtor_ml(cfg, im, Vt_m, Vp_m, ltr)
+    return Ql, Sl, Tl
+end
+
+"""
+    SHqst_to_spat_ml(cfg::SHTConfig, im::Int, Ql::AbstractVector{<:Complex}, Sl::AbstractVector{<:Complex}, Tl::AbstractVector{<:Complex}, ltr::Int)
+        -> Vr_m, Vt_m, Vp_m
+"""
+function SHqst_to_spat_ml(cfg::SHTConfig, im::Int, Ql::AbstractVector{<:Complex}, Sl::AbstractVector{<:Complex}, Tl::AbstractVector{<:Complex}, ltr::Int)
+    Vr_m = SH_to_spat_ml(cfg, im, Ql, ltr)
+    Vt_m, Vp_m = SHsphtor_to_spat_ml(cfg, im, Sl, Tl, ltr)
+    return Vr_m, Vt_m, Vp_m
+end
