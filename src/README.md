@@ -2,7 +2,7 @@
 
 This directory contains the organized source code for SHTnsKit.jl, structured for easy maintenance and debugging.
 
-## 📁 Directory Structure
+## Directory Structure
 
 ### `core/` - Core Functionality
 - **`types_optimized.jl`** - Core data types and configurations
@@ -37,7 +37,7 @@ This directory contains the organized source code for SHTnsKit.jl, structured fo
 - **`profiling.jl`** - Profiling and timing utilities
 - **`benchmarking_suite.jl`** - Comprehensive benchmarking framework
 
-## 🔧 Module Loading Order
+## Module Loading Order
 
 The main `SHTnsKit.jl` file loads components in logical dependency order:
 
@@ -47,7 +47,7 @@ The main `SHTnsKit.jl` file loads components in logical dependency order:
 4. **Benchmarking** - Performance testing tools
 5. **Advanced functionality** - Loaded automatically via extensions when needed
 
-## 🚀 Advanced Features
+## Advanced Features
 
 Advanced optimizations are implemented as separate modules that can be used independently or in combination:
 
@@ -57,7 +57,7 @@ Advanced optimizations are implemented as separate modules that can be used inde
 - **Memory optimization** leverages cache hierarchy and NUMA
 - **Auto-tuning** learns optimal parameters for each system
 
-## 📚 Usage
+## Usage
 
 ```julia
 using SHTnsKit
