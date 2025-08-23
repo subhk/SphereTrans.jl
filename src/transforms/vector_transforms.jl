@@ -237,16 +237,14 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     phi_mode_data = Vector{Complex{T}}(undef, nlat)
     
     # Precompute normalization factor based on C code
-    # Vector transforms need different φ normalization than scalar transforms
-    # Empirical correction factor to match C code exactly: 1.0230 ≈ 1/0.9775594192118134
-    correction_factor = T(1.0230)
+    # Vector transforms: φ integration normalization from FFT scaling
     if cfg.norm == SHT_ORTHONORMAL
-        phi_normalization = T(2π) / (nphi * nphi * T(π)) * correction_factor
+        phi_normalization = T(2π) / nphi
     elseif cfg.norm == SHT_SCHMIDT
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
+        phi_normalization = T(2π) / nphi  
     else
         # For 4π normalization
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
+        phi_normalization = T(2π) / nphi
     end
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
@@ -274,7 +272,7 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
                 
                 # The key insight: toroidal has a minus sign in synthesis, so analysis needs it too
                 sph_integral += theta_mode_data[i] * dplm_val * weight
-                tor_integral -= phi_mode_data[i] * dplm_val * weight  # Note: minus sign to match C code synthesis!
+                tor_integral += phi_mode_data[i] * dplm_val * weight
             end
             
             # Apply proper normalization for φ integration  
@@ -304,8 +302,8 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
             vector_norm_factor = T(1) / (l * (l + 1))
             
-            sph_coeffs[coeff_idx] = final_sph * vector_norm_factor
-            tor_coeffs[coeff_idx] = final_tor * vector_norm_factor
+            sph_coeffs[coeff_idx] = -final_sph * vector_norm_factor
+            tor_coeffs[coeff_idx] = -final_tor * vector_norm_factor
         end
     end
     
@@ -457,59 +455,6 @@ function synthesize_vector_real(cfg::SHTnsConfig{T}, S_real::AbstractVector{T}, 
     return real.(uθ_c), real.(uφ_c)
 end
 
-"""
-    _compute_glm_correction_factor(::Type{T}, l::Int, m::Int) where T
-
-Compute the missing glm normalization factor that accounts for proper Legendre recurrence.
-Based on C code analysis and empirical correction factors for machine precision.
-"""
-function _compute_glm_correction_factor(::Type{T}, l::Int, m::Int) where T
-    # Based on empirical analysis, the correction factors follow specific patterns:
-    # For l=1: factors ~0.73-1.47 (depends on m)
-    # For l>=2: factors ~3-5 (decreasing with l)
-    
-    if l == 1
-        if m == 0
-            return T(0.733138)  # Empirical factor for (1,0)
-        elseif m == 1  
-            return T(1.466276)  # Empirical factor for (1,1)
-        else
-            return T(1.0)  # Fallback
-        end
-    elseif l == 2
-        if m == 0
-            return T(4.646543)  # Empirical factor for (2,0)
-        elseif m == 1
-            return T(2.987209)  # Empirical factor for (2,1)
-        elseif m == 2
-            # From empirical data: needs factor ~10.09 / 0.555221
-            return T(10.09 / 0.555221)
-        else
-            return T(2.5)  # Fallback for l=2
-        end
-    elseif l == 3
-        if m == 0
-            return T(4.324465)  # Empirical factor for (3,0)
-        elseif m == 1
-            return T(2.931157 * 1.000016)  # Fine adjustment for machine precision
-        else
-            return T(2.2)  # Fallback for l=3
-        end
-    elseif l == 4
-        if m == 0
-            return T(4.091136)  # Empirical factor for (4,0)
-        elseif m == 2
-            return T(2.133762 / 1.000229)  # Fine adjustment for machine precision
-        else
-            return T(2.5)  # Fallback for l=4
-        end
-    else
-        # For higher l, the pattern suggests factors around 3-4, decreasing slightly with l
-        base_factor = T(4.5) - T(0.1) * T(l)  # Linear decrease
-        m_correction = max(T(0.5), T(1.0) - T(0.2) * T(m))  # m-dependent correction
-        return base_factor * m_correction
-    end
-end
 
 """
     _compute_plm_theta_derivative_precision(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T,
