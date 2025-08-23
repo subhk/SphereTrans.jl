@@ -140,18 +140,14 @@ end
 Complex scalar synthesis using dense alm with `size == (lmax+1, mmax+1)` packed into Qlm array in SHTns LM_cplx order is not yet supported; use matrix form via `synthesis`.
 Placeholder provided for API completeness; throws an error for now.
 """
-function SH_to_spat_cplx(cfg::SHTConfig, alm::AbstractVector{<:Complex})
-    throw(ArgumentError("SH_to_spat_cplx with packed complex layout not implemented; use synthesis(cfg, alm_matrix)"))
-end
+SH_to_spat_cplx
 
 """
     spat_cplx_to_SH(cfg::SHTConfig, z::AbstractVector{<:Complex}) -> Vector{ComplexF64}
 
 Complex scalar analysis wrapper; use matrix form via `analysis`.
 """
-function spat_cplx_to_SH(cfg::SHTConfig, z::AbstractVector{<:Complex})
-    throw(ArgumentError("spat_cplx_to_SH with packed complex layout not implemented; use analysis(cfg, reshape(z, nlat, nlon))"))
-end
+spat_cplx_to_SH
 
 """
     spat_to_SH_l(cfg::SHTConfig, Vr, ltr::Int)
@@ -275,4 +271,3 @@ function SH_to_point(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, cost::Real,
     end
     return real(acc)
 end
-
