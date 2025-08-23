@@ -979,3 +979,43 @@ function _cplx_mode_groups_arr(cfg::SHTnsConfig)
     end
     return groups
 end
+
+"""
+    cplx_synthesize_3d_vector(cfg, Q_coeffs, S_coeffs, T_coeffs)
+
+3D complex vector synthesis from radial (Q), spheroidal (S), and toroidal (T) coefficients.
+Returns (V_r, V_theta, V_phi) as complex matrices.
+"""
+function cplx_synthesize_3d_vector(cfg::SHTnsConfig{T}, 
+                                   Q_coeffs::AbstractVector{Complex{T}},
+                                   S_coeffs::AbstractVector{Complex{T}}, 
+                                   T_coeffs::AbstractVector{Complex{T}}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    
+    # Radial component: V_r = Q (scalar synthesis)
+    V_r = cplx_sh_to_spat(cfg, Q_coeffs)
+    
+    # Tangential components: use existing 2D vector synthesis
+    V_theta, V_phi = cplx_synthesize_vector(cfg, S_coeffs, T_coeffs)
+    
+    return V_r, V_theta, V_phi
+end
+
+"""
+    cplx_analyze_3d_vector(cfg, v_r, v_theta, v_phi)
+
+3D complex vector analysis from spatial components (V_r, V_theta, V_phi).
+Returns (Q_coeffs, S_coeffs, T_coeffs) as complex coefficient vectors.
+"""
+function cplx_analyze_3d_vector(cfg::SHTnsConfig{T},
+                                v_r::AbstractMatrix{Complex{T}},
+                                v_theta::AbstractMatrix{Complex{T}}, 
+                                v_phi::AbstractMatrix{Complex{T}}) where T
+    # Radial component: Q = V_r (scalar analysis) 
+    Q_coeffs = cplx_spat_to_sh(cfg, v_r)
+    
+    # Tangential components: use existing 2D vector analysis
+    S_coeffs, T_coeffs = cplx_analyze_vector(cfg, v_theta, v_phi)
+    
+    return Q_coeffs, S_coeffs, T_coeffs
+end
