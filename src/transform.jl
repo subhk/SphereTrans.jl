@@ -134,20 +134,7 @@ function SH_to_spat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex})
     return vec(f)
 end
 
-"""
-    SH_to_spat_cplx(cfg::SHTConfig, alm::AbstractVector{<:Complex}) -> Vector{ComplexF64}
-
-Complex scalar synthesis using dense alm with `size == (lmax+1, mmax+1)` packed into Qlm array in SHTns LM_cplx order is not yet supported; use matrix form via `synthesis`.
-Placeholder provided for API completeness; throws an error for now.
-"""
-SH_to_spat_cplx
-
-"""
-    spat_cplx_to_SH(cfg::SHTConfig, z::AbstractVector{<:Complex}) -> Vector{ComplexF64}
-
-Complex scalar analysis wrapper; use matrix form via `analysis`.
-"""
-spat_cplx_to_SH
+ 
 
 """
     spat_to_SH_l(cfg::SHTConfig, Vr, ltr::Int)
