@@ -29,92 +29,17 @@ function create_config(lmax::Int, mmax::Int=lmax, mres::Int=1;
     return create_config(T, lmax, mmax, mres; grid_type=grid_type, norm=norm)
 end
 
-"""
-    set_grid!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
-
-Initialize the spatial grid for transforms.
-This precomputes all grid-dependent quantities.
-
-# Arguments
-- `cfg`: SHTns configuration to modify
-- `nlat`: Number of latitude points
-- `nphi`: Number of longitude points
-"""
-function set_grid!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
-    return set_grid_stable!(cfg, nlat, nphi)
-end
+ 
 
 """
     set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
 
 Type-stable implementation of grid setup for spherical harmonic transforms.
-This function initializes all grid-dependent quantities for efficient transforms.
+Delegates to the optimized implementation.
 """
-function set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
-    # Update grid dimensions
-    cfg.nlat = nlat
-    cfg.nphi = nphi
-    
-    # Compute grid points based on grid type
-    if cfg.grid_type == SHT_GAUSS
-        # Gauss-Legendre grid
-        if nlat != length(cfg.gauss_weights)
-            # Recompute Gauss-Legendre quadrature points
-            nodes, weights = compute_gauss_legendre_nodes_weights(nlat, T)
-            empty!(cfg.gauss_nodes)
-            empty!(cfg.gauss_weights)
-            append!(cfg.gauss_nodes, nodes)
-            append!(cfg.gauss_weights, weights)
-        end
-        
-        # Convert Gauss nodes to colatitude θ
-        resize!(cfg.theta_grid, nlat)
-        for (i, x) in enumerate(cfg.gauss_nodes)
-            cfg.theta_grid[i] = acos(x)  # x = cos(θ), so θ = arccos(x)
-        end
-    else
-        # Regular/equiangular grid
-        resize!(cfg.theta_grid, nlat)
-        resize!(cfg.gauss_weights, nlat)
-        
-        for j in 1:nlat
-            cfg.theta_grid[j] = π * (j - 0.5) / nlat  # Equiangular spacing
-            cfg.gauss_weights[j] = T(2π / nphi)       # Simple trapezoid weights
-        end
-    end
-    
-    # Setup longitude grid
-    resize!(cfg.phi_grid, nphi)
-    for k in 1:nphi
-        cfg.phi_grid[k] = T(2π * (k - 1) / nphi)
-    end
-    
-    # Initialize FFT plans for this grid size
-    empty!(cfg.fft_plans)
-    setup_fft_plans!(cfg)
-    
-    # Invalidate cached Legendre polynomials since grid changed
-    cfg.plm_cache = Matrix{T}(undef, 0, 0)
-    
-    return nothing
-end
+set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T = set_grid!(cfg, nlat, nphi)
 
-"""
-    destroy_config(cfg::SHTnsConfig)
-
-Clean up resources associated with a configuration.
-"""
-function destroy_config(cfg::SHTnsConfig)
-    # Clear cached data
-    empty!(cfg.gauss_weights)
-    empty!(cfg.gauss_nodes)
-    empty!(cfg.theta_grid)
-    empty!(cfg.phi_grid)
-    empty!(cfg.lm_indices)
-    empty!(cfg.fft_plans)
-    cfg.plm_cache = Matrix{eltype(cfg.plm_cache)}(undef, 0, 0)
-    return nothing
-end
+ 
 
 """
     sh_to_spat!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T}, 
@@ -320,8 +245,16 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
         cfg.fft_plans[mode_workspace_key] = mode_data
     end
     
-    # Precompute normalization factor
-    phi_normalization = T(2π) / nphi
+    # Precompute normalization factor - need to account for synthesis scaling and normalization convention
+    if cfg.norm == SHT_ORTHONORMAL
+        phi_normalization = T(2π) / (nphi * nphi)  # Corrected to account for nphi scaling in synthesis
+    elseif cfg.norm == SHT_SCHMIDT
+        # Schmidt needs additional (2l+1) factor in analysis, applied per coefficient
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
+    else
+        # For 4π normalization, need additional factor of 4π
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
+    end
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
         # Extract Fourier mode m
@@ -339,11 +272,23 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
             # Apply proper normalization for φ integration  
             integral *= phi_normalization
             
+            # Apply Schmidt-specific analysis normalization (2l+1) factor  
+            if cfg.norm == SHT_SCHMIDT
+                integral *= T(2*l + 1)
+            end
+            
             # For real fields, extract appropriate part with optimized conditionals
             if m == 0
                 sh_coeffs[coeff_idx] = real(integral)
             else
-                sh_coeffs[coeff_idx] = real(integral) * T(2)
+                # Standard factor of 2 for real transforms (extract real part of complex coeffs)
+                factor = T(2)
+                
+                # For Schmidt, the (2l+1) factor already provides most of the compensation needed
+                # The remaining factor should be exactly mpos_scale_analys = 0.5/mpos_renorm = 1.0
+                # No additional factors needed since (2l+1) handles the main Schmidt normalization
+                
+                sh_coeffs[coeff_idx] = real(integral) * factor
             end
         end
     end
@@ -351,40 +296,7 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
     return nothing
 end
 
-"""
-    get_lmax(cfg::SHTnsConfig) -> Int
-
-Get the maximum spherical harmonic degree.
-"""
-get_lmax(cfg::SHTnsConfig) = cfg.lmax
-
-"""
-    get_mmax(cfg::SHTnsConfig) -> Int  
-
-Get the maximum spherical harmonic order.
-"""
-get_mmax(cfg::SHTnsConfig) = cfg.mmax
-
-"""
-    get_nlat(cfg::SHTnsConfig) -> Int
-
-Get the number of latitude grid points.
-"""
-get_nlat(cfg::SHTnsConfig) = cfg.nlat
-
-"""
-    get_nphi(cfg::SHTnsConfig) -> Int
-
-Get the number of longitude grid points.
-"""
-get_nphi(cfg::SHTnsConfig) = cfg.nphi
-
-"""
-    get_nlm(cfg::SHTnsConfig) -> Int
-
-Get the number of spherical harmonic coefficients.
-"""
-get_nlm(cfg::SHTnsConfig) = cfg.nlm
+ 
 
 """
     get_theta(cfg::SHTnsConfig, i::Int) -> T
@@ -406,12 +318,7 @@ function get_phi(cfg::SHTnsConfig{T}, j::Int) where T
     return cfg.phi_grid[j]
 end
 
-"""
-    get_gauss_weights(cfg::SHTnsConfig) -> Vector{T}
-
-Get the Gaussian quadrature weights.
-"""
-get_gauss_weights(cfg::SHTnsConfig) = cfg.gauss_weights
+ 
 
 # Convenience functions for grid setup
 

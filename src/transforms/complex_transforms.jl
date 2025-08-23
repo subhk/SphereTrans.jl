@@ -11,6 +11,8 @@ function allocate_spectral_complex(cfg::SHTnsConfig{T}) where T
     return Vector{Complex{T}}(undef, _cplx_nlm(cfg))
 end
 
+ 
+
 """
 Allocate array for complex spatial field.
 """
@@ -57,6 +59,73 @@ function _cplx_lm_indices(cfg::SHTnsConfig)
         end
     end
     return indices
+end
+
+"""
+    _plm_complex_norm(cfg, l, m, cost, sint) -> T
+
+Compute normalized associated Legendre value for complex spherical harmonics (orthonormal).
+Uses unnormalized P_l^{|m|}(cosθ) with Condon-Shortley phase and applies
+N_lm = sqrt((2l+1)/(4π) * (l-|m|)!/(l+|m|)!).
+"""
+function _plm_complex_norm(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
+    mm = abs(m)
+    # For complex harmonics, we use the same normalization as the real case
+    if l < mm
+        return zero(T)
+    end
+    
+    # Find the correct latitude index by matching cosine values
+    lat_idx = 0
+    for i in 1:cfg.nlat
+        if abs(cfg.gauss_nodes[i] - cost) < T(1e-12)
+            lat_idx = i
+            break
+        end
+    end
+    
+    if lat_idx > 0 && !isempty(cfg.plm_cache)
+        # Try to find the index in the cached PLM values
+        for (k, (ll, mm_cached)) in enumerate(cfg.lm_indices)
+            if ll == l && mm_cached == mm
+                return cfg.plm_cache[lat_idx, k]
+            end
+        end
+    end
+    
+    # Fallback: compute directly using the same method as single_m_transforms
+    return SHTnsKit._evaluate_legendre_normalized(cfg, l, mm, cost, sint)
+end
+
+"""
+Calibrate a global complex scaling factor s so that analyze(synthesize(sh)) ≈ sh.
+We store s in `cfg.fft_plans[:cplx_scale]` for reuse.
+"""
+function _get_complex_scale!(cfg::SHTnsConfig{T}) where T
+    key = :cplx_scale
+    if haskey(cfg.fft_plans, key)
+        return cfg.fft_plans[key]::T
+    end
+    n = _cplx_nlm(cfg)
+    # Use delta at (l=0,m=0) for robust calibration
+    sh = zeros(Complex{T}, n)
+    idx00 = 0
+    for (idx, (l, m)) in enumerate(_cplx_lm_indices(cfg))
+        if l == 0 && m == 0
+            idx00 = idx
+            break
+        end
+    end
+    idx00 == 0 && return one(T)
+    sh[idx00] = one(T) + zero(T)*im
+    spatial = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
+    _cplx_sh_to_spat_impl!(cfg, sh, spatial)
+    rec = Vector{Complex{T}}(undef, n)
+    _cplx_spat_to_sh_impl!(cfg, spatial, rec)
+    s = real(rec[idx00])
+    s = s == 0 ? one(T) : inv(s)
+    cfg.fft_plans[key] = s
+    return s
 end
 
 """
@@ -108,6 +177,11 @@ function cplx_spat_to_sh!(cfg::SHTnsConfig{T},
     
     lock(cfg.lock) do
         _cplx_spat_to_sh_impl!(cfg, spatial_data, sh_coeffs)
+        # Remove calibration - fix normalization at source
+        # s = _get_complex_scale!(cfg)
+        # @inbounds for i in eachindex(sh_coeffs)
+        #     sh_coeffs[i] *= s
+        # end
     end
     
     return sh_coeffs
@@ -172,9 +246,12 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
             m_idx = m >= 0 ? m + 1 : nphi + m + 1
             for i in 1:nlat
                 value = zero(Complex{T})
+                # Compute normalized associated Legendre for complex harmonics
+                θ = cfg.theta_grid[i]
+                cost = cos(θ); sint = sin(θ)
                 for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
                     l2 >= abs(m) || continue
-                    plm_val = cfg.plm_cache[i, k]
+                    plm_val = _plm_complex_norm(cfg, l2, m, cost, sint)
                     value += sh_coeffs[coeff_idx] * plm_val
                 end
                 fourier_coeffs[i, m_idx] = value
@@ -191,9 +268,11 @@ function _cplx_sh_to_spat_impl!(cfg::SHTnsConfig{T},
             for i in 1:nlat
                 value = zero(Complex{T})
                 # Sum over pregrouped entries for this m
+                θ = cfg.theta_grid[i]
+                cost = cos(θ); sint = sin(θ)
                 for (coeff_idx, k, l2) in groups[m + cfg.mmax + 1]
                     l2 >= abs(m) || continue
-                    plm_val = cfg.plm_cache[i, k]
+                    plm_val = _plm_complex_norm(cfg, l2, m, cost, sint)
                     value += sh_coeffs[coeff_idx] * plm_val
                 end
                 fourier_coeffs[i, m_idx] = value
@@ -236,16 +315,20 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
             m_idx = m >= 0 ? m + 1 : nphi + m + 1
             entries = groups[m + cfg.mmax + 1]
             # Precompute latitudinal weighted transform for this m
+            phi_normalization = T(2π) / nphi
             for (coeff_idx, k, l) in entries
                 l >= abs(m) || continue
                 integral = zero(Complex{T})
                 for i in 1:nlat
-                    plm_val = cfg.plm_cache[i, k]
+                    θ = cfg.theta_grid[i]
+                    cost = cos(θ); sint = sin(θ)
+                    plm_val = _plm_complex_norm(cfg, l, m, cost, sint)
                     weight = cfg.gauss_weights[i]
                     integral += fourier_coeffs[i, m_idx] * plm_val * weight
                 end
-                norm = _get_complex_normalization(cfg.norm, l, abs(m))
-                sh_coeffs[coeff_idx] = integral * norm
+                # Normalize φ integration to match synthesis scaling
+                integral *= phi_normalization
+                sh_coeffs[coeff_idx] = integral
             end
         end
     else
@@ -254,17 +337,20 @@ function _cplx_spat_to_sh_impl!(cfg::SHTnsConfig{T},
             (m == 0 || abs(m) % cfg.mres == 0) || continue
             m_idx = m >= 0 ? m + 1 : nphi + m + 1
             entries = groups[m + cfg.mmax + 1]
-            # Precompute latitudinal weighted transform for this m
             for (coeff_idx, k, l) in entries
                 l >= abs(m) || continue
                 integral = zero(Complex{T})
                 for i in 1:nlat
-                    plm_val = cfg.plm_cache[i, k]
+                    θ = cfg.theta_grid[i]
+                    cost = cos(θ); sint = sin(θ)
+                    plm_val = _plm_complex_norm(cfg, l, m, cost, sint)
                     weight = cfg.gauss_weights[i]
                     integral += fourier_coeffs[i, m_idx] * plm_val * weight
                 end
-                norm = _get_complex_normalization(cfg.norm, l, abs(m))
-                sh_coeffs[coeff_idx] = integral * norm
+                # Normalize φ integration to match synthesis scaling
+                phi_normalization = T(2π) / nphi
+                integral *= phi_normalization
+                sh_coeffs[coeff_idx] = integral
             end
         end
     end
@@ -832,44 +918,7 @@ function create_complex_test_field(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
 end
 
 # Internal helpers for complex coefficient indexing
-function _cplx_lm_indices(cfg::SHTnsConfig)
-    idx = Tuple{Int,Int}[]
-    for l in 0:cfg.lmax
-        maxm = min(l, cfg.mmax)
-        # negative m down to -maxm in steps of -mres (only if maxm > 0)
-        if maxm > 0
-            for m in -maxm:-cfg.mres:-cfg.mres
-                push!(idx, (l, m))
-            end
-        end
-        # m=0 (always included)
-        push!(idx, (l, 0))
-        # positive m from mres up to maxm in steps of mres (only if maxm > 0)
-        if maxm > 0
-            for m in cfg.mres:cfg.mres:maxm
-                push!(idx, (l, m))
-            end
-        end
-    end
-    return idx
-end
-
-function _cplx_nlm(cfg::SHTnsConfig)
-    # Count full m for each l with mres
-    total = 0
-    for l in 0:cfg.lmax
-        maxm = min(l, cfg.mmax)
-        if cfg.mres == 1
-            total += 2*maxm + 1
-        else
-            # negative: m = -mres, -2mres, ... >= -maxm
-            cnt_neg = maxm ÷ cfg.mres
-            cnt_pos = cnt_neg
-            total += cnt_neg + 1 + cnt_pos
-        end
-    end
-    return total
-end
+ 
 
 # Cache of per-m mode groups: stored as an array of length (2*mmax+1),
 # index = m + mmax + 1, each entry: Vector{(complex_idx, plm_k, l)}

@@ -203,18 +203,30 @@ function benchmark_transform(cfg::SHTnsConfig{T}, n_iterations::Int=100) where T
         analysis_times[i] = spat_to_sh_time(cfg, vr, qlm)
     end
     
-    # Compute statistics
+    # Compute statistics (avoid Statistics dependency)
     avg_synthesis = sum(synthesis_times) / n_iterations
     avg_analysis = sum(analysis_times) / n_iterations
     total_avg = avg_synthesis + avg_analysis
+    # Sample standard deviation helper
+    _std(v) = begin
+        n = length(v)
+        n <= 1 && return 0.0
+        μ = sum(v) / n
+        s2 = 0.0
+        @inbounds for x in v
+            d = x - μ
+            s2 += d * d
+        end
+        return sqrt(s2 / (n - 1))
+    end
     
     return (
         synthesis_time = avg_synthesis,
         analysis_time = avg_analysis,
         total_time = total_avg,
         iterations = n_iterations,
-        synthesis_std = std(synthesis_times),
-        analysis_std = std(analysis_times)
+        synthesis_std = _std(synthesis_times),
+        analysis_std = _std(analysis_times)
     )
 end
 

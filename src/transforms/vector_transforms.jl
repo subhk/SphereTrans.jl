@@ -293,9 +293,22 @@ function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, thet
     if l == 0
         return zero(T)
     end
-    # Find index for (l-1, m)
-    idx_lm1 = SHTnsKit.find_plm_index(cfg, l-1, m)
-    Plm1 = idx_lm1 > 0 ? cfg.plm_cache[lat_idx, idx_lm1] : zero(T)
+    
+    # For (l-1, m), we need to check if this is a valid spherical harmonic
+    # since |m| <= l for valid spherical harmonics
+    Plm1 = zero(T)
+    if l > 1 && abs(m) <= (l-1)
+        # Find index for (l-1, m) only if it's valid
+        try
+            idx_lm1 = SHTnsKit.find_plm_index(cfg, l-1, m)
+            if idx_lm1 > 0
+                Plm1 = cfg.plm_cache[lat_idx, idx_lm1]
+            end
+        catch
+            # Index not found is OK - Plm1 remains zero
+        end
+    end
+    
     x = cos(theta)
     s = sin(theta)
     if abs(s) < T(1e-12)

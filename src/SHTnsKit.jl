@@ -55,7 +55,7 @@ export
     analyze_vector_real, synthesize_vector_real,
     
     # Complex transforms  
-    synthesize_complex, analyze_complex,
+    synthesize_complex, analyze_complex, allocate_complex_spectral, create_complex_test_field,
     
     # Complex spectral ops
     cplx_spectral_derivative_phi, cplx_spectral_laplacian, cplx_spatial_derivatives,
@@ -143,7 +143,15 @@ include("utils/robert_form.jl")
 
 # Benchmarking and profiling
 include("benchmarks/profiling.jl")
-include("benchmarks/benchmarking_suite.jl")
+# Load the comprehensive benchmarking suite only when explicitly enabled.
+# Set ENV SHTNSKIT_ENABLE_BENCH=true to include heavy benchmarking utilities.
+if get(ENV, "SHTNSKIT_ENABLE_BENCH", "0") in ("1", "true", "yes", "on")
+    try
+        include("benchmarks/benchmarking_suite.jl")
+    catch err
+        @warn "Skipping benchmarking suite include" exception=(err, catch_backtrace())
+    end
+end
 
 # Advanced functionality handled by separate modules
 # (loaded automatically when needed)

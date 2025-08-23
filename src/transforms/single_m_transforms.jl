@@ -334,10 +334,37 @@ end
 Evaluate normalized associated Legendre polynomial for the given configuration.
 """
 function _evaluate_legendre_normalized(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
-    # Use the same normalization as the main transforms
-    plm = _compute_single_legendre_basic(l, m, cost, sint)
-    norm_factor = _get_synthesis_normalization(cfg, l, m)
-    return plm * norm_factor
+    # For Schmidt, use simplified approach that matches C code exactly
+    if cfg.norm == SHT_SCHMIDT
+        # Compute basic Legendre polynomial
+        plm_basic = _compute_single_legendre_basic(l, m, cost, sint)
+        
+        # Apply Schmidt normalization exactly as in C code
+        abs_m = abs(m)
+        
+        # Starting value computation matching C code lines 371-398  
+        factor = T(1.0)  # Y_0^0 = 1 for Schmidt
+        if abs_m > 0
+            factor *= T(0.5)  # mpos_renorm = 0.5 for real transforms with FFTW
+        end
+        
+        # Product ∏(k+0.5)/k for k=1..abs_m
+        for k in 1:abs_m
+            factor *= (T(k) + T(0.5)) / T(k)
+        end
+        
+        factor = sqrt(factor)
+        
+        # Schmidt-specific: divide by sqrt(2m+1) (C code line 430)
+        if abs_m > 0
+            factor /= sqrt(T(2*abs_m + 1))
+        end
+        
+        return plm_basic * factor
+    else
+        # Use recurrence for other normalizations
+        return _compute_normalized_legendre_with_recurrence(cfg, l, m, cost, sint)
+    end
 end
 
 """
@@ -383,12 +410,8 @@ Compute basic (unnormalized) associated Legendre polynomial.
 """
 function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where T
     """
-    Compute associated Legendre polynomial P_l^m(cos θ) using stable recurrence relations.
-    
-    Uses the standard three-term recurrence relations:
-    - P_l^0 recurrence: (2l-1)x P_{l-1}^0 - (l-1) P_{l-2}^0 = l P_l^0
-    - P_m^m initialization: P_m^m = (-1)^m (2m-1)!! sin^m(θ)  
-    - P_l^m recurrence: (2l-1)x P_{l-1}^m - (l+m-1) P_{l-2}^m = (l-m) P_l^m
+    Compute basic (unnormalized) associated Legendre polynomial P_l^m(cos θ).
+    This provides the raw polynomial without spherical harmonic normalization.
     """
     
     # Input validation
@@ -398,14 +421,14 @@ function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where 
     # Handle absolute value of m (symmetry: P_l^{-m} = (-1)^m (l-m)!/(l+m)! P_l^m)
     abs_m = abs(m)
     
-    # Base cases for efficiency
+    # Base cases
     if l == 0
         return (abs_m == 0) ? one(T) : zero(T)
     elseif l == 1
         if abs_m == 0
             return cost
         elseif abs_m == 1
-            return -sint  # Includes Condon-Shortley phase (-1)^m
+            return -sint  # Includes Condon-Shortley phase
         else
             return zero(T)
         end
@@ -417,7 +440,7 @@ function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where 
         p_prev1 = cost          # P_1^0 = cos(θ)
         
         @inbounds for n in 2:l
-            # Recurrence: n P_n^0 = (2n-1) cos(θ) P_{n-1}^0 - (n-1) P_{n-2}^0
+            # Standard recurrence: n P_n^0 = (2n-1) cos(θ) P_{n-1}^0 - (n-1) P_{n-2}^0
             p_curr = (T(2*n - 1) * cost * p_prev1 - T(n - 1) * p_prev2) / T(n)
             p_prev2 = p_prev1
             p_prev1 = p_curr
@@ -426,43 +449,37 @@ function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where 
         return p_prev1
     end
     
-    # For m > 0, use associated Legendre recurrence
-    
-    # Step 1: Compute P_m^m using double factorial formula
-    # P_m^m = (-1)^m (2m-1)!! sin^m(θ)
+    # For m > 0, compute using standard approach
+    # Step 1: P_m^m = (-1)^m (2m-1)!! sin^m(θ)
     pmm = one(T)
-    
-    # Compute (2m-1)!! = 1×3×5×...×(2m-1) efficiently
     @inbounds for i in 1:abs_m
         pmm *= T(2*i - 1)
     end
     
-    # Apply (-1)^m factor and sin^m(θ)
-    pmm *= ((-1)^abs_m) * (sint^abs_m)
+    # Apply Condon-Shortley phase
+    if (abs_m & 1) != 0  # m is odd
+        pmm *= -one(T)
+    end
+    pmm *= (sint^abs_m)
     
     if l == abs_m
         return pmm
     end
     
-    # Step 2: Compute P_{m+1}^m using first recurrence
-    # P_{m+1}^m = cos(θ) (2m+1) P_m^m
+    # Step 2: P_{m+1}^m = cos(θ) (2m+1) P_m^m
     pmp1m = cost * T(2*abs_m + 1) * pmm
     
     if l == abs_m + 1
         return pmp1m
     end
     
-    # Step 3: Use general recurrence for P_l^m with l > m+1
-    # (l-m) P_l^m = (2l-1) cos(θ) P_{l-1}^m - (l+m-1) P_{l-2}^m
-    p_prev2 = pmm      # P_m^m
-    p_prev1 = pmp1m    # P_{m+1}^m
+    # Step 3: Standard recurrence for l > m+1
+    p_prev2 = pmm
+    p_prev1 = pmp1m
     
     @inbounds for n in (abs_m + 2):l
-        # Apply recurrence relation
         numerator = T(2*n - 1) * cost * p_prev1 - T(n + abs_m - 1) * p_prev2
         p_curr = numerator / T(n - abs_m)
-        
-        # Shift for next iteration
         p_prev2 = p_prev1
         p_prev1 = p_curr
     end
@@ -470,60 +487,239 @@ function _compute_single_legendre_basic(l::Int, m::Int, cost::T, sint::T) where 
     return p_prev1
 end
 
+"""
+    _compute_normalized_legendre_with_recurrence(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
+
+Compute normalized associated Legendre polynomial using the exact recurrence coefficients from C code.
+This matches the legendre_precomp() function in sht_legendre.c.
+"""
+function _compute_normalized_legendre_with_recurrence(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
+    abs_m = abs(m)
+    
+    # Base case: Y_0^0
+    if l == 0 && abs_m == 0
+        return _get_synthesis_normalization(cfg, 0, 0)
+    end
+    
+    # For m > l, return zero
+    if abs_m > l
+        return zero(T)
+    end
+    
+    # Compute starting value Y_m^m matching C code exactly
+    if l == abs_m
+        # Get the normalized starting value from our synthesis normalization
+        start_norm = _get_synthesis_normalization(cfg, abs_m, abs_m)
+        
+        # Compute sin^m factor with proper scaling
+        sin_power = (abs_m > 0) ? (sint^abs_m) : one(T)
+        
+        # Apply Condon-Shortley phase
+        cs_phase = ((abs_m & 1) != 0) ? -one(T) : one(T)
+        
+        return start_norm * cs_phase * sin_power
+    end
+    
+    # Precompute all recurrence coefficients as in C code
+    # This implements the exact logic from legendre_precomp()
+    
+    # Storage for coefficients
+    max_coeffs = 2 * (l - abs_m + 1)
+    alm_coeffs = Vector{T}(undef, max_coeffs)
+    
+    # Initialize starting value Y_m^m
+    start_norm = _get_synthesis_normalization(cfg, abs_m, abs_m)
+    
+    # Apply Schmidt correction if needed
+    if cfg.norm == SHT_SCHMIDT && abs_m > 0
+        start_norm /= sqrt(T(2*abs_m + 1))
+    end
+    
+    idx = 1
+    
+    if cfg.norm == SHT_SCHMIDT
+        # Schmidt semi-normalized recurrence (C code lines 428-438)
+        
+        # Y_{m+1}^m coefficient
+        if l > abs_m
+            alm_coeffs[idx] = start_norm
+            alm_coeffs[idx + 1] = sqrt(T(2*abs_m + 1))
+            idx += 2
+        end
+        
+        # Recurrence coefficients for l >= m+2
+        t2 = sqrt(T(2*abs_m + 1))
+        for n in (abs_m + 2):l
+            t1 = sqrt(T((n + abs_m) * (n - abs_m)))
+            alm_coeffs[idx + 1] = T(2*n - 1) / t1  # a_l^m
+            alm_coeffs[idx] = -t2 / t1              # b_l^m  
+            t2 = t1
+            idx += 2
+        end
+        
+    else
+        # Orthonormal or 4π normalized (C code lines 439-449)
+        
+        # Y_{m+1}^m coefficient
+        if l > abs_m
+            alm_coeffs[idx] = start_norm
+            alm_coeffs[idx + 1] = sqrt(T(2*abs_m + 3))
+            idx += 2
+        end
+        
+        # Recurrence coefficients for l >= m+2
+        t2 = T(2*abs_m + 1)
+        for n in (abs_m + 2):l
+            t1 = T((n + abs_m) * (n - abs_m))
+            alm_coeffs[idx + 1] = sqrt(T((2*n + 1) * (2*n - 1)) / t1)  # a_l^m
+            alm_coeffs[idx] = -sqrt(T((2*n + 1) * t2) / T((2*n - 3) * t1))  # b_l^m
+            t2 = t1
+            idx += 2
+        end
+    end
+    
+    # Now apply the recurrence using the precomputed coefficients
+    # This matches the logic in legendre_sphPlm() from C code
+    
+    # Y_m^m
+    sin_power = (abs_m > 0) ? (sint^abs_m) : one(T)
+    cs_phase = ((abs_m & 1) != 0) ? -one(T) : one(T)
+    ymm = start_norm * cs_phase * sin_power
+    
+    if l == abs_m
+        return ymm
+    end
+    
+    # Y_{m+1}^m
+    ymmp1 = alm_coeffs[2] * (cost * ymm)
+    if l == abs_m + 1
+        return ymmp1
+    end
+    
+    # Apply recurrence for l > m+1
+    idx = 3  # Start from third coefficient
+    n = abs_m + 2
+    
+    while n <= l
+        if n == l
+            # Final step
+            result = alm_coeffs[idx + 1] * (cost * ymmp1) + alm_coeffs[idx] * ymm
+            return result
+        else
+            # Intermediate steps  
+            new_ymm = alm_coeffs[idx + 1] * (cost * ymmp1) + alm_coeffs[idx] * ymm
+            new_ymmp1 = alm_coeffs[idx + 3] * (cost * new_ymm) + alm_coeffs[idx + 2] * ymmp1
+            ymm = new_ymm
+            ymmp1 = new_ymmp1
+            n += 2
+            idx += 4
+        end
+    end
+    
+    return ymmp1
+end
+
 # Normalization helper functions
 function _get_analysis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    """Analysis normalization factor for spherical harmonic coefficients."""
+    """Analysis normalization factor for spherical harmonic coefficients matching C code."""
+    
+    # The analysis normalization should properly integrate spherical harmonics
+    # ∫∫ Y_l^m Y_l'^m' sin(θ) dθ dφ = δ_ll' δ_mm' (for orthonormal)
+    
     if cfg.norm == SHT_ORTHONORMAL
-        # Orthonormal: includes factor of 4π for integration
-        factor = T(4π)
-        # Add m-dependent factor for proper orthogonality
-        if m > 0
-            factor *= T(2)  # Real part normalization for m > 0
-        end
-        return factor
+        # Orthonormal: integration should give unity for same (l,m)
+        return T(1)  # The Legendre polynomial normalization handles the rest
+        
     elseif cfg.norm == SHT_FOURPI
-        # 4π normalization convention
-        return T(4π)
+        # 4π normalization: similar to orthonormal but different base scaling  
+        return T(1)
+        
     elseif cfg.norm == SHT_SCHMIDT
         # Schmidt semi-normalized 
-        factor = T(4π)
-        if m > 0
-            # Schmidt normalization removes sqrt(2) for m > 0
-            factor /= sqrt(T(2))
-        end
-        return factor
+        return T(1)  # Same logic - normalization is in the Legendre polynomials
+        
     else # SHT_REAL_NORM
-        # Real normalization (unit sphere integration)
-        return T(4π)
+        # Real normalization
+        return T(1)
     end
 end
 
 function _get_synthesis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
-    """Synthesis normalization factor for spatial reconstruction."""
+    """Synthesis normalization factor for spatial reconstruction matching C implementation."""
+    abs_m = abs(m)
+    
     if cfg.norm == SHT_ORTHONORMAL
-        # Orthonormal: direct coefficient usage
-        return one(T)
+        # Orthonormal normalization matching C code: Y_0^0 = 1/sqrt(4π)
+        if l == 0 && m == 0
+            return T(1) / sqrt(T(4π))
+        end
+        
+        # Base factor for Y_0^0
+        factor = T(0.25) / T(π)  # This is (1/(4π))
+        
+        # Apply mpos_renorm for m > 0 (renormalization factor)
+        if m > 0
+            factor *= T(1.0)  # Use 1.0 for orthonormal (complex convention)
+        end
+        
+        # Compute product for m > 0: ∏_{k=1}^m (k+0.5)/k
+        for k in 1:abs_m
+            factor *= (T(k) + T(0.5)) / T(k)
+        end
+        
+        return sqrt(factor)
+        
     elseif cfg.norm == SHT_FOURPI
-        # 4π: coefficients need to be rescaled
-        factor = T(2*l + 1) / T(4π)
-        if m > 0
-            # Factorial correction for m > 0
-            for k in (l-m+1):(l+m)
-                factor /= T(k)
-            end
-            factor = sqrt(factor)
+        # 4π normalization: Y_0^0 = 1 for Schmidt/4π
+        if l == 0 && m == 0
+            return T(1)
         end
-        return factor
+        
+        factor = T(1)  # Y_0^0 = 1
+        
+        # Apply renormalization for m > 0 (renormalization factor)
+        if m > 0
+            factor *= T(1.0)  # Use 1.0 for 4π/Schmidt (complex convention)
+        end
+        
+        # Same product as orthonormal case
+        for k in 1:abs_m
+            factor *= (T(k) + T(0.5)) / T(k)
+        end
+        
+        return sqrt(factor)
+        
     elseif cfg.norm == SHT_SCHMIDT
-        # Schmidt: includes degree-dependent factor
-        factor = sqrt(T(2*l + 1))
-        if m > 0
-            factor *= sqrt(T(2))  # Schmidt includes sqrt(2) for m > 0
+        # Schmidt semi-normalized matching C code exactly
+        if l == 0 && m == 0
+            return T(1)
         end
-        return factor
+        
+        factor = T(1)  # Y_0^0 = 1 for Schmidt
+        
+        # Apply renormalization for m > 0 (renormalization factor)
+        if m > 0
+            factor *= T(1.0)  # Use 1.0 for 4π/Schmidt (complex convention)
+        end
+        
+        # Product for starting value
+        for k in 1:abs_m
+            factor *= (T(k) + T(0.5)) / T(k)
+        end
+        
+        # Schmidt: divide starting value by sqrt(2m+1)
+        if abs_m > 0
+            factor /= sqrt(T(2*abs_m + 1))
+        end
+        
+        return sqrt(factor)
+        
     else # SHT_REAL_NORM
-        # Real normalization
-        return sqrt(T(2*l + 1) / T(4π))
+        # Real normalization (same as orthonormal)
+        # Create temporary config with orthonormal normalization
+        temp_cfg = deepcopy(cfg)
+        temp_cfg.norm = SHT_ORTHONORMAL
+        return _get_synthesis_normalization(temp_cfg, l, m)
     end
 end
 
@@ -532,25 +728,27 @@ function _get_vector_analysis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int)
     # Vector spherical harmonics need l-dependent scaling
     l_factor = (l == 0) ? T(1) : T(l * (l + 1))
     
-    if cfg.norm == SHT_ORTHONORMAL
-        # Orthonormal with gradient scaling
-        factor = T(4π) / sqrt(l_factor)
-        if m > 0
-            factor *= T(2)  # Real part normalization
-        end
-        return factor
-    elseif cfg.norm == SHT_FOURPI
-        # 4π with vector scaling
-        return T(4π) / sqrt(l_factor)
-    elseif cfg.norm == SHT_SCHMIDT
-        # Schmidt semi-normalized with vector correction
-        factor = T(4π) / sqrt(l_factor)
-        if m > 0
-            factor /= sqrt(T(2))  # Schmidt m > 0 correction
-        end
-        return factor
-    else # SHT_REAL_NORM
-        # Real normalization with vector scaling
-        return T(4π) / sqrt(l_factor)
+    # Get scalar analysis normalization and apply vector scaling
+    scalar_norm = _get_analysis_normalization(cfg, l, m)
+    
+    if l == 0
+        return scalar_norm  # No gradient for l=0
+    else
+        return scalar_norm / sqrt(l_factor)
+    end
+end
+
+function _get_vector_synthesis_normalization(cfg::SHTnsConfig{T}, l::Int, m::Int) where T
+    """Vector field synthesis normalization for spatial reconstruction."""
+    # Vector spherical harmonics need l-dependent scaling  
+    l_factor = (l == 0) ? T(1) : T(l * (l + 1))
+    
+    # Get scalar synthesis normalization and apply vector scaling
+    scalar_norm = _get_synthesis_normalization(cfg, l, m)
+    
+    if l == 0
+        return scalar_norm  # No gradient for l=0
+    else
+        return scalar_norm * sqrt(l_factor)
     end
 end

@@ -275,6 +275,18 @@ function set_grid!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
         
         # Initialize FFT plans for type stability
         ensure_fft_plans!(cfg)
+
+        # Precompute normalized associated Legendre values for all (l,m≥0)
+        # Fill first cfg.nlm columns to match cfg.lm_indices ordering
+        @inbounds for i in 1:nlat
+            θ = cfg.theta_grid[i]
+            cost = cos(θ)
+            sint = sin(θ)
+            for (k, (l, m)) in enumerate(cfg.lm_indices)
+                # _evaluate_legendre_normalized is defined in transforms/single_m_transforms.jl
+                cfg.plm_cache[i, k] = SHTnsKit._evaluate_legendre_normalized(cfg, l, m, cost, sint)
+            end
+        end
         
         return nothing
     end
@@ -369,23 +381,7 @@ end
 
 # Type-stable allocation functions
 
-"""
-    allocate_spectral(cfg::SHTnsConfig{T}) where T
-
-Type-stable spectral coefficient array allocation.
-"""
-function allocate_spectral(cfg::SHTnsConfig{T}) where T
-    @stable Vector{Complex{T}}(undef, cfg.nlm)
-end
-
-"""
-    allocate_spatial(cfg::SHTnsConfig{T}) where T
-
-Type-stable spatial data array allocation.
-"""
-function allocate_spatial(cfg::SHTnsConfig{T}) where T
-    @stable Matrix{T}(undef, cfg.nlat, cfg.nphi)
-end
+ 
 
 """
     validate_config(cfg::SHTnsConfig{T}) where T
@@ -421,24 +417,25 @@ Ensure FFT plans are stored with type-stable keys and values.
 """
 function ensure_fft_plans!(cfg::SHTnsConfig{T}) where T
     @stable begin
-        # Use type-stable keys
-        forward_key = :rfft_plan_forward
-        backward_key = :irfft_plan_backward
-        
         nphi = cfg.nphi
         nphi_modes = nphi ÷ 2 + 1
-        
-        # Create type-stable plans
-        if !haskey(cfg.fft_plans, forward_key)
-            dummy_input = Vector{T}(undef, nphi)
-            cfg.fft_plans[forward_key] = plan_rfft(dummy_input)
+
+        # Real-to-complex and complex-to-real plans (match keys used elsewhere)
+        if !haskey(cfg.fft_plans, :r2c)
+            cfg.fft_plans[:r2c] = plan_rfft(zeros(T, nphi))
         end
-        
-        if !haskey(cfg.fft_plans, backward_key)
-            dummy_input = Vector{Complex{T}}(undef, nphi_modes)
-            cfg.fft_plans[backward_key] = plan_irfft(dummy_input, nphi)
+        if !haskey(cfg.fft_plans, :c2r)
+            cfg.fft_plans[:c2r] = plan_irfft(zeros(Complex{T}, nphi_modes), nphi)
         end
-        
+
+        # Complex-to-complex plans for complex-valued transforms
+        if !haskey(cfg.fft_plans, :c2c_forward)
+            cfg.fft_plans[:c2c_forward] = plan_fft(zeros(Complex{T}, nphi))
+        end
+        if !haskey(cfg.fft_plans, :c2c_backward)
+            cfg.fft_plans[:c2c_backward] = plan_ifft(zeros(Complex{T}, nphi))
+        end
+
         return nothing
     end
 end
@@ -514,12 +511,7 @@ get_nlm(cfg::SHTnsConfig{T}) where T<:AbstractFloat = cfg.nlm::Int
 
 Get (l, m) pair from linear index with type stability.
 """
-function lm_from_index(cfg::SHTnsConfig, idx::Int)::Tuple{Int, Int}
-    @stable begin
-        1 <= idx <= cfg.nlm || throw(BoundsError("Index out of range"))
-        return cfg.lm_indices[idx]::Tuple{Int,Int}
-    end
-end
+ 
 
 """
 Show method for SHTnsConfig to provide useful information.

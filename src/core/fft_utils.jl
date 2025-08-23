@@ -109,7 +109,7 @@ function azimuthal_fft_backward!(cfg::SHTnsConfig{T},
         end
         copyto!(temp_coeffs, view(fourier_coeffs, 1:expected_fc_length))
         result = ifft_plan * temp_coeffs
-        spatial_row .= result
+        spatial_row .= result .* T(nphi)
     else
         result = ifft_plan * view(fourier_coeffs, 1:expected_fc_length)
         spatial_row .= result
@@ -184,10 +184,10 @@ function azimuthal_fft_complex_backward!(cfg::SHTnsConfig{T},
         end
         copyto!(temp_coeffs, view(fourier_coeffs, 1:nphi))
         result = ifft_plan * temp_coeffs
-        spatial_row .= result
+        spatial_row .= result .* T(nphi)
     else
         result = ifft_plan * view(fourier_coeffs, 1:nphi)
-        spatial_row .= result
+        spatial_row .= result .* T(nphi)
     end
     
     return nothing
