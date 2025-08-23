@@ -109,6 +109,74 @@ function shtns_gauss_wts(cfg::SHTConfig, wts)
     return n
 end
 
+# Print configuration
+"""shtns_print_cfg(cfg::SHTConfig)"""
+function shtns_print_cfg(cfg::SHTConfig)
+    println("SHTConfig:")
+    println("  lmax=$(cfg.lmax), mmax=$(cfg.mmax), mres=$(cfg.mres)")
+    println("  nlat=$(cfg.nlat), nlon=$(cfg.nlon)")
+    println("  nlm=$(cfg.nlm), nspat=$(cfg.nspat)")
+    return nothing
+end
+
+# Legendre arrays (spherical-harmonic normalized)
+"""
+    legendre_sphPlm_array(cfg::SHTConfig, lmax::Integer, im::Integer, x::Real, yl::AbstractVector{<:Real}) -> Int
+
+Fill `yl[k]` with normalized P_l^m(x) for l = m..lmax where m = im*mres.
+Returns the number of values written.
+"""
+function legendre_sphPlm_array(cfg::SHTConfig, lmax::Integer, im::Integer, x::Real, yl)
+    lmax = Int(lmax); im = Int(im); x = float(x)
+    m = im * cfg.mres
+    (0 ≤ m ≤ cfg.mmax) || return 0
+    (m ≤ lmax ≤ cfg.lmax) || return 0
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    Plm_row!(P, x, cfg.lmax, m)
+    n = min(length(yl), lmax - m + 1)
+    @inbounds for (k, l) in enumerate(m:(m + n - 1))
+        yl[k] = cfg.Nlm[l+1, m+1] * P[l+1]
+    end
+    return n
+end
+
+"""
+    legendre_sphPlm_deriv_array(cfg::SHTConfig, lmax::Integer, im::Integer, x::Real, sint::Real,
+                                yl::AbstractVector{<:Real}, dyl::AbstractVector{<:Real}) -> Int
+
+Fill `yl` with normalized P_l^m(x) and `dyl` with ∂θ of the normalized functions: `dyl = -sinθ * d/dx (normalized P)`.
+`x = cosθ`, `sint = sinθ`.
+Returns the number of values written.
+"""
+function legendre_sphPlm_deriv_array(cfg::SHTConfig, lmax::Integer, im::Integer, x::Real, sint::Real, yl, dyl)
+    lmax = Int(lmax); im = Int(im); x = float(x); sint = float(sint)
+    m = im * cfg.mres
+    (0 ≤ m ≤ cfg.mmax) || return 0
+    (m ≤ lmax ≤ cfg.lmax) || return 0
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
+    Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
+    n = min(length(yl), length(dyl), lmax - m + 1)
+    @inbounds for (k, l) in enumerate(m:(m + n - 1))
+        N = cfg.Nlm[l+1, m+1]
+        yl[k]  = N * P[l+1]
+        dyl[k] = -sint * N * dPdx[l+1]
+    end
+    return n
+end
+
+# Memory helpers (no-ops in Julia)
+"""shtns_malloc(bytes::Integer) -> Vector{UInt8}"""
+function shtns_malloc(bytes::Integer)
+    return Vector{UInt8}(undef, Int(bytes))
+end
+"""shtns_free(::Any)""" shtns_free(::Any) = nothing
+
+"""shtns_set_many(cfg::SHTConfig, howmany::Integer, spec_dist::Integer) -> Int"""
+function shtns_set_many(::SHTConfig, howmany::Integer, ::Integer)
+    return max(1, Int(howmany))
+end
+
 # Remaining unimplemented APIs
 for fname in (
 )
