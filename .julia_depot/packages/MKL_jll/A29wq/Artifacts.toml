@@ -1,0 +1,19 @@
+[[MKL]]
+arch = "x86_64"
+git-tree-sha1 = "27edf95310a71d47422663c3aea849f56efb1360"
+lazy = true
+libc = "glibc"
+os = "linux"
+
+    [[MKL.download]]
+    sha256 = "12bd4adacecfe20336b7e6aa2c1bf107166e6dc3f0826ed6e5b338f3116f65d8"
+    url = "https://github.com/JuliaBinaryWrappers/MKL_jll.jl/releases/download/MKL-v2025.2.0+0/MKL.v2025.2.0.x86_64-linux-gnu.tar.gz"
+[[MKL]]
+arch = "x86_64"
+git-tree-sha1 = "b0b5d20eac31d0c48f44df672fb8225e8c9a2f01"
+lazy = true
+os = "windows"
+
+    [[MKL.download]]
+    sha256 = "2ee99ae6fca7202bc5eb1cb544b2485ab714214413dd00d9eabeef1ba66057d7"
+    url = "https://github.com/JuliaBinaryWrappers/MKL_jll.jl/releases/download/MKL-v2025.2.0+0/MKL.v2025.2.0.x86_64-w64-mingw32.tar.gz"

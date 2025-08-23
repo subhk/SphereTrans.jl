@@ -31,10 +31,12 @@ function sphtor_to_spat!(cfg::SHTnsConfig{T},
     size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
     size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
     
-    lock(cfg.lock) do
-        _sphtor_to_spat_impl!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
-    end
-    
+    # Route through complex vector synthesis for consistent normalization
+    S_c = SHTnsKit.real_to_complex_coeffs(cfg, sph_coeffs)
+    T_c = SHTnsKit.real_to_complex_coeffs(cfg, tor_coeffs)
+    uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
+    u_theta .= real.(uθ_c)
+    u_phi  .= real.(uφ_c)
     return u_theta, u_phi
 end
 
@@ -62,10 +64,10 @@ function spat_to_sphtor!(cfg::SHTnsConfig{T},
     length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
     
-    lock(cfg.lock) do
-        _spat_to_sphtor_impl!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
-    end
-    
+    # Route through complex vector analysis for consistent normalization
+    S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
+    sph_coeffs .= SHTnsKit.complex_to_real_coeffs(cfg, S_c)
+    tor_coeffs .= SHTnsKit.complex_to_real_coeffs(cfg, T_c)
     return sph_coeffs, tor_coeffs
 end
 
@@ -232,18 +234,8 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
         cfg.fft_plans[Symbol(string(mode_workspace_key) * "_phi")] = phi_mode_data
     end
     
-    # Precompute normalization factor based on C code
-    # Vector transforms need different φ normalization than scalar transforms
-    # Empirical correction factor to match C code exactly: 1.0230 ≈ 1/0.9775594192118134
-    correction_factor = T(1.0230)
-    if cfg.norm == SHT_ORTHONORMAL
-        phi_normalization = T(2π) / (nphi * nphi * T(π)) * correction_factor
-    elseif cfg.norm == SHT_SCHMIDT
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
-    else
-        # For 4π normalization
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
-    end
+    # φ normalization consistent with C (FFT analysis uses 1/NPHI; our θ-weights match scalar path)
+    phi_normalization = T(2π) / nphi
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
         l >= 1 || continue  # Vector modes start from l=1
@@ -277,37 +269,20 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             sph_integral *= phi_normalization
             tor_integral *= phi_normalization
             
-            # Apply Schmidt-specific analysis normalization (2l+1) factor
-            if cfg.norm == SHT_SCHMIDT
-                sph_integral *= T(2*l + 1)
-                tor_integral *= T(2*l + 1)
-            end
-            
-            # For real fields, extract appropriate part and apply final normalization
+            # For real fields, extract appropriate part and apply m>0 doubling
             if m == 0
                 final_sph = real(sph_integral)
                 final_tor = real(tor_integral)
             else
-                # Standard factor of 2 for real transforms + mpos_scale_analys
-                factor = T(2)
-                mpos_scale_analys = T(1)  # C code: mpos_scale_analys = 0.5/0.5 = 1.0
-                factor *= mpos_scale_analys
-                
-                final_sph = real(sph_integral) * factor
-                final_tor = real(tor_integral) * factor
+                final_sph = real(sph_integral) * T(2)
+                final_tor = real(tor_integral) * T(2)
             end
             
-            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
-            # Plus the missing glm factor that accounts for proper Legendre normalization
+            # Apply vector harmonic normalization factor: 1/(l*(l+1))
             vector_norm_factor = T(1) / (l * (l + 1))
             
-            # Apply the missing glm normalization factor based on C code analysis
-            # The C code applies glm[lm0+l-m] * (2*l+1) in glm_analys, but we only apply (2*l+1)
-            # This accounts for the base Legendre recurrence normalization
-            glm_factor = _compute_glm_correction_factor(T, l, m)
-            
-            sph_coeffs[coeff_idx] = final_sph * vector_norm_factor * glm_factor
-            tor_coeffs[coeff_idx] = final_tor * vector_norm_factor * glm_factor
+            sph_coeffs[coeff_idx] = final_sph * vector_norm_factor
+            tor_coeffs[coeff_idx] = final_tor * vector_norm_factor
         end
     end
     
