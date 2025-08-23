@@ -164,6 +164,26 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
 end
 
 """
+    SHsphtor_to_spat_cplx(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix)
+        -> Vt::Matrix{ComplexF64}, Vp::Matrix{ComplexF64}
+
+Complex synthesis wrapper.
+"""
+function SHsphtor_to_spat_cplx(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix)
+    return SHsphtor_to_spat(cfg, Slm, Tlm; real_output=false)
+end
+
+"""
+    spat_cplx_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix{<:Complex}, Vp::AbstractMatrix{<:Complex})
+        -> Slm, Tlm
+
+Complex analysis wrapper.
+"""
+function spat_cplx_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix{<:Complex}, Vp::AbstractMatrix{<:Complex})
+    return spat_to_SHsphtor(cfg, Vt, Vp)
+end
+
+"""
     SHsph_to_spat(cfg::SHTConfig, Slm::AbstractMatrix; real_output::Bool=true)
         -> Vt, Vp
 

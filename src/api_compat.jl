@@ -109,18 +109,57 @@ function shtns_gauss_wts(cfg::SHTConfig, wts)
     return n
 end
 
-# Rotation and special-operator APIs: not yet implemented
+# Remaining unimplemented APIs
 for fname in (
     :SH_Yrotate, :SH_Yrotate90, :SH_Xrotate90,
-    :shtns_rotation_create, :shtns_rotation_destroy,
-    :shtns_rotation_set_angles_ZYZ, :shtns_rotation_set_angles_ZXZ, :shtns_rotation_set_angle_axis,
-    :shtns_rotation_wigner_d_matrix, :shtns_rotation_apply_cplx, :shtns_rotation_apply_real,
-    :spat_cplx_to_SHsphtor, :SHsphtor_to_spat_cplx,
-    
-    :SHsph_to_spat_l, :SHtor_to_spat_l,
-    :SH_to_grad_point, :SHqst_to_point,
-    :shtns_profiling, :shtns_profiling_read_time, :SH_to_spat_time, :spat_to_SH_time)
+    :shtns_rotation_set_angle_axis,
+)
     @eval function ($fname)(args...)
         throw(ErrorException(string($(QuoteNode(Symbol(fname))), " not implemented in pure Julia core yet")))
     end
+end
+
+"""
+    SH_to_spat_time(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Vr::AbstractVector{<:Real}) -> Float64
+
+Timed scalar synthesis; returns elapsed seconds and writes result into `Vr`.
+"""
+function SH_to_spat_time(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Vr::AbstractVector{<:Real})
+    alm_mat = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+    @inbounds for m in 0:cfg.mmax
+        (m % cfg.mres == 0) || continue
+        for l in m:cfg.lmax
+            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1
+            alm_mat[l+1, m+1] = Qlm[lm]
+        end
+    end
+    t = @elapsed f = synthesis(cfg, alm_mat; real_output=true)
+    Vr .= vec(f)
+    return t
+end
+
+"""
+    spat_to_SH_time(cfg::SHTConfig, Vr::AbstractVector{<:Real}, Qlm::AbstractVector{<:Complex}) -> Float64
+
+Timed scalar analysis; returns elapsed seconds and writes result into `Qlm`.
+"""
+function spat_to_SH_time(cfg::SHTConfig, Vr::AbstractVector{<:Real}, Qlm::AbstractVector{<:Complex})
+    f = reshape(Vr, cfg.nlat, cfg.nlon)
+    t = @elapsed alm = analysis(cfg, f)
+    @inbounds for m in 0:cfg.mmax
+        (m % cfg.mres == 0) || continue
+        for l in m:cfg.lmax
+            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1
+            Qlm[lm] = alm[l+1, m+1]
+        end
+    end
+    return t
+end
+
+"""shtns_profiling(cfg, on)"""
+shtns_profiling(::SHTConfig, on::Integer) = nothing
+
+"""shtns_profiling_read_time(cfg, t1::Ref, t2::Ref) -> Float64"""
+function shtns_profiling_read_time(::SHTConfig, t1::Ref{Float64}, t2::Ref{Float64})
+    t1[] = 0.0; t2[] = 0.0; return 0.0
 end

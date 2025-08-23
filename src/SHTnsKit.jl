@@ -27,6 +27,7 @@ export spat_to_SHqst, SHqst_to_spat, spat_cplx_to_SHqst, SHqst_to_spat_cplx
 export SHsphtor_to_spat_l, spat_to_SHsphtor_l, SHsph_to_spat_l, SHtor_to_spat_l
 export spat_to_SHsphtor_ml, SHsphtor_to_spat_ml
 export spat_to_SHqst_l, SHqst_to_spat_l, spat_to_SHqst_ml, SHqst_to_spat_ml
+export SHsphtor_to_spat_cplx, spat_cplx_to_SHsphtor
 export mul_ct_matrix, st_dt_matrix, SH_mul_mx
 export SH_to_lat, SHqst_to_lat
 export SH_Zrotate
