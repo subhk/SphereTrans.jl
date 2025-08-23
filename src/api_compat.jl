@@ -3,7 +3,7 @@ API-compatibility layer that mirrors the C `shtns.h` surface in pure Julia.
 Only a subset is fully implemented today; the rest throw `NotImplementedError`.
 """
 
-const _SHTNS_VERBOSE[] = 0
+const _SHTNS_VERBOSE = Ref(0)
 
 """shtns_verbose(level::Integer)"""
 function shtns_verbose(level::Integer)
@@ -117,7 +117,7 @@ for fname in (
     :shtns_rotation_wigner_d_matrix, :shtns_rotation_apply_cplx, :shtns_rotation_apply_real,
     :mul_ct_matrix, :st_dt_matrix, :SH_mul_mx,
     :spat_cplx_to_SHsphtor, :SHsphtor_to_spat_cplx,
-    :spat_to_SHqst, :SHqst_to_spat, :spat_cplx_to_SHqst, :SHqst_to_spat_cplx,
+    
     :SHsphtor_to_spat_l, :SHsph_to_spat_l, :SHtor_to_spat_l, :spat_to_SHsphtor_l,
     :spat_to_SHqst_l, :SHqst_to_spat_l,
     :spat_to_SHsphtor_ml, :SHsphtor_to_spat_ml, :SHsph_to_spat_ml, :SHtor_to_spat_ml,

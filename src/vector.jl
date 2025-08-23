@@ -66,6 +66,60 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
 end
 
 """
+    SHqst_to_spat(cfg::SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix;
+                   real_output::Bool=true) -> Vr, Vt, Vp
+
+3D synthesis: combine scalar radial (Qlm) with vector tangential (Slm,Tlm).
+"""
+function SHqst_to_spat(cfg::SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
+    Vr = synthesis(cfg, Qlm; real_output=real_output)
+    Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=real_output)
+    return Vr, Vt, Vp
+end
+
+"""
+    spat_to_SHqst(cfg::SHTConfig, Vr::AbstractMatrix, Vt::AbstractMatrix, Vp::AbstractMatrix)
+        -> Qlm, Slm, Tlm
+
+3D analysis: project radial onto scalar Y_lm and tangential onto spheroidal/toroidal.
+"""
+function spat_to_SHqst(cfg::SHTConfig, Vr::AbstractMatrix, Vt::AbstractMatrix, Vp::AbstractMatrix)
+    size(Vr,1) == cfg.nlat && size(Vr,2) == cfg.nlon || throw(DimensionMismatch("Vr dims"))
+    size(Vt,1) == cfg.nlat && size(Vt,2) == cfg.nlon || throw(DimensionMismatch("Vt dims"))
+    size(Vp,1) == cfg.nlat && size(Vp,2) == cfg.nlon || throw(DimensionMismatch("Vp dims"))
+    Qlm = analysis(cfg, Vr)
+    Slm, Tlm = spat_to_SHsphtor(cfg, Vt, Vp)
+    return Qlm, Slm, Tlm
+end
+
+"""
+    SHqst_to_spat_cplx(cfg::SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix)
+        -> Vr::Matrix{ComplexF64}, Vt::Matrix{ComplexF64}, Vp::Matrix{ComplexF64}
+
+Complex 3D synthesis.
+"""
+function SHqst_to_spat_cplx(cfg::SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix)
+    Vr = synthesis(cfg, Qlm; real_output=false)
+    Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=false)
+    return Vr, Vt, Vp
+end
+
+"""
+    spat_cplx_to_SHqst(cfg::SHTConfig, Vr::AbstractMatrix{<:Complex}, Vt::AbstractMatrix{<:Complex}, Vp::AbstractMatrix{<:Complex})
+        -> Qlm, Slm, Tlm
+
+Complex 3D analysis.
+"""
+function spat_cplx_to_SHqst(cfg::SHTConfig, Vr::AbstractMatrix{<:Complex}, Vt::AbstractMatrix{<:Complex}, Vp::AbstractMatrix{<:Complex})
+    size(Vr,1) == cfg.nlat && size(Vr,2) == cfg.nlon || throw(DimensionMismatch("Vr dims"))
+    size(Vt,1) == cfg.nlat && size(Vt,2) == cfg.nlon || throw(DimensionMismatch("Vt dims"))
+    size(Vp,1) == cfg.nlat && size(Vp,2) == cfg.nlon || throw(DimensionMismatch("Vp dims"))
+    Qlm = analysis(cfg, Vr)
+    Slm, Tlm = spat_to_SHsphtor(cfg, Vt, Vp)
+    return Qlm, Slm, Tlm
+end
+
+"""
     spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix)
         -> Slm::Matrix{ComplexF64}, Tlm::Matrix{ComplexF64}
 
