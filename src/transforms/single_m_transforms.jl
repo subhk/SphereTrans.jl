@@ -351,15 +351,19 @@ function _schmidt_legendre_exact_c_reproduction(cfg::SHTnsConfig{T}, l::Int, m::
     abs_m = abs(m)
     
     # Reproduce C code starting value computation (lines 371-398)
-    # Y_0^0 = 1 for Schmidt (line 373)
+    # Y_0^0 = 1 for Schmidt (line 373)  
     t1 = T(1.0)
     
     # Apply mpos_renorm = 0.5 for real transforms (line 378)
-    t1 *= T(0.5)
+    # This is applied once and affects all m values
+    mpos_renorm = T(0.5)  # For real transforms with FFTW
+    t1 *= mpos_renorm
     
     # Product ∏(k+0.5)/k for k=1..abs_m (lines 380-398)
+    # This corresponds to the while loop that increments m
     for k in 1:abs_m
-        t1 *= (T(k) + T(0.5)) / T(k)
+        x = (T(k) + T(0.5)) / T(k)
+        t1 *= x
     end
     
     # t2 = sqrt(t1) with Condon-Shortley phase (lines 395-397)

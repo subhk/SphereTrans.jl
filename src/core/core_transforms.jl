@@ -284,9 +284,13 @@ function _spat_to_sh_impl!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                 # Standard factor of 2 for real transforms (extract real part of complex coeffs)
                 factor = T(2)
                 
-                # For Schmidt, the (2l+1) factor already provides most of the compensation needed
-                # The remaining factor should be exactly mpos_scale_analys = 0.5/mpos_renorm = 1.0
-                # No additional factors needed since (2l+1) handles the main Schmidt normalization
+                # Apply mpos_scale_analys from C code: 0.5/mpos_renorm
+                # For real transforms: mpos_renorm = 0.5, so mpos_scale_analys = 0.5/0.5 = 1.0
+                # But since our synthesis now applies mpos_renorm = 0.5 universally, we need compensation
+                if cfg.norm == SHT_SCHMIDT
+                    mpos_scale_analys = T(0.5) / T(0.5)  # = 1.0, but need 2.0 for compensation
+                    factor *= T(2)  # Compensate for mpos_renorm = 0.5 in synthesis
+                end
                 
                 sh_coeffs[coeff_idx] = real(integral) * factor
             end
