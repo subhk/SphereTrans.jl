@@ -36,7 +36,7 @@ function create_parallel_config(cfg::SHTnsConfig{T}; kwargs...) where T
         error("Parallel operations not available. Ensure MPI is initialized and parallel packages are loaded.")
     end
     
-    include("parallel_matrix_ops.jl")
+    # Parallel matrix operations now handled by extensions
     return ParallelSHTConfig{T}(cfg, comm)
 end
 
