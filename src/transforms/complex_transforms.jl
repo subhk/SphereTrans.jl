@@ -586,10 +586,11 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
                 val_f = zero(Complex{T})
                 val_dt = zero(Complex{T})
                 theta = cfg.theta_grid[i]
+                cost = cos(theta); sint = sin(theta)
                 for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
                     l >= abs(m) || continue
-                    plm = cfg.plm_cache[i, k]
-                    dplm = _plm_dtheta(cfg, l, m, theta, i)
+                    plm = _plm_complex_norm(cfg, l, m, cost, sint)
+                    dplm = _plm_dtheta_complex(cfg, l, m, cost, sint)
                     c = sh_coeffs[coeff_idx]
                     val_f += c * plm
                     val_dt += c * dplm
@@ -607,10 +608,11 @@ function cplx_spatial_derivatives(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector
                 val_f = zero(Complex{T})
                 val_dt = zero(Complex{T})
                 theta = cfg.theta_grid[i]
+                cost = cos(theta); sint = sin(theta)
                 for (coeff_idx, k, l) in groups[m + cfg.mmax + 1]
                     l >= abs(m) || continue
-                    plm = cfg.plm_cache[i, k]
-                    dplm = _plm_dtheta(cfg, l, m, theta, i)
+                    plm = _plm_complex_norm(cfg, l, m, cost, sint)
+                    dplm = _plm_dtheta_complex(cfg, l, m, cost, sint)
                     c = sh_coeffs[coeff_idx]
                     val_f += c * plm
                     val_dt += c * dplm
@@ -705,7 +707,7 @@ function _plm_dtheta(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int
         return zero(T)
     end
     k_lm = _find_plm_index(cfg, l, abs(m))
-    k_lm1 = l-1 >= 0 ? _find_plm_index(cfg, l-1, abs(m)) : 0
+    k_lm1 = (l-1 >= abs(m)) ? _find_plm_index(cfg, l-1, abs(m)) : 0
     Plm = cfg.plm_cache[lat_idx, k_lm]
     Plm1 = k_lm1 == 0 ? zero(T) : cfg.plm_cache[lat_idx, k_lm1]
     x = cos(theta)
@@ -714,6 +716,33 @@ function _plm_dtheta(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int
         return zero(T)
     end
     return (l * x * Plm - (l + abs(m)) * Plm1) / s
+end
+
+"""
+    _plm_dtheta_complex(cfg, l, m, cost, sint)
+
+Derivative ∂θ of normalized associated Legendre for complex harmonics.
+Uses unnormalized recurrence scaled by the complex normalization factor.
+"""
+function _plm_dtheta_complex(cfg::SHTnsConfig{T}, l::Int, m::Int, cost::T, sint::T) where T
+    if l == 0
+        return zero(T)
+    end
+    mm = abs(m)
+    # Unnormalized Plm and Plm1
+    Plm = SHTnsKit._compute_single_legendre_basic(l, mm, cost, sint)
+    Plm1 = (l-1) >= mm ? SHTnsKit._compute_single_legendre_basic(l-1, mm, cost, sint) : zero(T)
+    # Normalization factor N_lm as in _plm_complex_norm
+    den = one(T)
+    for k in (l - mm + 1):(l + mm)
+        den *= T(k)
+    end
+    ratio = inv(den)
+    Nlm = sqrt((T(2l + 1) / T(4π)) * ratio)
+    if abs(sint) < T(1e-12)
+        return zero(T)
+    end
+    return Nlm * (l * cost * Plm - (l + mm) * Plm1) / sint
 end
 
 """
@@ -843,16 +872,18 @@ function cplx_spat_to_sphtor!(cfg::SHTnsConfig{T},
             sθ = sin(θ)
             invs = sθ > 1e-12 ? (one(T)/sθ) : zero(T)
             w = cfg.gauss_weights[i]
-            k = SHTnsKit.find_plm_index(cfg, l, abs(m))
-            Plm = cfg.plm_cache[i, k]
-            # d/dθ P_l^{|m|}(cosθ)
-            dPlm = _plm_dtheta(cfg, l, m, θ, i)
+            cost = cos(θ)
+            Plm = _plm_complex_norm(cfg, l, m, cost, sθ)
+            dPlm = _plm_dtheta_complex(cfg, l, m, cost, sθ)
             uθm = theta_fourier[i, m_idx]
             uφm = phi_fourier[i, m_idx]
             # Projections
             sph_int += (uθm * dPlm + uφm * (Complex{T}(0, m) * Plm * invs)) * w
             tor_int += (uθm * (Complex{T}(0, m) * Plm * invs) - uφm * dPlm) * w
         end
+        # Normalize φ integration to match continuous integral over [0,2π)
+        sph_int *= (T(2π) / nphi)
+        tor_int *= (T(2π) / nphi)
         norm = T(1) / (l * (l + 1))
         S_coeffs[idx] = sph_int * norm
         T_coeffs[idx] = tor_int * norm

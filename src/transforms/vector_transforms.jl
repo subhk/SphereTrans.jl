@@ -16,6 +16,8 @@ function _packed_real_to_complex(cfg::SHTnsConfig{T}, real::AbstractVector{T}) w
     cplx = Vector{Complex{T}}(undef, length(idx_list_cplx))
     fill!(cplx, zero(Complex{T}))
     # Iterate packed real (m≥0)
+    # Map packed real a (cos-only) to canonical complex ±m:
+    # c_{l,m} = a/√2, c_{l,-m} = (-1)^m a/√2 (orthonormal, CS phase)
     for (k, (l, m)) in enumerate(cfg.lm_indices)
         a = real[k]
         if m == 0
@@ -24,9 +26,10 @@ function _packed_real_to_complex(cfg::SHTnsConfig{T}, real::AbstractVector{T}) w
         else
             ip = cmap[(l, m)]
             ineg = cmap[(l, -m)]
-            v = a / sqrt(T(2))
+            s = isodd(m) ? -one(T) : one(T)
+            v = a * inv(sqrt(T(2)))
             cplx[ip] = Complex{T}(v, 0)
-            cplx[ineg] = Complex{T}(v, 0)
+            cplx[ineg] = Complex{T}(s * v, 0)
         end
     end
     return cplx
@@ -41,13 +44,16 @@ function _complex_to_packed_real(cfg::SHTnsConfig{T}, cplx::AbstractVector{Compl
         cmap[(l, m)] = i
     end
     real_out = Vector{T}(undef, cfg.nlm)
+    # Inverse mapping: a = Re(c_m + (-1)^m c_-m)/√2
     for (k, (l, m)) in enumerate(cfg.lm_indices)
         if m == 0
             i0 = cmap[(l, 0)]
             real_out[k] = real(cplx[i0])
         else
             ip = cmap[(l, m)]
-            real_out[k] = sqrt(T(2)) * real(cplx[ip])
+            ineg = cmap[(l, -m)]
+            s = isodd(m) ? -one(T) : one(T)
+            real_out[k] = real(cplx[ip] + s * cplx[ineg]) * inv(sqrt(T(2)))
         end
     end
     return real_out
@@ -85,8 +91,18 @@ function sphtor_to_spat!(cfg::SHTnsConfig{T},
     S_c = _packed_real_to_complex(cfg, sph_coeffs)
     T_c = _packed_real_to_complex(cfg, tor_coeffs)
     uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
-    u_theta .= real.(uθ_c)
-    u_phi  .= real.(uφ_c)
+    # Apply Robert form if enabled (multiply by sinθ)
+    if SHTnsKit.is_robert_form(cfg)
+        nlat = cfg.nlat
+        sines = sin.(cfg.theta_grid)
+        for i in 1:nlat
+            u_theta[i, :] .= real.(uθ_c[i, :]) .* sines[i]
+            u_phi[i,   :] .= real.(uφ_c[i, :]) .* sines[i]
+        end
+    else
+        u_theta .= real.(uθ_c)
+        u_phi  .= real.(uφ_c)
+    end
     return u_theta, u_phi
 end
 
@@ -115,7 +131,22 @@ function spat_to_sphtor!(cfg::SHTnsConfig{T},
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
     
     # Route through complex vector analysis with packed-real <-> complex conversion
-    S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
+    # Apply Robert form if enabled (divide by sinθ before analysis)
+    if SHTnsKit.is_robert_form(cfg)
+        nlat = cfg.nlat
+        sines = sin.(cfg.theta_grid)
+        uθc = Matrix{Complex{T}}(undef, nlat, cfg.nphi)
+        uφc = Matrix{Complex{T}}(undef, nlat, cfg.nphi)
+        for i in 1:nlat
+            s = sines[i]
+            invs = s > 1e-12 ? (one(T)/s) : zero(T)
+            uθc[i, :] = Complex{T}.(u_theta[i, :] .* invs)
+            uφc[i, :] = Complex{T}.(u_phi[i,   :] .* invs)
+        end
+        S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, uθc, uφc)
+    else
+        S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
+    end
     sph_coeffs .= _complex_to_packed_real(cfg, S_c)
     tor_coeffs .= _complex_to_packed_real(cfg, T_c)
     return sph_coeffs, tor_coeffs
