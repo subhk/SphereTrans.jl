@@ -138,7 +138,7 @@ include("profiling.jl")
 include("robert_form.jl")
 include("benchmarking_suite.jl")
  
-include("parallel_integration.jl")
+# Advanced parallel functionality handled by extensions
 include("fast_transforms.jl")
 
 

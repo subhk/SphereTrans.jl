@@ -27,7 +27,6 @@ SHTnsKitParallelExt = ["MPI", "PencilArrays", "PencilFFTs"]
 SHTnsKitZygoteExt = ["Zygote", "ChainRulesCore"]
 
 [compat]
-CUDA = "5"
 ChainRulesCore = "1"
 FFTW = "1.7"
 ForwardDiff = "0.10, 1"
