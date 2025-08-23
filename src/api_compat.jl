@@ -118,7 +118,7 @@ for fname in (
     :spat_cplx_to_SHsphtor, :SHsphtor_to_spat_cplx,
     
     :SHsph_to_spat_l, :SHtor_to_spat_l,
-    :SH_to_grad_point, :SHqst_to_point, :SH_to_lat, :SHqst_to_lat,
+    :SH_to_grad_point, :SHqst_to_point,
     :shtns_profiling, :shtns_profiling_read_time, :SH_to_spat_time, :spat_to_SH_time)
     @eval function ($fname)(args...)
         throw(ErrorException(string($(QuoteNode(Symbol(fname))), " not implemented in pure Julia core yet")))
