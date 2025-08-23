@@ -273,30 +273,31 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             sph_integral *= phi_normalization
             tor_integral *= phi_normalization
             
-            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
-            vector_norm_factor = T(1) / (l * (l + 1))
-            sph_integral *= vector_norm_factor
-            tor_integral *= vector_norm_factor
-            
             # Apply Schmidt-specific analysis normalization (2l+1) factor
             if cfg.norm == SHT_SCHMIDT
                 sph_integral *= T(2*l + 1)
                 tor_integral *= T(2*l + 1)
             end
             
-            # For real fields, extract appropriate part
+            # For real fields, extract appropriate part and apply final normalization
             if m == 0
-                sph_coeffs[coeff_idx] = real(sph_integral)
-                tor_coeffs[coeff_idx] = real(tor_integral)
+                final_sph = real(sph_integral)
+                final_tor = real(tor_integral)
             else
                 # Standard factor of 2 for real transforms + mpos_scale_analys
                 factor = T(2)
                 mpos_scale_analys = T(1)  # C code: mpos_scale_analys = 0.5/0.5 = 1.0
                 factor *= mpos_scale_analys
                 
-                sph_coeffs[coeff_idx] = real(sph_integral) * factor
-                tor_coeffs[coeff_idx] = real(tor_integral) * factor
+                final_sph = real(sph_integral) * factor
+                final_tor = real(tor_integral) * factor
             end
+            
+            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
+            # This is applied last, like in the C code
+            vector_norm_factor = T(1) / (l * (l + 1))
+            sph_coeffs[coeff_idx] = final_sph * vector_norm_factor
+            tor_coeffs[coeff_idx] = final_tor * vector_norm_factor
         end
     end
     
@@ -308,19 +309,108 @@ end
                                  coeff_idx::Int, lat_idx::Int) where T
 
 Compute the theta derivative of associated Legendre polynomial P_l^m(cos θ).
-Uses analytical recurrence:
-∂θ P_l^m(cosθ) = (l*cosθ*P_l^m(cosθ) - (l+m) P_{l-1}^m(cosθ)) / sinθ
+Uses the C code recurrence-based approach for numerical stability.
 """
 function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T,
                                       coeff_idx::Int, lat_idx::Int) where T
-    # Fetch P_l^m and P_{l-1}^m at this latitude
-    Plm = cfg.plm_cache[lat_idx, coeff_idx]
     if l == 0
         return zero(T)
     end
     
+    # Use recurrence-based derivative computation matching C code algorithm
+    # This approach computes derivatives through the same recurrence relations
+    # as used in spat_to_SHst_kernel.c and SHst_to_spat_kernel.c
+    return _compute_recurrence_derivative(cfg, l, abs(m), theta, lat_idx)
+end
+
+"""
+    _compute_recurrence_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int) where T
+
+Compute derivative using the C code recurrence pattern.
+Based on the patterns in spat_to_SHst_kernel.c lines 116, 134 and SHst_to_spat_kernel.c lines 118, 126.
+"""
+function _compute_recurrence_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int) where T
+    cost = cos(theta)
+    sint = sin(theta)
+    
+    if abs(sint) < T(1e-12)
+        return zero(T)
+    end
+    
+    # Get recurrence coefficients from configuration
+    # C code uses al[0], al[1] from shtns->glm_analys array
+    al = cfg.recurrence_coeffs  # This should be precomputed like in C code
+    
+    # Initialize like C code (lines 105-109 in spat_to_SHst_kernel.c)
+    # y0[j] = vall(al[0]) * weight (weight absorbed elsewhere in our case)
+    # dy0[j] = 0.0
+    # y1[j] = (vall(al[1])*y0[j]) * cost[j]  
+    # dy1[j] = (vall(al[1])*y0[j]) * sint[j]
+    
+    y0 = cfg.recurrence_coeffs[1]  # al[0] equivalent
+    dy0 = zero(T)
+    y1 = cfg.recurrence_coeffs[2] * y0 * cost  # al[1]*y0*cos(θ) 
+    dy1 = cfg.recurrence_coeffs[2] * y0 * sint  # al[1]*y0*sin(θ)
+    
+    # Recurrence up to degree l, following C code pattern
+    al_idx = 3  # Start from al[2]
+    current_l = 1
+    
+    # C code recurrence pattern (lines 116, 134):
+    # dy0[j] = vall(al[0])*(cost[j]*dy1[j] + y1[j]*sint[j]) + dy0[j];
+    # dy1[j] = vall(al[1])*(cost[j]*dy0[j] + y0[j]*sint[j]) + dy1[j];
+    while current_l < l
+        if al_idx < length(cfg.recurrence_coeffs)
+            al0 = cfg.recurrence_coeffs[al_idx]
+            al1 = cfg.recurrence_coeffs[al_idx + 1]
+            
+            # Update derivatives using C code recurrence
+            dy0_new = al0 * (cost * dy1 + y1 * sint) + dy0
+            y0_new = al0 * cost * y1 + y0
+            
+            dy1_new = al1 * (cost * dy0_new + y0_new * sint) + dy1  
+            y1_new = al1 * cost * y0_new + y1
+            
+            # Update for next iteration
+            y0, dy0 = y0_new, dy0_new  
+            y1, dy1 = y1_new, dy1_new
+            al_idx += 2
+            current_l += 1
+        else
+            # Fallback to analytical formula if recurrence coeffs not available
+            return _analytical_derivative_fallback(cfg, l, m, theta, lat_idx)
+        end
+    end
+    
+    # Return appropriate derivative based on l parity (C code uses dy0/dy1 alternating)
+    if l % 2 == 1
+        return dy1  # Odd l uses dy1
+    else
+        return dy0  # Even l uses dy0  
+    end
+end
+
+"""
+Fallback analytical derivative computation for cases where recurrence coeffs are unavailable.
+"""
+function _analytical_derivative_fallback(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, lat_idx::Int) where T
+    # Find coefficient index for (l,m)
+    coeff_idx = 0
+    for (idx, (ll, mm)) in enumerate(cfg.lm_indices)
+        if ll == l && mm == m
+            coeff_idx = idx
+            break
+        end
+    end
+    
+    if coeff_idx == 0
+        return zero(T)
+    end
+    
+    # Fetch P_l^m and P_{l-1}^m at this latitude
+    Plm = cfg.plm_cache[lat_idx, coeff_idx]
+    
     # For (l-1, m), we need to check if this is a valid spherical harmonic
-    # since |m| <= l for valid spherical harmonics
     Plm1 = zero(T)
     if l > 1 && abs(m) <= (l-1)
         # Find index for (l-1, m) only if it's valid
