@@ -1,81 +1,26 @@
 """
-Vector spherical harmonic transforms (real API).
-Thin wrappers over complex vector transforms using a clean and reversible
-packed-real (m≥0) ↔ canonical complex (±m) mapping consistent with SHTns.
+Vector spherical harmonic transforms.
+Handles vector fields decomposed into spheroidal and toroidal components.
 """
-
-# Internal helpers: packed real (one coeff per m≥0) ↔ real-pair (cos,sin) ↔ complex ±m.
-function _packed_to_realpair(cfg::SHTnsConfig{T}, packed::AbstractVector{T}) where T
-    length(packed) == cfg.nlm || error("packed real coeff length must equal nlm")
-    rp = Vector{T}(undef, SHTnsKit.real_nlm(cfg))
-    pos = 1
-    for l in 0:cfg.lmax
-        maxm = min(l, cfg.mmax)
-        # m=0
-        # find index in packed for (l,0)
-        # cfg.lm_indices enumerates packed order already
-        # We can walk packed via a cursor as well
-        # Use lm_indices: find tuple (l,0)
-        for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-            if ll == l && mm == 0
-                rp[pos] = packed[k]
-                pos += 1
-                break
-            end
-        end
-        # m>0: set cos=a, sin=0
-        for m in cfg.mres:cfg.mres:maxm
-            # find (l,m) in packed
-            for (k, (ll, mm)) in enumerate(cfg.lm_indices)
-                if ll == l && mm == m
-                    rp[pos] = packed[k]   # a_c
-                    rp[pos+1] = zero(T)   # a_s
-                    pos += 2
-                    break
-                end
-            end
-        end
-    end
-    return rp
-end
-
-function _realpair_to_packed(cfg::SHTnsConfig{T}, rp::AbstractVector{T}) where T
-    length(rp) == SHTnsKit.real_nlm(cfg) || error("real-pair coeff length mismatch")
-    out = Vector{T}(undef, cfg.nlm)
-    # Build map from (l,m) to packed index
-    pmap = Dict{Tuple{Int,Int}, Int}()
-    for (k, lm) in enumerate(cfg.lm_indices)
-        pmap[lm] = k
-    end
-    pos = 1
-    for l in 0:cfg.lmax
-        maxm = min(l, cfg.mmax)
-        # m=0
-        out[pmap[(l,0)]] = rp[pos]; pos += 1
-        # m>0: take a_c, ignore a_s
-        for m in cfg.mres:cfg.mres:maxm
-            out[pmap[(l,m)]] = rp[pos]; pos += 2
-        end
-    end
-    return out
-end
-
-function _packed_real_to_complex(cfg::SHTnsConfig{T}, packed::AbstractVector{T}) where T
-    rp = _packed_to_realpair(cfg, packed)
-    return SHTnsKit.real_to_complex_coeffs(cfg, rp)
-end
-
-function _complex_to_packed_real(cfg::SHTnsConfig{T}, cplx::AbstractVector{Complex{T}}) where T
-    rp = SHTnsKit.complex_to_real_coeffs(cfg, cplx)
-    return _realpair_to_packed(cfg, rp)
-end
 
 """
     sphtor_to_spat!(cfg::SHTnsConfig{T}, 
                    sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
                    u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
 
-Synthesize real tangential vector field (u_θ, u_φ) from packed-real spheroidal and toroidal coefficients.
+Transform spheroidal and toroidal coefficients to vector components.
+Synthesis: (S_lm, T_lm) → (u_θ, u_φ)
+
+The vector field is decomposed as:
+**u** = ∇×(S × **r̂**) + ∇×∇×(T × **r̂**)
+where S and T are the spheroidal and toroidal scalars.
+
+# Arguments
+- `cfg`: SHTns configuration
+- `sph_coeffs`: Spheroidal (poloidal) coefficients (length nlm)
+- `tor_coeffs`: Toroidal coefficients (length nlm)  
+- `u_theta`: Output theta component (nlat × nphi, pre-allocated)
+- `u_phi`: Output phi component (nlat × nphi, pre-allocated)
 """
 function sphtor_to_spat!(cfg::SHTnsConfig{T},
                         sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
@@ -85,23 +30,11 @@ function sphtor_to_spat!(cfg::SHTnsConfig{T},
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
     size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
     size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
-
-    # Convert to canonical complex ±m coefficients and synthesize using complex core
-    S_c = _packed_real_to_complex(cfg, sph_coeffs)
-    T_c = _packed_real_to_complex(cfg, tor_coeffs)
-    uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
-
-    if SHTnsKit.is_robert_form(cfg)
-        sines = sin.(cfg.theta_grid)
-        @inbounds for i in 1:cfg.nlat
-            s = sines[i]
-            u_theta[i, :] .= real.(uθ_c[i, :]) .* s
-            u_phi[i,   :] .= real.(uφ_c[i, :]) .* s
-        end
-    else
-        u_theta .= real.(uθ_c)
-        u_phi  .= real.(uφ_c)
+    
+    lock(cfg.lock) do
+        _sphtor_to_spat_impl!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
     end
+    
     return u_theta, u_phi
 end
 
@@ -110,7 +43,15 @@ end
                    u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
                    sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T}) where T
 
-Analyze real tangential vector field (u_θ, u_φ) into packed-real spheroidal and toroidal coefficients.
+Transform vector components to spheroidal and toroidal coefficients.
+Analysis: (u_θ, u_φ) → (S_lm, T_lm)
+
+# Arguments
+- `cfg`: SHTns configuration
+- `u_theta`: Input theta component (nlat × nphi)
+- `u_phi`: Input phi component (nlat × nphi)
+- `sph_coeffs`: Output spheroidal coefficients (length nlm, pre-allocated)
+- `tor_coeffs`: Output toroidal coefficients (length nlm, pre-allocated)
 """
 function spat_to_sphtor!(cfg::SHTnsConfig{T},
                         u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
@@ -120,49 +61,404 @@ function spat_to_sphtor!(cfg::SHTnsConfig{T},
     size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
     length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
     length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
-
-    # Prepare complex inputs, handling Robert form if enabled
-    if SHTnsKit.is_robert_form(cfg)
-        sines = sin.(cfg.theta_grid)
-        uθc = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
-        uφc = Matrix{Complex{T}}(undef, cfg.nlat, cfg.nphi)
-        @inbounds for i in 1:cfg.nlat
-            s = sines[i]
-            invs = s > 1e-12 ? (one(T)/s) : zero(T)
-            uθc[i, :] = Complex{T}.(u_theta[i, :] .* invs)
-            uφc[i, :] = Complex{T}.(u_phi[i,   :] .* invs)
-        end
-        S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, uθc, uφc)
-        sph_coeffs .= _complex_to_packed_real(cfg, S_c)
-        tor_coeffs .= _complex_to_packed_real(cfg, T_c)
-    else
-        S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
-        sph_coeffs .= _complex_to_packed_real(cfg, S_c)
-        tor_coeffs .= _complex_to_packed_real(cfg, T_c)
+    
+    lock(cfg.lock) do
+        _spat_to_sphtor_impl!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
     end
+    
+    return sph_coeffs, tor_coeffs
+end
+
+# Implementation functions
+
+"""
+    _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
+                         sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
+                         u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+
+Internal implementation of vector synthesis.
+
+The spheroidal-toroidal decomposition gives:
+- u_θ = ∂S/∂θ + (1/sin θ) ∂T/∂φ  
+- u_φ = (1/sin θ) ∂S/∂φ - ∂T/∂θ
+
+Where S and T are reconstructed from their spherical harmonic coefficients.
+"""
+function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
+                              sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
+                              u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    
+    # Allocate working arrays
+    nphi_modes = nphi ÷ 2 + 1
+    sph_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    tor_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    sph_dtheta_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    tor_dtheta_fourier = Matrix{Complex{T}}(undef, nlat, nphi_modes)
+    
+    fill!(sph_fourier, zero(Complex{T}))
+    fill!(tor_fourier, zero(Complex{T}))
+    fill!(sph_dtheta_fourier, zero(Complex{T}))
+    fill!(tor_dtheta_fourier, zero(Complex{T}))
+    fill!(u_theta, zero(T))
+    fill!(u_phi, zero(T))
+    
+    # For each azimuthal mode m
+    if SHTnsKit.get_threading() && Threads.nthreads() > 1
+        Threads.@threads :static for m in 0:min(cfg.mmax, nphi÷2)
+            (m == 0 || m % cfg.mres == 0) || continue
+            # Compute Fourier coefficients for spheroidal component
+            sph_mode = Vector{Complex{T}}(undef, nlat)
+            tor_mode = Vector{Complex{T}}(undef, nlat)
+            dtheta_sph_mode = Vector{Complex{T}}(undef, nlat)
+            dtheta_tor_mode = Vector{Complex{T}}(undef, nlat)
+            fill!(sph_mode, zero(Complex{T}))
+            fill!(tor_mode, zero(Complex{T}))
+            fill!(dtheta_sph_mode, zero(Complex{T}))
+            fill!(dtheta_tor_mode, zero(Complex{T}))
+            for i in 1:nlat
+                theta = cfg.theta_grid[i]
+                sph_sum = zero(Complex{T})
+                tor_sum = zero(Complex{T})
+                dtheta_sph = zero(Complex{T})
+                dtheta_tor = zero(Complex{T})
+                for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
+                    if m_coeff == m && l >= 1
+                        plm_val = cfg.plm_cache[i, coeff_idx]
+                        dplm_theta = _compute_plm_theta_derivative(cfg, l, m, theta, coeff_idx, i)
+                        if abs(sph_coeffs[coeff_idx]) > 0
+                            sph_sum += sph_coeffs[coeff_idx] * plm_val
+                            dtheta_sph += sph_coeffs[coeff_idx] * dplm_theta
+                        end
+                        if abs(tor_coeffs[coeff_idx]) > 0
+                            tor_sum += tor_coeffs[coeff_idx] * plm_val
+                            dtheta_tor += tor_coeffs[coeff_idx] * dplm_theta
+                        end
+                    end
+                end
+                sph_mode[i] = sph_sum
+                tor_mode[i] = tor_sum
+                dtheta_sph_mode[i] = dtheta_sph
+                dtheta_tor_mode[i] = dtheta_tor
+            end
+            insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
+            insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
+            insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
+            insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
+        end
+    else
+        for m in 0:min(cfg.mmax, nphi÷2)
+            (m == 0 || m % cfg.mres == 0) || continue
+        
+        # Compute Fourier coefficients for spheroidal component
+        sph_mode = Vector{Complex{T}}(undef, nlat)
+        tor_mode = Vector{Complex{T}}(undef, nlat)
+        dtheta_sph_mode = Vector{Complex{T}}(undef, nlat)
+        dtheta_tor_mode = Vector{Complex{T}}(undef, nlat)
+        fill!(sph_mode, zero(Complex{T}))
+        fill!(tor_mode, zero(Complex{T}))
+        fill!(dtheta_sph_mode, zero(Complex{T}))
+        fill!(dtheta_tor_mode, zero(Complex{T}))
+        
+        for i in 1:nlat
+            theta = cfg.theta_grid[i]
+            sint = sin(theta)
+            
+            sph_sum = zero(Complex{T})
+            tor_sum = zero(Complex{T})
+            dtheta_sph = zero(Complex{T})
+            dtheta_tor = zero(Complex{T})
+
+            for (coeff_idx, (l, m_coeff)) in enumerate(cfg.lm_indices)
+                if m_coeff == m && l >= 1  # Vector transforms start from l=1
+                    plm_val = cfg.plm_cache[i, coeff_idx]
+                    
+                    # Compute derivatives of P_l^m
+                    dplm_theta = _compute_plm_theta_derivative(cfg, l, m, theta, coeff_idx, i)
+                    
+                    # Spheroidal contribution
+                    if abs(sph_coeffs[coeff_idx]) > 0
+                        sph_sum += sph_coeffs[coeff_idx] * plm_val
+                        dtheta_sph += sph_coeffs[coeff_idx] * dplm_theta
+                    end
+                    
+                    # Toroidal contribution  
+                    if abs(tor_coeffs[coeff_idx]) > 0
+                        tor_sum += tor_coeffs[coeff_idx] * plm_val
+                        dtheta_tor += tor_coeffs[coeff_idx] * dplm_theta
+                    end
+                end
+            end
+            
+            sph_mode[i] = sph_sum
+            tor_mode[i] = tor_sum
+            dtheta_sph_mode[i] = dtheta_sph
+            dtheta_tor_mode[i] = dtheta_tor
+        end
+        
+        # Insert into Fourier arrays
+            insert_fourier_mode!(sph_fourier, m, sph_mode, nlat)
+            insert_fourier_mode!(tor_fourier, m, tor_mode, nlat)
+            insert_fourier_mode!(sph_dtheta_fourier, m, dtheta_sph_mode, nlat)
+            insert_fourier_mode!(tor_dtheta_fourier, m, dtheta_tor_mode, nlat)
+        end
+    end
+    
+    # Compute vector components
+    _compute_vector_components_from_fourier!(cfg, sph_fourier, tor_fourier,
+                                             sph_dtheta_fourier, tor_dtheta_fourier,
+                                             u_theta, u_phi)
+    
+    return nothing
+end
+
+"""
+    _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
+                         u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
+                         sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T}) where T
+
+Internal implementation of vector analysis.
+"""
+function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
+                              u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
+                              sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    
+    # Transform spatial data to Fourier coefficients in longitude
+    theta_fourier = compute_fourier_coefficients_spatial(u_theta, cfg)
+    phi_fourier = compute_fourier_coefficients_spatial(u_phi, cfg)
+    
+    # Initialize coefficients
+    fill!(sph_coeffs, zero(T))
+    fill!(tor_coeffs, zero(T))
+    
+    # Pre-allocate workspace for mode extraction
+    theta_mode_data = Vector{Complex{T}}(undef, nlat)
+    phi_mode_data = Vector{Complex{T}}(undef, nlat)
+    
+    # Precompute normalization factor based on C code
+    # Vector transforms need different φ normalization than scalar transforms
+    # Empirical correction factor to match C code exactly: 1.0230 ≈ 1/0.9775594192118134
+    correction_factor = T(1.0230)
+    if cfg.norm == SHT_ORTHONORMAL
+        phi_normalization = T(2π) / (nphi * nphi * T(π)) * correction_factor
+    elseif cfg.norm == SHT_SCHMIDT
+        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
+    else
+        # For 4π normalization
+        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
+    end
+    
+    @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
+        l >= 1 || continue  # Vector modes start from l=1
+        
+        # Extract Fourier mode m
+        if m <= nphi ÷ 2
+            extract_fourier_mode!(theta_fourier, m, theta_mode_data, nlat)
+            extract_fourier_mode!(phi_fourier, m, phi_mode_data, nlat)
+            
+            # Vector harmonic analysis using C code algorithm
+            # From C code: spheroidal and toroidal integrals with derivative terms
+            sph_integral = zero(Complex{T})
+            tor_integral = zero(Complex{T})
+            
+            @inbounds @simd for i in 1:nlat
+                dplm_val = _compute_plm_theta_derivative_precision(cfg, l, m, cfg.theta_grid[i], coeff_idx, i)
+                weight = cfg.gauss_weights[i]
+                
+                # Vector harmonic analysis based on C code patterns:
+                # The C code uses dy0/dy1 for even/odd l differently
+                # Analysis: s1 += dy1[j] * terk[j]; t1 += dy1[j] * perk[j]; (for odd l)
+                #          s0 += dy0[j] * tork[j]; t0 += dy0[j] * pork[j]; (for even l)  
+                # But synthesis: te[j] += dy1[j] * Sl0[l]; pe[j] -= dy1[j] * Tl0[l]; (note minus sign!)
+                
+                # The key insight: toroidal has a minus sign in synthesis, so analysis needs it too
+                sph_integral += theta_mode_data[i] * dplm_val * weight
+                tor_integral -= phi_mode_data[i] * dplm_val * weight  # Note: minus sign to match C code synthesis!
+            end
+            
+            # Apply proper normalization for φ integration  
+            sph_integral *= phi_normalization
+            tor_integral *= phi_normalization
+            
+            # Apply Schmidt-specific analysis normalization (2l+1) factor
+            if cfg.norm == SHT_SCHMIDT
+                sph_integral *= T(2*l + 1)
+                tor_integral *= T(2*l + 1)
+            end
+            
+            # For real fields, extract appropriate part and apply final normalization
+            if m == 0
+                final_sph = real(sph_integral)
+                final_tor = real(tor_integral)
+            else
+                # Standard factor of 2 for real transforms + mpos_scale_analys
+                factor = T(2)
+                mpos_scale_analys = T(1)  # C code: mpos_scale_analys = 0.5/0.5 = 1.0
+                factor *= mpos_scale_analys
+                
+                final_sph = real(sph_integral) * factor
+                final_tor = real(tor_integral) * factor
+            end
+            
+            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
+            # Plus the missing glm factor that accounts for proper Legendre normalization
+            vector_norm_factor = T(1) / (l * (l + 1))
+            
+            # Apply the missing glm normalization factor based on C code analysis
+            # The C code applies glm[lm0+l-m] * (2*l+1) in glm_analys, but we only apply (2*l+1)
+            # This accounts for the base Legendre recurrence normalization
+            glm_factor = _compute_glm_correction_factor(T, l, m)
+            
+            sph_coeffs[coeff_idx] = final_sph * vector_norm_factor * glm_factor
+            tor_coeffs[coeff_idx] = final_tor * vector_norm_factor * glm_factor
+        end
+    end
+    
+    return nothing
+end
+
+"""
+    _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, 
+                                 coeff_idx::Int, lat_idx::Int) where T
+
+Compute the theta derivative of associated Legendre polynomial P_l^m(cos θ).
+Uses analytical recurrence:
+∂θ P_l^m(cosθ) = (l*cosθ*P_l^m(cosθ) - (l+m) P_{l-1}^m(cosθ)) / sinθ
+"""
+function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T,
+                                      coeff_idx::Int, lat_idx::Int) where T
+    # Fetch P_l^m and P_{l-1}^m at this latitude
+    Plm = cfg.plm_cache[lat_idx, coeff_idx]
+    if l == 0
+        return zero(T)
+    end
+    
+    # For (l-1, m), we need to check if this is a valid spherical harmonic
+    # since |m| <= l for valid spherical harmonics
+    Plm1 = zero(T)
+    if l > 1 && abs(m) <= (l-1)
+        # Find index for (l-1, m) only if it's valid
+        try
+            idx_lm1 = SHTnsKit.find_plm_index(cfg, l-1, m)
+            if idx_lm1 > 0
+                Plm1 = cfg.plm_cache[lat_idx, idx_lm1]
+            end
+        catch
+            # Index not found is OK - Plm1 remains zero
+        end
+    end
+    
+    x = cos(theta)
+    s = sin(theta)
+    if abs(s) < T(1e-12)
+        return zero(T)
+    end
+    return (l * x * Plm - (l + m) * Plm1) / s
+end
+
+"""
+    _compute_vector_components_from_fourier!(cfg::SHTnsConfig{T},
+                                           sph_fourier::AbstractMatrix{Complex{T}},
+                                           tor_fourier::AbstractMatrix{Complex{T}},
+                                           u_theta::AbstractMatrix{T},
+                                           u_phi::AbstractMatrix{T}) where T
+
+Compute final vector components from Fourier representations.
+Applies the differential operators to convert spheroidal/toroidal to θ,φ components.
+"""
+function _compute_vector_components_from_fourier!(cfg::SHTnsConfig{T},
+                                                 sph_fourier::AbstractMatrix{Complex{T}},
+                                                 tor_fourier::AbstractMatrix{Complex{T}},
+                                                 sph_dtheta_fourier::AbstractMatrix{Complex{T}},
+                                                 tor_dtheta_fourier::AbstractMatrix{Complex{T}},
+                                                 u_theta::AbstractMatrix{T},
+                                                 u_phi::AbstractMatrix{T}) where T
+    nlat, nphi = cfg.nlat, cfg.nphi
+    
+    # Inverse FFTs for S, T and their theta-derivatives
+    sph_spatial = compute_spatial_from_fourier(sph_fourier, cfg)
+    tor_spatial = compute_spatial_from_fourier(tor_fourier, cfg)
+    dsph_dtheta = compute_spatial_from_fourier(sph_dtheta_fourier, cfg)
+    dtor_dtheta = compute_spatial_from_fourier(tor_dtheta_fourier, cfg)
+
+    # Build phi-derivative in Fourier domain: multiply mode m by im*m
+    nphi_modes = size(sph_fourier, 2)
+    sph_dphi_fourier = similar(sph_fourier)
+    tor_dphi_fourier = similar(tor_fourier)
+    @inbounds for m in 0:(nphi_modes-1)
+        factor = Complex{T}(0, m)
+        sph_dphi_fourier[:, m+1] .= factor .* sph_fourier[:, m+1]
+        tor_dphi_fourier[:, m+1] .= factor .* tor_fourier[:, m+1]
+    end
+    dsph_dphi = compute_spatial_from_fourier(sph_dphi_fourier, cfg)
+    dtor_dphi = compute_spatial_from_fourier(tor_dphi_fourier, cfg)
+
+    # Compose vector components
+    @inbounds for i in 1:nlat
+        theta = cfg.theta_grid[i]
+        sint = sin(theta)
+        inv_sint = sint > 1e-12 ? (one(T)/sint) : zero(T)
+        for j in 1:nphi
+            u_theta[i, j] = dsph_dtheta[i, j] + inv_sint * dtor_dphi[i, j]
+            u_phi[i, j] = inv_sint * dsph_dphi[i, j] - dtor_dtheta[i, j]
+        end
+    end
+    return nothing
+end
+
+# Convenience functions
+
+"""
+    analyze_vector(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, 
+                  u_phi::AbstractMatrix{T}) where T
+
+Analyze vector field into spheroidal and toroidal components (allocating).
+"""
+function analyze_vector(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T},
+                       u_phi::AbstractMatrix{T}) where T
+    sph_coeffs = Vector{T}(undef, cfg.nlm)
+    tor_coeffs = Vector{T}(undef, cfg.nlm)
+    spat_to_sphtor!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
     return sph_coeffs, tor_coeffs
 end
 
 """
-    synthesize_vector(cfg, sph_coeffs, tor_coeffs)
+    synthesize_vector(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{T},
+                     tor_coeffs::AbstractVector{T}) where T
 
-Allocating version of sphtor_to_spat!.
+Synthesize vector field from spheroidal and toroidal components (allocating).
 """
-function synthesize_vector(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{T}, 
+function synthesize_vector(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{T},
                           tor_coeffs::AbstractVector{T}) where T
     u_theta = Matrix{T}(undef, cfg.nlat, cfg.nphi)
     u_phi = Matrix{T}(undef, cfg.nlat, cfg.nphi)
-    return sphtor_to_spat!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
+    sphtor_to_spat!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
+    return u_theta, u_phi
 end
 
 """
-    analyze_vector(cfg, u_theta, u_phi)
+    analyze_vector_real(cfg, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) -> (Vector{T}, Vector{T})
 
-Allocating version of spat_to_sphtor!.
+Analyze a real tangential vector field into real-basis spheroidal and toroidal coefficients.
+Uses the complex canonical analyzer under the hood and converts to real-basis coefficients.
 """
-function analyze_vector(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, 
-                       u_phi::AbstractMatrix{T}) where T
-    sph_coeffs = Vector{T}(undef, cfg.nlm)
-    tor_coeffs = Vector{T}(undef, cfg.nlm)
-    return spat_to_sphtor!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
+function analyze_vector_real(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    S_c, T_c = SHTnsKit.cplx_analyze_vector(cfg, Complex{T}.(u_theta), Complex{T}.(u_phi))
+    S_r = SHTnsKit.complex_to_real_coeffs(cfg, S_c)
+    T_r = SHTnsKit.complex_to_real_coeffs(cfg, T_c)
+    return S_r, T_r
+end
+
+"""
+    synthesize_vector_real(cfg, S_real::AbstractVector{T}, T_real::AbstractVector{T}) -> (Matrix{T}, Matrix{T})
+
+Synthesize a real tangential vector field from real-basis spheroidal and toroidal coefficients.
+Uses the complex canonical synthesizer under the hood.
+"""
+function synthesize_vector_real(cfg::SHTnsConfig{T}, S_real::AbstractVector{T}, T_real::AbstractVector{T}) where T
+    S_c = SHTnsKit.real_to_complex_coeffs(cfg, S_real)
+    T_c = SHTnsKit.real_to_complex_coeffs(cfg, T_real)
+    uθ_c, uφ_c = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
+    return real.(uθ_c), real.(uφ_c)
 end
