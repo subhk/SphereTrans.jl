@@ -1,13 +1,10 @@
 #!/usr/bin/env julia --startup-file=no --compile=no
 
-using Test
-
-# Load SHTnsKit directly 
+# Test only vector transforms with local SHTnsKit
 include("src/SHTnsKit.jl")
 using .SHTnsKit
+using Test
 using Random
-
-println("Testing vector transforms...")
 
 @testset "Vector transforms: roundtrip" begin
     for (lmax, mmax) in ((4,4), (6,4))
@@ -24,13 +21,8 @@ println("Testing vector transforms...")
                 tor[idx] = randn(rng)
             end
         end
-        println("Created random spheroidal/toroidal coefficients")
-        
         uθ, uϕ = synthesize_vector(cfg, sph, tor)
-        println("Synthesized vector field")
-        
         sph2, tor2 = analyze_vector(cfg, uθ, uϕ)
-        println("Analyzed vector field")
 
         # Ignore l=0 modes (should be zero anyway)
         mask = [l >= 1 for (l, m) in (SHTnsKit.lm_from_index(cfg, i) for i in 1:nlm)]
@@ -43,10 +35,8 @@ println("Testing vector transforms...")
         println("Spheroidal relative error: $(num_s / den_s)")
         println("Toroidal relative error: $(num_t / den_t)")
         
-        @test num_s / den_s < 1.05  # High precision achieved - errors around 0.98-1.02x  
-        @test num_t / den_t < 1.05  # Major improvement from original 20-50x errors
+        @test num_s / den_s < 1e-3
+        @test num_t / den_t < 1e-3
         destroy_config(cfg)
     end
 end
-
-println("Vector transform tests completed!")
