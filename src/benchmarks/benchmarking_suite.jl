@@ -397,41 +397,41 @@ function run_comprehensive_benchmark(;
     all_results = Dict()
     
     # Small problem benchmark
-    println("\n🔹 Small Problem Benchmark (lmax=$lmax_small)")
+    println("\nSmall Problem Benchmark (lmax=$lmax_small)")
     cfg_small = create_gauss_config(Float64, lmax_small, lmax_small, 2*lmax_small+2, 4*lmax_small+1)
     all_results[:small] = benchmark_transform_performance(cfg_small, n_samples=100)
     
     # Medium problem benchmark  
-    println("\n🔹 Medium Problem Benchmark (lmax=$lmax_medium)")
+    println("\nMedium Problem Benchmark (lmax=$lmax_medium)")
     cfg_medium = create_gauss_config(Float64, lmax_medium, lmax_medium, 2*lmax_medium+2, 4*lmax_medium+1)
     all_results[:medium] = benchmark_transform_performance(cfg_medium, n_samples=50)
     
     # Large problem benchmark
     if lmax_large <= 50  # Avoid excessive runtime
-        println("\n🔹 Large Problem Benchmark (lmax=$lmax_large)")
+        println("\nLarge Problem Benchmark (lmax=$lmax_large)")
         cfg_large = create_gauss_config(Float64, lmax_large, lmax_large, 2*lmax_large+2, 4*lmax_large+1)
         all_results[:large] = benchmark_transform_performance(cfg_large, n_samples=20)
     end
     
     # Vector transforms
-    println("\n🔹 Vector Transform Benchmark")
+    println("\nVector Transform Benchmark")
     all_results[:vector] = benchmark_vector_transforms(cfg_medium)
     
     # Scaling analysis
     if include_scaling
-        println("\n🔹 Memory Scaling Analysis")
+        println("\nMemory Scaling Analysis")
         all_results[:scaling] = benchmark_memory_scaling([5, 10, 15, 20, 25, 30])
     end
     
     # Precision comparison
     if include_precision
-        println("\n🔹 Precision Comparison")
+        println("\nPrecision Comparison")
         all_results[:precision] = benchmark_different_precisions()
     end
     
     # Threading performance
     if include_threading && Threads.nthreads() > 1
-        println("\n🔹 Threading Performance")
+        println("\nThreading Performance")
         all_results[:threading] = benchmark_threading_performance(cfg_medium)
     end
     
