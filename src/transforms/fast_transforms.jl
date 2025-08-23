@@ -286,7 +286,8 @@ Optimized spherical harmonic synthesis using fast algorithms.
 """
 function fast_sh_to_spat!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                           spatial_data::AbstractMatrix{T}) where T
-    validate_config_stable(cfg)
+    # Basic validation
+    (cfg.nlat <= 0 || cfg.nphi <= 0) && throw(ArgumentError("Grid dimensions must be positive"))
     
     nlat, nphi = cfg.nlat, cfg.nphi
     nphi_modes = nphi ÷ 2 + 1
@@ -315,7 +316,8 @@ Optimized spherical harmonic analysis using fast algorithms.
 """
 function fast_spat_to_sh!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                           sh_coeffs::AbstractVector{T}) where T
-    validate_config_stable(cfg)
+    # Basic validation
+    (cfg.nlat <= 0 || cfg.nphi <= 0) && throw(ArgumentError("Grid dimensions must be positive"))
     
     # Get fast Legendre data
     legendre_data = get_fast_legendre_data(cfg)

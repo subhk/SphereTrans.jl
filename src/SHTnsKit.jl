@@ -106,8 +106,7 @@ export
     
     
     # Type-stable functions  
-    create_config_stable, set_grid_stable!, allocate_spectral_stable, allocate_spatial_stable,
-    validate_config_stable, nlm_calc_stable, lmidx_stable, compute_legendre_stable,
+    set_grid_stable!,
     
     # Benchmarking suite
     benchmark_transform_performance, benchmark_vector_transforms, benchmark_memory_scaling,

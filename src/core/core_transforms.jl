@@ -45,6 +45,60 @@ function set_grid!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
 end
 
 """
+    set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
+
+Type-stable implementation of grid setup for spherical harmonic transforms.
+This function initializes all grid-dependent quantities for efficient transforms.
+"""
+function set_grid_stable!(cfg::SHTnsConfig{T}, nlat::Int, nphi::Int) where T
+    # Update grid dimensions
+    cfg.nlat = nlat
+    cfg.nphi = nphi
+    
+    # Compute grid points based on grid type
+    if cfg.grid_type == SHT_GAUSS
+        # Gauss-Legendre grid
+        if nlat != length(cfg.gauss_weights)
+            # Recompute Gauss-Legendre quadrature points
+            nodes, weights = compute_gauss_legendre_nodes_weights(nlat, T)
+            empty!(cfg.gauss_nodes)
+            empty!(cfg.gauss_weights)
+            append!(cfg.gauss_nodes, nodes)
+            append!(cfg.gauss_weights, weights)
+        end
+        
+        # Convert Gauss nodes to colatitude θ
+        resize!(cfg.theta_grid, nlat)
+        for (i, x) in enumerate(cfg.gauss_nodes)
+            cfg.theta_grid[i] = acos(x)  # x = cos(θ), so θ = arccos(x)
+        end
+    else
+        # Regular/equiangular grid
+        resize!(cfg.theta_grid, nlat)
+        resize!(cfg.gauss_weights, nlat)
+        
+        for j in 1:nlat
+            cfg.theta_grid[j] = π * (j - 0.5) / nlat  # Equiangular spacing
+            cfg.gauss_weights[j] = T(2π / nphi)       # Simple trapezoid weights
+        end
+    end
+    
+    # Setup longitude grid
+    resize!(cfg.phi_grid, nphi)
+    for k in 1:nphi
+        cfg.phi_grid[k] = T(2π * (k - 1) / nphi)
+    end
+    
+    # Initialize FFT plans for this grid size
+    empty!(cfg.fft_plans)
+    
+    # Invalidate cached Legendre polynomials since grid changed
+    cfg.plm_cache = Matrix{T}(undef, 0, 0)
+    
+    return nothing
+end
+
+"""
     destroy_config(cfg::SHTnsConfig)
 
 Clean up resources associated with a configuration.
@@ -75,7 +129,8 @@ This is the fundamental backward transform: spectral → spatial.
 """
 function sh_to_spat!(cfg::SHTnsConfig{T}, sh_coeffs::AbstractVector{T},
                     spatial_data::AbstractMatrix{T}) where T
-    validate_config_stable(cfg)
+    # Basic validation
+    (cfg.nlat <= 0 || cfg.nphi <= 0) && throw(ArgumentError("Grid dimensions must be positive"))
     length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
     size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
     
@@ -100,7 +155,8 @@ This is the fundamental forward transform: spatial → spectral.
 """
 function spat_to_sh!(cfg::SHTnsConfig{T}, spatial_data::AbstractMatrix{T},
                     sh_coeffs::AbstractVector{T}) where T
-    validate_config_stable(cfg)
+    # Basic validation
+    (cfg.nlat <= 0 || cfg.nphi <= 0) && throw(ArgumentError("Grid dimensions must be positive"))
     size(spatial_data) == (cfg.nlat, cfg.nphi) || throw(DimensionMismatch("spatial_data size $(size(spatial_data)) must be ($(cfg.nlat), $(cfg.nphi))"))
     length(sh_coeffs) == cfg.nlm || throw(DimensionMismatch("sh_coeffs length $(length(sh_coeffs)) must equal nlm $(cfg.nlm)"))
     
