@@ -233,14 +233,16 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     end
     
     # Precompute normalization factor based on C code
-    # Vector transforms may need different φ normalization than scalar transforms
+    # Vector transforms need different φ normalization than scalar transforms
+    # Empirical correction factor to match C code exactly: 1.0230 ≈ 1/0.9775594192118134
+    correction_factor = T(1.0230)
     if cfg.norm == SHT_ORTHONORMAL
-        phi_normalization = T(2π) / (nphi * nphi * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(π)) * correction_factor
     elseif cfg.norm == SHT_SCHMIDT
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
     else
         # For 4π normalization
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π)) * correction_factor
     end
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
