@@ -151,7 +151,7 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
                             tor_coeff = tor_coeffs[coeff_idx]
                             
                             theta_value += sph_coeff * dplm_val
-                            phi_value += tor_coeff * dplm_val
+                            phi_value -= tor_coeff * dplm_val  # Note: minus sign to match C code
                         end
                     end
                     theta_fourier[i, m_col] = theta_value
@@ -172,7 +172,7 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
                             tor_coeff = tor_coeffs[coeff_idx] * scale_factor
                             
                             theta_value += sph_coeff * dplm_val
-                            phi_value += tor_coeff * dplm_val
+                            phi_value -= tor_coeff * dplm_val  # Note: minus sign to match C code
                         end
                     end
                     theta_fourier[i, m_col] = theta_value
@@ -263,10 +263,14 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
                 weight = cfg.gauss_weights[i]
                 
                 # Vector harmonic analysis based on C code patterns:
-                # s1 += dy1[j] * terk[j];  // Spheroidal from d/dθ(P_l^m) × θ-component
-                # t1 += dy1[j] * perk[j];  // Toroidal from d/dθ(P_l^m) × φ-component
+                # The C code uses dy0/dy1 for even/odd l differently
+                # Analysis: s1 += dy1[j] * terk[j]; t1 += dy1[j] * perk[j]; (for odd l)
+                #          s0 += dy0[j] * tork[j]; t0 += dy0[j] * pork[j]; (for even l)  
+                # But synthesis: te[j] += dy1[j] * Sl0[l]; pe[j] -= dy1[j] * Tl0[l]; (note minus sign!)
+                
+                # The key insight: toroidal has a minus sign in synthesis, so analysis needs it too
                 sph_integral += theta_mode_data[i] * dplm_val * weight
-                tor_integral += phi_mode_data[i] * dplm_val * weight
+                tor_integral -= phi_mode_data[i] * dplm_val * weight  # Note: minus sign to match C code synthesis!
             end
             
             # Apply proper normalization for φ integration  
