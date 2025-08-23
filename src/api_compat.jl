@@ -115,7 +115,6 @@ for fname in (
     :shtns_rotation_create, :shtns_rotation_destroy,
     :shtns_rotation_set_angles_ZYZ, :shtns_rotation_set_angles_ZXZ, :shtns_rotation_set_angle_axis,
     :shtns_rotation_wigner_d_matrix, :shtns_rotation_apply_cplx, :shtns_rotation_apply_real,
-    :mul_ct_matrix, :st_dt_matrix, :SH_mul_mx,
     :spat_cplx_to_SHsphtor, :SHsphtor_to_spat_cplx,
     
     :SHsph_to_spat_l, :SHtor_to_spat_l,
