@@ -111,8 +111,6 @@ end
 
 # Remaining unimplemented APIs
 for fname in (
-    :SH_Yrotate, :SH_Yrotate90, :SH_Xrotate90,
-    :shtns_rotation_set_angle_axis,
 )
     @eval function ($fname)(args...)
         throw(ErrorException(string($(QuoteNode(Symbol(fname))), " not implemented in pure Julia core yet")))
