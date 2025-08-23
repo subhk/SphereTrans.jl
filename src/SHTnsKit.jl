@@ -127,7 +127,11 @@ export
     
     # Non-blocking parallel operations
     async_parallel_costheta_operator!, pipeline_parallel_operators!,
-    benchmark_async_vs_sync_parallel
+    benchmark_async_vs_sync_parallel,
+    
+    # Fast transform algorithms
+    fast_sh_to_spat!, fast_spat_to_sh!, get_fast_legendre_data,
+    fast_legendre_synthesis!, fast_legendre_analysis!
 
 include("types_optimized.jl")
 include("gauss_legendre.jl") 
@@ -152,6 +156,7 @@ include("parallel_matrix_ops.jl")
 include("parallel_integration.jl")
 include("advanced_optimizations.jl")
 include("nonblocking_parallel_ops.jl")
+include("fast_transforms.jl")
 
 
 function __init__()

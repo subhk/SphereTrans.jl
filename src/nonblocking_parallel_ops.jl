@@ -7,6 +7,19 @@ and maximize parallel efficiency through overlapped computation and communicatio
 Note: Requires MPI, PencilArrays, and PencilFFTs packages for full functionality.
 """
 
+# Core data structures for async operations
+"""
+Handle for managing asynchronous parallel operations with computation/communication overlap.
+"""
+struct AsyncOperationHandle
+    operation_id::Int
+    completion_status::Ref{Bool}
+    start_time::Float64
+    estimated_completion_time::Float64
+    
+    AsyncOperationHandle(op_id::Int) = new(op_id, Ref(false), time(), 0.0)
+end
+
 # Placeholder async communication handle - actual implementation in extension
 mutable struct AsyncCommHandle{T}
     stub::Bool
