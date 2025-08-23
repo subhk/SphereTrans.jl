@@ -3,6 +3,83 @@ Vector spherical harmonic transforms.
 Handles vector fields decomposed into spheroidal and toroidal components.
 """
 
+# One-time calibration to align packed real (m≥0) ↔ canonical complex (±m)
+# mapping with the effective normalization of the complex vector core.
+function _get_vector_mapping_scale!(cfg::SHTnsConfig{T}) where T
+    key = :vec_mapping_scale
+    if haskey(cfg.fft_plans, key)
+        return cfg.fft_plans[key]::Vector{T}
+    end
+    nlat, nphi = cfg.nlat, cfg.nphi
+    nlm = cfg.nlm
+    scales = ones(T, nlm)
+    # Work arrays
+    uθ = Matrix{Complex{T}}(undef, nlat, nphi)
+    uφ = similar(uθ)
+    cplx_len = SHTnsKit._cplx_nlm(cfg)
+    S_c = Vector{Complex{T}}(undef, cplx_len)
+    T_c = Vector{Complex{T}}(undef, cplx_len)
+    S_rec = Vector{Complex{T}}(undef, cplx_len)
+    T_rec = Vector{Complex{T}}(undef, cplx_len)
+    # Complex (l,m) index map
+    idx_list_cplx = SHTnsKit._cplx_lm_indices(cfg)
+    cmap = Dict{Tuple{Int,Int}, Int}()
+    for (i, (ll, mm)) in enumerate(idx_list_cplx)
+        cmap[(ll, mm)] = i
+    end
+    for k in 1:nlm
+        l, m = SHTnsKit.lm_from_index(cfg, k)
+        l >= 1 || continue
+        # Calibrate S channel: construct complex delta without using converters
+        fill!(S_c, zero(Complex{T}))
+        fill!(T_c, zero(Complex{T}))
+        if m == 0
+            S_c[cmap[(l, 0)]] = one(T)
+        else
+            s = isodd(m) ? -one(T) : one(T)
+            v = inv(sqrt(T(2)))
+            S_c[cmap[(l, m)]] = Complex{T}(v, 0)
+            S_c[cmap[(l, -m)]] = Complex{T}(s * v, 0)
+        end
+        # synthesize -> analyze
+        uθc, uφc = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
+        fill!(S_rec, zero(Complex{T})); fill!(T_rec, zero(Complex{T}))
+        SHTnsKit.cplx_spat_to_sphtor!(cfg, uθc, uφc, S_rec, T_rec)
+        # Back to packed for S channel
+        ratio_s = if m == 0
+            real(S_rec[cmap[(l, 0)]])
+        else
+            s = isodd(m) ? -one(T) : one(T)
+            real(S_rec[cmap[(l, m)]] + s * S_rec[cmap[(l, -m)]]) * inv(sqrt(T(2)))
+        end
+        # Calibrate T channel
+        fill!(S_c, zero(Complex{T})); fill!(T_c, zero(Complex{T}))
+        if m == 0
+            T_c[cmap[(l, 0)]] = one(T)
+        else
+            s = isodd(m) ? -one(T) : one(T)
+            v = inv(sqrt(T(2)))
+            T_c[cmap[(l, m)]] = Complex{T}(v, 0)
+            T_c[cmap[(l, -m)]] = Complex{T}(s * v, 0)
+        end
+        uθc, uφc = SHTnsKit.cplx_synthesize_vector(cfg, S_c, T_c)
+        fill!(S_rec, zero(Complex{T})); fill!(T_rec, zero(Complex{T}))
+        SHTnsKit.cplx_spat_to_sphtor!(cfg, uθc, uφc, S_rec, T_rec)
+        ratio_t = if m == 0
+            real(T_rec[cmap[(l, 0)]])
+        else
+            s = isodd(m) ? -one(T) : one(T)
+            real(T_rec[cmap[(l, m)]] + s * T_rec[cmap[(l, -m)]]) * inv(sqrt(T(2)))
+        end
+        ratio = (abs(ratio_s) > abs(ratio_t)) ? ratio_s : ratio_t
+        if ratio != 0
+            scales[k] = one(T) / ratio
+        end
+    end
+    cfg.fft_plans[key] = scales
+    return scales
+end
+
 # Internal helpers to convert between packed real (m≥0, length = cfg.nlm) and
 # canonical complex coefficients (±m, length = _cplx_nlm(cfg)).
 function _packed_real_to_complex(cfg::SHTnsConfig{T}, real::AbstractVector{T}) where T
@@ -16,18 +93,18 @@ function _packed_real_to_complex(cfg::SHTnsConfig{T}, real::AbstractVector{T}) w
     cplx = Vector{Complex{T}}(undef, length(idx_list_cplx))
     fill!(cplx, zero(Complex{T}))
     # Iterate packed real (m≥0)
-    # Map packed real a (cos-only) to canonical complex ±m:
-    # c_{l,m} = a/√2, c_{l,-m} = (-1)^m a/√2 (orthonormal, CS phase)
+    # Map packed real a (cos-only) to canonical complex ±m with calibration scale
+    scales = _get_vector_mapping_scale!(cfg)
     for (k, (l, m)) in enumerate(cfg.lm_indices)
         a = real[k]
         if m == 0
             i0 = cmap[(l, 0)]
-            cplx[i0] = Complex{T}(a, 0)
+            cplx[i0] = Complex{T}(a * scales[k], 0)
         else
             ip = cmap[(l, m)]
             ineg = cmap[(l, -m)]
             s = isodd(m) ? -one(T) : one(T)
-            v = a * inv(sqrt(T(2)))
+            v = (a * scales[k]) * inv(sqrt(T(2)))
             cplx[ip] = Complex{T}(v, 0)
             cplx[ineg] = Complex{T}(s * v, 0)
         end
@@ -44,16 +121,20 @@ function _complex_to_packed_real(cfg::SHTnsConfig{T}, cplx::AbstractVector{Compl
         cmap[(l, m)] = i
     end
     real_out = Vector{T}(undef, cfg.nlm)
-    # Inverse mapping: a = Re(c_m + (-1)^m c_-m)/√2
+    # Inverse mapping with calibration: a = Re(c_m + (-1)^m c_-m)/(√2 * scale)
+    scales = _get_vector_mapping_scale!(cfg)
     for (k, (l, m)) in enumerate(cfg.lm_indices)
         if m == 0
             i0 = cmap[(l, 0)]
-            real_out[k] = real(cplx[i0])
+            s = scales[k]
+            real_out[k] = s == 0 ? zero(T) : real(cplx[i0]) / s
         else
             ip = cmap[(l, m)]
             ineg = cmap[(l, -m)]
             s = isodd(m) ? -one(T) : one(T)
-            real_out[k] = real(cplx[ip] + s * cplx[ineg]) * inv(sqrt(T(2)))
+            scale = scales[k]
+            val = real(cplx[ip] + s * cplx[ineg]) * inv(sqrt(T(2)))
+            real_out[k] = scale == 0 ? zero(T) : (val / scale)
         end
     end
     return real_out
