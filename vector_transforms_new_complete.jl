@@ -233,14 +233,13 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     end
     
     # Precompute normalization factor based on C code
-    # Vector transforms may need different φ normalization than scalar transforms
     if cfg.norm == SHT_ORTHONORMAL
-        phi_normalization = T(2π) / (nphi * nphi * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi)
     elseif cfg.norm == SHT_SCHMIDT
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
     else
         # For 4π normalization
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
     end
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
@@ -270,11 +269,6 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             # Apply proper normalization for φ integration  
             sph_integral *= phi_normalization
             tor_integral *= phi_normalization
-            
-            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
-            vector_norm_factor = T(1) / (l * (l + 1))
-            sph_integral *= vector_norm_factor
-            tor_integral *= vector_norm_factor
             
             # Apply Schmidt-specific analysis normalization (2l+1) factor
             if cfg.norm == SHT_SCHMIDT

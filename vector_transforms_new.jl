@@ -1,75 +1,31 @@
 """
 Vector spherical harmonic transforms.
 Handles vector fields decomposed into spheroidal and toroidal components.
+Based on C code algorithms from SHTns library.
 """
 
 """
-    sphtor_to_spat!(cfg::SHTnsConfig{T}, 
-                   sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
-                   u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
+    _compute_plm_theta_derivative_cached(cfg::SHTnsConfig{T}, l::Int, m::Int, 
+                                       lat_idx::Int, coeff_idx::Int) where T
 
-Transform spheroidal and toroidal coefficients to vector components.
-Synthesis: (S_lm, T_lm) → (u_θ, u_φ)
-
-The vector field is decomposed as:
-**u** = ∇×(S × **r̂**) + ∇×∇×(T × **r̂**)
-where S and T are the spheroidal and toroidal scalars.
-
-# Arguments
-- `cfg`: SHTns configuration
-- `sph_coeffs`: Spheroidal (poloidal) coefficients (length nlm)
-- `tor_coeffs`: Toroidal coefficients (length nlm)  
-- `u_theta`: Output theta component (nlat × nphi, pre-allocated)
-- `u_phi`: Output phi component (nlat × nphi, pre-allocated)
+Compute the theta derivative of associated Legendre polynomial P_l^m(cos θ) efficiently.
+Uses cached values when possible.
 """
-function sphtor_to_spat!(cfg::SHTnsConfig{T},
-                        sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T},
-                        u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T}) where T
-    validate_config(cfg)
-    length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
-    length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
-    size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
-    size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
-    
-    lock(cfg.lock) do
-        _sphtor_to_spat_impl!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
+function _compute_plm_theta_derivative_cached(cfg::SHTnsConfig{T}, l::Int, m::Int, 
+                                            lat_idx::Int, coeff_idx::Int) where T
+    # Check if we have a cached derivative
+    deriv_cache_key = :plm_derivatives
+    if haskey(cfg.fft_plans, deriv_cache_key)
+        deriv_cache = cfg.fft_plans[deriv_cache_key]::Matrix{T}
+        if size(deriv_cache) == size(cfg.plm_cache)
+            return deriv_cache[lat_idx, coeff_idx]
+        end
     end
     
-    return u_theta, u_phi
+    # Compute derivative using recurrence relation
+    theta = cfg.theta_grid[lat_idx]
+    return _compute_plm_theta_derivative(cfg, l, m, theta, coeff_idx, lat_idx)
 end
-
-"""
-    spat_to_sphtor!(cfg::SHTnsConfig{T},
-                   u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
-                   sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T}) where T
-
-Transform vector components to spheroidal and toroidal coefficients.
-Analysis: (u_θ, u_φ) → (S_lm, T_lm)
-
-# Arguments
-- `cfg`: SHTns configuration
-- `u_theta`: Input theta component (nlat × nphi)
-- `u_phi`: Input phi component (nlat × nphi)
-- `sph_coeffs`: Output spheroidal coefficients (length nlm, pre-allocated)
-- `tor_coeffs`: Output toroidal coefficients (length nlm, pre-allocated)
-"""
-function spat_to_sphtor!(cfg::SHTnsConfig{T},
-                        u_theta::AbstractMatrix{T}, u_phi::AbstractMatrix{T},
-                        sph_coeffs::AbstractVector{T}, tor_coeffs::AbstractVector{T}) where T
-    validate_config(cfg)
-    size(u_theta) == (cfg.nlat, cfg.nphi) || error("u_theta size mismatch")
-    size(u_phi) == (cfg.nlat, cfg.nphi) || error("u_phi size mismatch")
-    length(sph_coeffs) == cfg.nlm || error("sph_coeffs length must equal nlm")
-    length(tor_coeffs) == cfg.nlm || error("tor_coeffs length must equal nlm")
-    
-    lock(cfg.lock) do
-        _spat_to_sphtor_impl!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
-    end
-    
-    return sph_coeffs, tor_coeffs
-end
-
-# Implementation functions
 
 """
     _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
@@ -117,7 +73,7 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
     if haskey(cfg.fft_plans, mapping_key)
         m_indices = cfg.fft_plans[mapping_key]::Dict{Int, Vector{Int}}
     else
-        m_indices = _build_m_coefficient_mapping(cfg)
+        m_indices = SHTnsKit._build_m_coefficient_mapping(cfg)
         cfg.fft_plans[mapping_key] = m_indices
     end
     
@@ -145,8 +101,7 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
                     @simd for coeff_idx in coeff_indices
                         l, m_coeff = cfg.lm_indices[coeff_idx]
                         if l >= 1  # Vector modes start from l=1
-                            theta = cfg.theta_grid[i]
-                            dplm_val = _compute_plm_theta_derivative(cfg, l, m_coeff, theta, coeff_idx, i)
+                            dplm_val = _compute_plm_theta_derivative_cached(cfg, l, m_coeff, i, coeff_idx)
                             sph_coeff = sph_coeffs[coeff_idx]
                             tor_coeff = tor_coeffs[coeff_idx]
                             
@@ -166,8 +121,7 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
                     @simd for coeff_idx in coeff_indices
                         l, m_coeff = cfg.lm_indices[coeff_idx]
                         if l >= 1  # Vector modes start from l=1
-                            theta = cfg.theta_grid[i]
-                            dplm_val = _compute_plm_theta_derivative(cfg, l, m_coeff, theta, coeff_idx, i)
+                            dplm_val = _compute_plm_theta_derivative_cached(cfg, l, m_coeff, i, coeff_idx)
                             sph_coeff = sph_coeffs[coeff_idx] * scale_factor
                             tor_coeff = tor_coeffs[coeff_idx] * scale_factor
                             
@@ -183,8 +137,8 @@ function _sphtor_to_spat_impl!(cfg::SHTnsConfig{T},
     end
     
     # Transform from Fourier coefficients to spatial domain
-    theta_temp = compute_spatial_from_fourier(theta_fourier, cfg)
-    phi_temp = compute_spatial_from_fourier(phi_fourier, cfg)
+    theta_temp = SHTnsKit.compute_spatial_from_fourier(theta_fourier, cfg)
+    phi_temp = SHTnsKit.compute_spatial_from_fourier(phi_fourier, cfg)
     
     # FFTW irfft scaling: Need to multiply by nphi to get correct amplitude
     u_theta .= theta_temp .* T(nphi)
@@ -209,8 +163,8 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     nlat, nphi = cfg.nlat, cfg.nphi
     
     # Transform spatial data to Fourier coefficients in longitude
-    theta_fourier = compute_fourier_coefficients_spatial(u_theta, cfg)
-    phi_fourier = compute_fourier_coefficients_spatial(u_phi, cfg)
+    theta_fourier = SHTnsKit.compute_fourier_coefficients_spatial(u_theta, cfg)
+    phi_fourier = SHTnsKit.compute_fourier_coefficients_spatial(u_phi, cfg)
     
     # Initialize coefficients
     fill!(sph_coeffs, zero(T))
@@ -233,14 +187,13 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     end
     
     # Precompute normalization factor based on C code
-    # Vector transforms may need different φ normalization than scalar transforms
     if cfg.norm == SHT_ORTHONORMAL
-        phi_normalization = T(2π) / (nphi * nphi * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi)
     elseif cfg.norm == SHT_SCHMIDT
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
     else
         # For 4π normalization
-        phi_normalization = T(2π) / (nphi * nphi * T(4π) * T(π))  # Additional π factor for vector transforms
+        phi_normalization = T(2π) / (nphi * nphi * T(4π))
     end
     
     @inbounds for (coeff_idx, (l, m)) in enumerate(cfg.lm_indices)
@@ -248,8 +201,8 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
         
         # Extract Fourier mode m
         if m <= nphi ÷ 2
-            extract_fourier_mode!(theta_fourier, m, theta_mode_data, nlat)
-            extract_fourier_mode!(phi_fourier, m, phi_mode_data, nlat)
+            SHTnsKit.extract_fourier_mode!(theta_fourier, m, theta_mode_data, nlat)
+            SHTnsKit.extract_fourier_mode!(phi_fourier, m, phi_mode_data, nlat)
             
             # Vector harmonic analysis using C code algorithm
             # From C code: spheroidal and toroidal integrals with derivative terms
@@ -257,7 +210,7 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             tor_integral = zero(Complex{T})
             
             @inbounds @simd for i in 1:nlat
-                dplm_val = _compute_plm_theta_derivative(cfg, l, m, cfg.theta_grid[i], coeff_idx, i)
+                dplm_val = _compute_plm_theta_derivative_cached(cfg, l, m, i, coeff_idx)
                 weight = cfg.gauss_weights[i]
                 
                 # Vector harmonic analysis based on C code patterns:
@@ -270,11 +223,6 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
             # Apply proper normalization for φ integration  
             sph_integral *= phi_normalization
             tor_integral *= phi_normalization
-            
-            # Apply vector harmonic normalization factor from C code: l_2[l] = 1/(l*(l+1))
-            vector_norm_factor = T(1) / (l * (l + 1))
-            sph_integral *= vector_norm_factor
-            tor_integral *= vector_norm_factor
             
             # Apply Schmidt-specific analysis normalization (2l+1) factor
             if cfg.norm == SHT_SCHMIDT
@@ -299,69 +247,4 @@ function _spat_to_sphtor_impl!(cfg::SHTnsConfig{T},
     end
     
     return nothing
-end
-
-"""
-    _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T, 
-                                 coeff_idx::Int, lat_idx::Int) where T
-
-Compute the theta derivative of associated Legendre polynomial P_l^m(cos θ).
-Uses analytical recurrence:
-∂θ P_l^m(cosθ) = (l*cosθ*P_l^m(cosθ) - (l+m) P_{l-1}^m(cosθ)) / sinθ
-"""
-function _compute_plm_theta_derivative(cfg::SHTnsConfig{T}, l::Int, m::Int, theta::T,
-                                      coeff_idx::Int, lat_idx::Int) where T
-    # Fetch P_l^m and P_{l-1}^m at this latitude
-    Plm = cfg.plm_cache[lat_idx, coeff_idx]
-    if l == 0
-        return zero(T)
-    end
-    
-    # For (l-1, m), we need to check if this is a valid spherical harmonic
-    # since |m| <= l for valid spherical harmonics
-    Plm1 = zero(T)
-    if l > 1 && abs(m) <= (l-1)
-        # Find index for (l-1, m) only if it's valid
-        try
-            idx_lm1 = SHTnsKit.find_plm_index(cfg, l-1, m)
-            if idx_lm1 > 0
-                Plm1 = cfg.plm_cache[lat_idx, idx_lm1]
-            end
-        catch
-            # Index not found is OK - Plm1 remains zero
-        end
-    end
-    
-    x = cos(theta)
-    s = sin(theta)
-    if abs(s) < T(1e-12)
-        return zero(T)
-    end
-    return (l * x * Plm - (l + m) * Plm1) / s
-end
-
-# Public API functions (non-mutating versions)
-
-"""
-    synthesize_vector(cfg, sph_coeffs, tor_coeffs)
-
-Non-mutating version of sphtor_to_spat! that allocates output arrays.
-"""
-function synthesize_vector(cfg::SHTnsConfig{T}, sph_coeffs::AbstractVector{T}, 
-                          tor_coeffs::AbstractVector{T}) where T
-    u_theta = Matrix{T}(undef, cfg.nlat, cfg.nphi)
-    u_phi = Matrix{T}(undef, cfg.nlat, cfg.nphi)
-    return sphtor_to_spat!(cfg, sph_coeffs, tor_coeffs, u_theta, u_phi)
-end
-
-"""
-    analyze_vector(cfg, u_theta, u_phi)
-
-Non-mutating version of spat_to_sphtor! that allocates output arrays.
-"""
-function analyze_vector(cfg::SHTnsConfig{T}, u_theta::AbstractMatrix{T}, 
-                       u_phi::AbstractMatrix{T}) where T
-    sph_coeffs = Vector{T}(undef, cfg.nlm)
-    tor_coeffs = Vector{T}(undef, cfg.nlm)
-    return spat_to_sphtor!(cfg, u_theta, u_phi, sph_coeffs, tor_coeffs)
 end
