@@ -19,11 +19,11 @@ This directory contains the organized source code for SHTnsKit.jl, structured fo
 - **`truncated_transforms.jl`** - Truncated/partial transforms
 
 ### `advanced/` - Advanced Optimizations
-- **`advanced_hybrid_algorithms.jl`** - Adaptive algorithm selection
-- **`advanced_parallel_transforms.jl`** - Multi-level parallelism (MPI+OpenMP+SIMD)
-- **`advanced_communication_patterns.jl`** - Topology-aware communication
-- **`advanced_memory_optimization.jl`** - Cache-aware and NUMA-optimized memory management
-- **`advanced_performance_tuning.jl`** - Machine learning-based auto-tuning
+- **`hybrid_algorithms.jl`** - Adaptive algorithm selection with system modeling
+- **`parallel_transforms.jl`** - Multi-level parallelism (MPI+OpenMP+SIMD)
+- **`communication_patterns.jl`** - Topology-aware communication optimization
+- **`memory_optimization.jl`** - Cache-aware and NUMA-optimized memory management
+- **`performance_tuning.jl`** - Machine learning-based auto-tuning
 
 ### `utils/` - Utilities and Helpers
 - **`utilities.jl`** - General utility functions
