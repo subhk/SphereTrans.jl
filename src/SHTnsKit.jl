@@ -120,26 +120,34 @@ export
     fast_sh_to_spat!, fast_spat_to_sh!, get_fast_legendre_data,
     fast_legendre_synthesis!, fast_legendre_analysis!
 
-include("types_optimized.jl")
-include("gauss_legendre.jl") 
-include("fft_utils.jl")
-include("core_transforms.jl")
-include("vector_transforms.jl")
-include("complex_transforms.jl")
-include("utilities.jl")
-include("grid_utils.jl")
-include("threading.jl")
-include("point_evaluation.jl")
-include("special_functions.jl")
-include("matrix_operators.jl")
-include("single_m_transforms.jl")
-include("truncated_transforms.jl")
-include("profiling.jl")
-include("robert_form.jl")
-include("benchmarking_suite.jl")
- 
-# Advanced parallel functionality handled by extensions
-include("fast_transforms.jl")
+# Core functionality
+include("core/types_optimized.jl")
+include("core/gauss_legendre.jl") 
+include("core/fft_utils.jl")
+include("core/core_transforms.jl")
+
+# Transform algorithms
+include("transforms/vector_transforms.jl")
+include("transforms/complex_transforms.jl")
+include("transforms/matrix_operators.jl")
+include("transforms/single_m_transforms.jl")
+include("transforms/truncated_transforms.jl")
+include("transforms/fast_transforms.jl")
+
+# Utilities
+include("utils/utilities.jl")
+include("utils/grid_utils.jl")
+include("utils/threading.jl")
+include("utils/point_evaluation.jl")
+include("utils/special_functions.jl")
+include("utils/robert_form.jl")
+
+# Benchmarking and profiling
+include("benchmarks/profiling.jl")
+include("benchmarks/benchmarking_suite.jl")
+
+# Advanced functionality handled by separate modules
+# (loaded automatically when needed)
 
 
 function __init__()
