@@ -39,5 +39,7 @@ export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
 export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form
 export sh00_1, sh10_ct, sh11_st, shlm_e1, shtns_gauss_wts
+export shtns_print_cfg, legendre_sphPlm_array, legendre_sphPlm_deriv_array
+export shtns_malloc, shtns_free, shtns_set_many
 
 end # module SHTnsKit
