@@ -30,6 +30,9 @@ export spat_to_SHqst_l, SHqst_to_spat_l, spat_to_SHqst_ml, SHqst_to_spat_ml
 export mul_ct_matrix, st_dt_matrix, SH_mul_mx
 export SH_to_lat, SHqst_to_lat
 export SH_Zrotate
+export SHTRotation, shtns_rotation_create, shtns_rotation_destroy
+export shtns_rotation_set_angles_ZYZ, shtns_rotation_set_angles_ZXZ
+export shtns_rotation_wigner_d_matrix, shtns_rotation_apply_cplx, shtns_rotation_apply_real
 export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
 export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form
