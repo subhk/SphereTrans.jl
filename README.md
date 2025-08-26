@@ -142,6 +142,7 @@ Q,S,T = SHTnsKit.dist_spat_to_SHqst(cfg, Vr, Vt, Vp)
 Vr2, Vt2, Vp2 = SHTnsKit.dist_SHqst_to_spat(cfg, Q, S, T; prototype_θφ=Vr, real_output=true)
 
 MPI.Finalize()
+```
 
 ## Distributed Guide and API Cheatsheet
 
@@ -179,7 +180,6 @@ Changelog: see [CHANGELOG.md](CHANGELOG.md)
 - AD (distributed wrappers)
   - Zygote: `zgrad_scalar_energy(cfg, fθφ)`, `zgrad_vector_energy(cfg, Vt, Vp)`
   - ForwardDiff: `fdgrad_scalar_energy(cfg, fθφ)`, `fdgrad_vector_energy(cfg, Vt, Vp)`
-```
 
 ### High-Performance SIMD
 
