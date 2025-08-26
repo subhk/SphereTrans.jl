@@ -93,6 +93,25 @@ function prepare_plm_tables!(cfg::SHTConfig)
 end
 
 """
+    enable_plm_tables!(cfg::SHTConfig)
+
+Alias for `prepare_plm_tables!`.
+"""
+enable_plm_tables!(cfg::SHTConfig) = prepare_plm_tables!(cfg)
+
+"""
+    disable_plm_tables!(cfg::SHTConfig)
+
+Disable use of precomputed Legendre tables.
+"""
+function disable_plm_tables!(cfg::SHTConfig)
+    cfg.use_plm_tables = false
+    cfg.plm_tables = Matrix{Float64}[]
+    cfg.dplm_tables = Matrix{Float64}[]
+    return cfg
+end
+
+"""
     destroy_config(cfg::SHTConfig)
 
 No-op placeholder for API symmetry with libraries that require explicit teardown.
