@@ -45,3 +45,4 @@ include("parallel_transforms.jl")
 include("parallel_ops_pencil.jl")
 include("parallel_rotations_pencil.jl")
 include("parallel_local.jl")
+end # module SHTnsKitParallelExt
