@@ -7,8 +7,8 @@
 
 In-place multiply by -l(l+1) for distributed Alm with dims (:l,:m). No communication.
 """
-function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray)
-    lloc = axes(Alm_pencil, 1); gl_l = PencilArrays.globalindices(Alm_pencil, 1)
+function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArray)
+    lloc = axes(Alm_pencil, 1); gl_l = globalindices(Alm_pencil, 1)
     for (ii, il) in enumerate(lloc)
         lval = gl_l[ii] - 1
         Alm_pencil[il, :] .*= -(lval * (lval + 1))
@@ -21,21 +21,21 @@ end
 
 Apply 3-diagonal operator to distributed Alm pencils using per-m Allgatherv of l-columns.
 """
-function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:Real}, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:Real}, Alm_pencil::PencilArray, R_pencil::PencilArray)
     lmax, mmax = cfg.lmax, cfg.mmax
-    comm = PencilArrays.communicator(Alm_pencil)
+    comm = communicator(Alm_pencil)
     lloc = axes(Alm_pencil, 1); mloc = axes(Alm_pencil, 2)
-    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_l = globalindices(Alm_pencil, 1)
+    gl_m = globalindices(Alm_pencil, 2)
     nl_local = length(lloc)
-    counts = MPI.Allgather(nl_local, comm)
+    counts = Allgather(nl_local, comm)
     displs = cumsum([0; counts[1:end-1]])
     col_full = Vector{ComplexF64}(undef, lmax + 1)
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         mval > mmax && continue
         col_local = Array(view(Alm_pencil, :, jm))
-        MPI.Allgatherv!(col_local, col_full, counts, displs, comm)
+        Allgatherv(col_local, col_full, counts, displs, comm)
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
             idx = SHTnsKit.LM_index(lmax, cfg.mres, lval, mval)
@@ -52,4 +52,3 @@ function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:
     end
     return R_pencil
 end
-
