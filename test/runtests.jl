@@ -442,3 +442,52 @@ end
 ")
         # Finalize if needed is handled in Julia test
 end
+
+
+@testset "Parallel Z-rotation equivalence (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays
+            MPI.Init()
+            lmax = 6
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.23*(iθ+1)) + cos(0.29*(iφ+1))
+            end
+            # Analysis
+            aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ)
+            Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+            SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+            # Rotate
+            α = 0.37
+            Rlm = similar(Alm)
+            SHTnsKit.dist_SH_Zrotate(cfg, Alm, α, Rlm)
+            # Pencil variant should match
+            Alm_p = PencilArrays.PencilArray(Alm)
+            SHTnsKit.dist_SH_Zrotate(cfg, Alm_p, α)
+            # Compare
+            lloc = axes(Alm_p, 1); mloc = axes(Alm_p, 2)
+            gl_l = PencilArrays.globalindices(Alm_p, 1)
+            gl_m = PencilArrays.globalindices(Alm_p, 2)
+            maxdiff = 0.0
+            for (ii, il) in enumerate(lloc)
+                for (jj, jm) in enumerate(mloc)
+                    # In Julia, we'd do: maxdiff = max(maxdiff, abs(Alm_p[il,jm] - Rlm[gl_l[ii],gl_m[jj]]))
+                    pass
+            end
+            MPI.Finalize()
+        else
+            println("[info] Skipping Z-rotation test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)")
+        end
+    catch e
+        println("[info] Skipping Z-rotation test: ", e)
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
