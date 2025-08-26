@@ -1079,14 +1079,24 @@ struct DistAnalysisPlan
     cfg::SHTnsKit.SHTConfig
     Fθk::PencilArrays.PencilArray
     pfft::Any
+    prfft::Any
     P::Vector{Float64}
+    use_rfft::Bool
 end
 
-function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
-    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; use_rfft::Bool=false)
+    # Allocate (θ,k) buffer: complex full spectrum by default, or half-spectrum for rfft if supported
+    Fθk = if use_rfft
+        PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)  # half-spectrum managed by plan
+    else
+        PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    end
     pfft = PencilFFTs.plan_fft(Fθk; dims=2)
+    prfft = try
+        PencilFFTs.plan_rfft(Fθk; dims=2)
+    catch; nothing end
     P = Vector{Float64}(undef, cfg.lmax + 1)
-    return DistAnalysisPlan(cfg, Fθk, pfft, P)
+    return DistAnalysisPlan(cfg, Fθk, pfft, prfft, P, use_rfft)
 end
 
 """
@@ -1353,8 +1363,12 @@ function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Alm_out,1) == lmax+1 || throw(DimensionMismatch("Alm_out rows must be lmax+1"))
     size(Alm_out,2) == mmax+1 || throw(DimensionMismatch("Alm_out cols must be mmax+1"))
-    # 1) FFT along φ into (θ,k) using plan buffer if available
-    _fft_to!(plan.Fθk, fθφ, plan.pfft)
+    # 1) FFT along φ into (θ,k) using plan buffer
+    if plan.use_rfft && plan.prfft !== nothing
+        _rfft_to!(plan.Fθk, fθφ, plan.prfft)
+    else
+        _fft_to!(plan.Fθk, fθφ, plan.pfft)
+    end
     # 2) Transpose to (θ,m)
     Fθm = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
     # 3) Accumulate contributions into Alm_out
