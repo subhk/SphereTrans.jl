@@ -19,6 +19,63 @@ function _fft_to!(dest, src, plan)
     end
 end
 
+"""
+    dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
+
+Distributed-friendly application of a 3-diagonal operator that couples (l,m) to l±1 at fixed m.
+This variant operates on dense `(lmax+1, mmax+1)` matrices (available on all ranks); no communication needed.
+`mx` is the packed 2*nlm coefficient vector in SHTns LM order as in `mul_ct_matrix`/`st_dt_matrix`.
+"""
+function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:Real}, Alm::AbstractMatrix, Rlm::AbstractMatrix)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
+    size(Rlm,1)==lmax+1 && size(Rlm,2)==mmax+1 || throw(DimensionMismatch("Rlm dims"))
+    length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
+    fill!(Rlm, 0)
+    @inbounds for m in 0:mmax
+        for l in m:lmax
+            idx = SHTnsKit.LM_index(lmax, cfg.mres, l, m)
+            c_minus = mx[2*idx + 1]
+            c_plus  = mx[2*idx + 2]
+            acc = 0.0 + 0.0im
+            if l > m && l > 0
+                acc += c_minus * Alm[l, m+1]  # (l-1,m)
+            end
+            if l < lmax
+                acc += c_plus * Alm[l+2, m+1] # (l+1,m)
+            end
+            Rlm[l+1, m+1] = acc
+        end
+    end
+    return Rlm
+end
+
+"""
+    dist_SH_mul_mx!(cfg, mx, Alm_pencil::PencilArrays.PencilArray) -> PencilArray
+
+Apply the same 3-diagonal operator to a distributed Alm pencil with dims (:l,:m).
+Initial implementation gathers to a dense Array, applies the operator, and scatters back
+to a new PencilArray matching the input layout (one layer). A halo-exchange version can
+replace this later for better scalability.
+"""
+function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:Real}, Alm_pencil::PencilArrays.PencilArray)
+    # Gather local Alm and apply dense operator
+    Alm = Array(Alm_pencil)
+    Rlm = similar(Alm)
+    SHTnsKit.dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
+    # Allocate output pencil and copy local slice back
+    R_p = PencilArrays.allocate(Alm_pencil; dims=(:l,:m), eltype=eltype(Rlm))
+    lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+    for (ii, il) in enumerate(lloc)
+        igl = PencilArrays.globalindices(R_p, 1)[ii]
+        for (jj, jm) in enumerate(mloc)
+            igm = PencilArrays.globalindices(R_p, 2)[jj]
+            R_p[il, jm] = Rlm[igl, igm]
+        end
+    end
+    return R_p
+end
+
 function _rfft_to!(dest, src, plan)
     try
         PencilFFTs.rfft!(src, plan; dest=dest)
