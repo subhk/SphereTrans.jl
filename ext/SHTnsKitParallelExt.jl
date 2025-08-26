@@ -54,6 +54,155 @@ function SHTnsKit.energy_scalar(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penci
 end
 
 """
+    energy_scalar_l_spectrum(cfg, Alm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.energy_scalar_l_spectrum(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; real_field::Bool=true)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    E = zeros(Float64, lmax + 1)
+    lloc = axes(Alm, 1); mloc = axes(Alm, 2)
+    gl_l = PencilArrays.globalindices(Alm, 1)
+    gl_m = PencilArrays.globalindices(Alm, 2)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        wm = (real_field && mval > 0) ? 1.0 : 0.5  # factor is w/2 with w=2 for m>0, so 1.0, else 0.5
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= mval
+                E[lval + 1] += wm * abs2(Alm[il, jm])
+            end
+        end
+    end
+    MPI.Allreduce!(E, +, PencilArrays.communicator(Alm))
+    return E
+end
+
+"""
+    energy_scalar_m_spectrum(cfg, Alm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.energy_scalar_m_spectrum(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; real_field::Bool=true)
+    mmax = cfg.mmax
+    E = zeros(Float64, mmax + 1)
+    mloc = axes(Alm, 2)
+    gl_m = PencilArrays.globalindices(Alm, 2)
+    lloc = axes(Alm, 1)
+    gl_l = PencilArrays.globalindices(Alm, 1)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        s = 0.0
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= mval
+                s += abs2 Alm[il, jm]
+            end
+        end
+        wm2 = (real_field && mval > 0) ? 1.0 : 0.5
+        E[mval + 1] += wm2 * s
+    end
+    MPI.Allreduce!(E, +, PencilArrays.communicator(Alm))
+    return E
+end
+
+"""
+    energy_vector_l_spectrum(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.energy_vector_l_spectrum(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    E = zeros(Float64, lmax + 1)
+    lloc = axes(Slm, 1); mloc = axes(Slm, 2)
+    gl_l = PencilArrays.globalindices(Slm, 1)
+    gl_m = PencilArrays.globalindices(Slm, 2)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        wm2 = (real_field && mval > 0) ? 1.0 : 0.5
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval*(lval+1)
+                E[lval + 1] += wm2 * L2 * (abs2(Slm[il, jm]) + abs2(Tlm[il, jm]))
+            end
+        end
+    end
+    MPI.Allreduce!(E, +, PencilArrays.communicator(Slm))
+    return E
+end
+
+"""
+    energy_vector_m_spectrum(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.energy_vector_m_spectrum(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    mmax = cfg.mmax
+    E = zeros(Float64, mmax + 1)
+    lloc = axes(Slm, 1); mloc = axes(Slm, 2)
+    gl_l = PencilArrays.globalindices(Slm, 1)
+    gl_m = PencilArrays.globalindices(Slm, 2)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        s = 0.0
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval*(lval+1)
+                s += L2 * (abs2(Slm[il, jm]) + abs2(Tlm[il, jm]))
+            end
+        end
+        wm2 = (real_field && mval > 0) ? 1.0 : 0.5
+        E[mval + 1] += wm2 * s
+    end
+    MPI.Allreduce!(E, +, PencilArrays.communicator(Slm))
+    return E
+end
+
+"""
+    enstrophy_l_spectrum(cfg, Tlm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.enstrophy_l_spectrum(cfg::SHTnsKit.SHTConfig, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    Z = zeros(Float64, lmax + 1)
+    lloc = axes(Tlm, 1); mloc = axes(Tlm, 2)
+    gl_l = PencilArrays.globalindices(Tlm, 1)
+    gl_m = PencilArrays.globalindices(Tlm, 2)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        wm2 = (real_field && mval > 0) ? 1.0 : 0.5
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval*(lval+1)
+                Z[lval + 1] += wm2 * (L2^2) * abs2(Tlm[il, jm])
+            end
+        end
+    end
+    MPI.Allreduce!(Z, +, PencilArrays.communicator(Tlm))
+    return Z
+end
+
+"""
+    enstrophy_m_spectrum(cfg, Tlm::PencilArrays.PencilArray; real_field=true) -> Vector
+"""
+function SHTnsKit.enstrophy_m_spectrum(cfg::SHTnsKit.SHTConfig, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    mmax = cfg.mmax
+    Z = zeros(Float64, mmax + 1)
+    lloc = axes(Tlm, 1); mloc = axes(Tlm, 2)
+    gl_l = PencilArrays.globalindices(Tlm, 1)
+    gl_m = PencilArrays.globalindices(Tlm, 2)
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        s = 0.0
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval*(lval+1)
+                s += (L2^2) * abs2(Tlm[il, jm])
+            end
+        end
+        wm2 = (real_field && mval > 0) ? 1.0 : 0.5
+        Z[mval + 1] += wm2 * s
+    end
+    MPI.Allreduce!(Z, +, PencilArrays.communicator(Tlm))
+    return Z
+end
+
+"""
     energy_vector(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field=true)
 """
 function SHTnsKit.energy_vector(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
@@ -169,6 +318,20 @@ Runs distributed synthesis using a PencilArray prototype (θ×φ layout).
 """
 function SHTnsKit.synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
     return SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ, real_output)
+end
+
+"""
+    analysis(cfg, fθφ::PencilArrays.PencilArray; return_type=:matrix, prototype_θφ=nothing)
+
+If return_type=:pencil, returns a PencilArray Alm matching (:l,:m) layout; otherwise returns dense Matrix.
+"""
+function SHTnsKit.analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; return_type::Symbol=:matrix, prototype_θφ=nothing)
+    Alm = SHTnsKit.dist_analysis(cfg, fθφ)
+    if return_type === :pencil
+        return PencilArrays.PencilArray(Alm)
+    else
+        return Alm
+    end
 end
 
 """
