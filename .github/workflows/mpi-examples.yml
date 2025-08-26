@@ -23,17 +23,19 @@ jobs:
         with:
           version: ${{ matrix.version }}
 
-      - name: Install system MPI and FFTW
+      - name: Install MPICH and FFTW
         run: |
           sudo apt-get update
-          sudo apt-get install -y openmpi-bin libopenmpi-dev libfftw3-dev
+          sudo apt-get install -y mpich libmpich-dev libfftw3-dev
 
-      - name: Instantiate with MPI dependencies
+      - name: Instantiate with MPI dependencies (system MPICH)
         run: |
           julia --project=. -e '
             using Pkg
             Pkg.add(["MPI","PencilArrays","PencilFFTs"])
             Pkg.resolve()
+            ENV["JULIA_MPI_BINARY"] = "system"
+            Pkg.build("MPI")
             Pkg.instantiate()
           '
 
