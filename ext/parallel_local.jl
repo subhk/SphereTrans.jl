@@ -7,23 +7,23 @@ using PencilArrays
 using ..SHTnsKit
 
 """
-    dist_SH_to_lat(cfg, Alm_pencil::PencilArrays.PencilArray, cost::Real;
+    dist_SH_to_lat(cfg, Alm_pencil::PencilArray, cost::Real;
                    nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax,
                    real_output::Bool=true) -> Vector
 
 Evaluate along a latitude (cosθ = cost) from distributed Alm. All ranks receive the full vector.
 """
-function SHTnsKit.dist_SH_to_lat(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray, cost::Real;
+function SHTnsKit.dist_SH_to_lat(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArray, cost::Real;
                                  nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax,
                                  real_output::Bool=true)
-    comm = PencilArrays.communicator(Alm_pencil)
+    comm = communicator(Alm_pencil)
     lmax, mmax = cfg.lmax, cfg.mmax
     x = float(cost)
     P = Vector{Float64}(undef, lmax + 1)
     vals_local = zeros(ComplexF64, nphi)
     lloc = axes(Alm_pencil, 1); mloc = axes(Alm_pencil, 2)
-    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_l = globalindices(Alm_pencil, 1)
+    gl_m = globalindices(Alm_pencil, 2)
     # m = 0 if present locally
     j0 = findfirst(==(1), gl_m)
     if j0 !== nothing
@@ -59,16 +59,16 @@ function SHTnsKit.dist_SH_to_lat(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArra
 end
 
 """
-    dist_SH_to_point(cfg, Alm_pencil::PencilArrays.PencilArray, cost::Real, phi::Real) -> ComplexF64 or Float64
+    dist_SH_to_point(cfg, Alm_pencil::PencilArray, cost::Real, phi::Real) -> ComplexF64 or Float64
 """
-function SHTnsKit.dist_SH_to_point(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray, cost::Real, phi::Real)
-    comm = PencilArrays.communicator(Alm_pencil)
+function SHTnsKit.dist_SH_to_point(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArray, cost::Real, phi::Real)
+    comm = communicator(Alm_pencil)
     lmax, mmax = cfg.lmax, cfg.mmax
     x = float(cost)
     P = Vector{Float64}(undef, lmax + 1)
     lloc = axes(Alm_pencil, 1); mloc = axes(Alm_pencil, 2)
-    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_l = globalindices(Alm_pencil, 1)
+    gl_m = globalindices(Alm_pencil, 2)
     s_local = 0.0 + 0.0im
     # m=0
     j0 = findfirst(==(1), gl_m)
@@ -101,17 +101,17 @@ function SHTnsKit.dist_SH_to_point(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilAr
 end
 
 """
-    dist_SHqst_to_point(cfg, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost, phi) -> (vr, vt, vp)
+    dist_SHqst_to_point(cfg, Q_p::PencilArray, S_p::PencilArray, T_p::PencilArray, cost, phi) -> (vr, vt, vp)
 """
-function SHTnsKit.dist_SHqst_to_point(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost::Real, phi::Real)
-    comm = PencilArrays.communicator(Q_p)
+function SHTnsKit.dist_SHqst_to_point(cfg::SHTnsKit.SHTConfig, Q_p::PencilArray, S_p::PencilArray, T_p::PencilArray, cost::Real, phi::Real)
+    comm = communicator(Q_p)
     lmax, mmax = cfg.lmax, cfg.mmax
     x = float(cost)
     P = Vector{Float64}(undef, lmax + 1)
     dPdx = Vector{Float64}(undef, lmax + 1)
     lloc = axes(Q_p, 1); mloc = axes(Q_p, 2)
-    gl_l = PencilArrays.globalindices(Q_p, 1)
-    gl_m = PencilArrays.globalindices(Q_p, 2)
+    gl_l = globalindices(Q_p, 1)
+    gl_m = globalindices(Q_p, 2)
     sθ = sqrt(max(0.0, 1 - x*x)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
     vr_local = 0.0 + 0.0im
     vt_local = 0.0 + 0.0im
@@ -161,19 +161,19 @@ function SHTnsKit.dist_SHqst_to_point(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays
 end
 
 """
-    dist_SHqst_to_lat(cfg, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost::Real;
+    dist_SHqst_to_lat(cfg, Q_p::PencilArray, S_p::PencilArray, T_p::PencilArray, cost::Real;
                       nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax) -> Vr, Vt, Vp
 """
-function SHTnsKit.dist_SHqst_to_lat(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost::Real;
+function SHTnsKit.dist_SHqst_to_lat(cfg::SHTnsKit.SHTConfig, Q_p::PencilArray, S_p::PencilArray, T_p::PencilArray, cost::Real;
                                     nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax)
-    comm = PencilArrays.communicator(Q_p)
+    comm = communicator(Q_p)
     lmax = cfg.lmax
     x = float(cost)
     P = Vector{Float64}(undef, lmax + 1)
     dPdx = Vector{Float64}(undef, lmax + 1)
     lloc = axes(Q_p, 1); mloc = axes(Q_p, 2)
-    gl_l = PencilArrays.globalindices(Q_p, 1)
-    gl_m = PencilArrays.globalindices(Q_p, 2)
+    gl_l = globalindices(Q_p, 1)
+    gl_m = globalindices(Q_p, 2)
     sθ = sqrt(max(0.0, 1 - x*x)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
     Vr_local = zeros(ComplexF64, nphi)
     Vt_local = zeros(ComplexF64, nphi)
@@ -229,9 +229,9 @@ function SHTnsKit.dist_SHqst_to_lat(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays.P
 end
 
 """
-    dist_spat_to_SH_packed(cfg, fθφ::PencilArrays.PencilArray) -> Qlm packed
+    dist_spat_to_SH_packed(cfg, fθφ::PencilArray) -> Qlm packed
 """
-function SHTnsKit.dist_spat_to_SH_packed(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
+function SHTnsKit.dist_spat_to_SH_packed(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray)
     Alm = SHTnsKit.dist_analysis(cfg, fθφ)
     Qlm = Vector{ComplexF64}(undef, cfg.nlm)
     for m in 0:cfg.mmax
@@ -246,7 +246,7 @@ end
 """
     dist_SH_packed_to_spat(cfg, Qlm::AbstractVector{<:Complex}; prototype_θφ, real_output=true)
 """
-function SHTnsKit.dist_SH_packed_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex}; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_SH_packed_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex}; prototype_θφ::PencilArray, real_output::Bool=true)
     length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length"))
     Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
     for m in 0:cfg.mmax, l in m:cfg.lmax
@@ -256,9 +256,9 @@ function SHTnsKit.dist_SH_packed_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractV
 end
 
 """
-    dist_spat_cplx_to_SH(cfg, z::PencilArrays.PencilArray) -> alm_packed (LM_cplx)
+    dist_spat_cplx_to_SH(cfg, z::PencilArray) -> alm_packed (LM_cplx)
 """
-function SHTnsKit.dist_spat_cplx_to_SH(cfg::SHTnsKit.SHTConfig, z::PencilArrays.PencilArray)
+function SHTnsKit.dist_spat_cplx_to_SH(cfg::SHTnsKit.SHTConfig, z::PencilArray)
     Alm = SHTnsKit.dist_analysis(cfg, z; use_tables=cfg.use_plm_tables)
     lmax, mmax = cfg.lmax, cfg.mmax
     alm_p = Vector{ComplexF64}(undef, SHTnsKit.nlm_cplx_calc(lmax, mmax, 1))
@@ -277,7 +277,7 @@ end
 """
     dist_SH_to_spat_cplx(cfg, alm_packed::AbstractVector{<:Complex}; prototype_θφ) -> PencilArray complex field
 """
-function SHTnsKit.dist_SH_to_spat_cplx(cfg::SHTnsKit.SHTConfig, alm_packed::AbstractVector{<:Complex}; prototype_θφ::PencilArrays.PencilArray)
+function SHTnsKit.dist_SH_to_spat_cplx(cfg::SHTnsKit.SHTConfig, alm_packed::AbstractVector{<:Complex}; prototype_θφ::PencilArray)
     lmax, mmax = cfg.lmax, cfg.mmax
     length(alm_packed) == SHTnsKit.nlm_cplx_calc(lmax, mmax, 1) || throw(DimensionMismatch("alm_packed length"))
     Alm = zeros(ComplexF64, lmax+1, mmax+1)
