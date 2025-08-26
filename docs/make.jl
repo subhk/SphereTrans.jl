@@ -95,6 +95,7 @@ pages = Any[
     "Installation" => "installation.md", 
     "Quick Start" => "quickstart.md",
     "User Guide" => Any[
+        "Distributed Guide" => "distributed.md",
         "API Reference" => "api/index.md",
         "Examples Gallery" => "examples/index.md", 
         "Performance Guide" => "performance.md",
