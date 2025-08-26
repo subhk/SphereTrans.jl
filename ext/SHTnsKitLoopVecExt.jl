@@ -151,6 +151,20 @@ function SHTnsKit.turbo_apply_laplacian!(cfg::SHTnsKit.SHTConfig, alm::AbstractM
 end
 
 """
+    SHTnsKit.turbo_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex})
+
+In-place Laplacian factor application for packed coefficients (SHTns LM order).
+"""
+function SHTnsKit.turbo_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex})
+    length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be nlm=$(cfg.nlm)"))
+    @tturbo for lm0 in 0:(cfg.nlm-1)
+        l = cfg.li[lm0 + 1]
+        Qlm[lm0 + 1] *= l * (l + 1)
+    end
+    return Qlm
+end
+
+"""
     SHTnsKit.benchmark_turbo_vs_simd(cfg; trials=3)
 
 Run a simple timing comparison between `analysis`/`synthesis` and their turbo
@@ -195,4 +209,3 @@ function SHTnsKit.benchmark_turbo_vs_simd(cfg::SHTnsKit.SHTConfig; trials::Integ
 end
 
 end # module SHTnsKitLoopVecExt
-
