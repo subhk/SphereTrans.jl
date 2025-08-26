@@ -112,42 +112,91 @@ function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:
                                   R_pencil::PencilArrays.PencilArray)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Validate dims
-    axes(Alm_pencil, 1); axes(Alm_pencil, 2)  # ensure 2D
+    axes(Alm_pencil, 1); axes(Alm_pencil, 2)
     axes(R_pencil, 1); axes(R_pencil, 2)
     size(Alm_pencil, 2) == size(R_pencil, 2) || throw(DimensionMismatch("m dimension mismatch"))
     length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
     comm = PencilArrays.communicator(Alm_pencil)
-    # Precompute local l global indices
     lloc = axes(Alm_pencil, 1)
     mloc = axes(Alm_pencil, 2)
     gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    # Prepare Allgatherv metadata
+    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    # Check if m is fully local (1..mmax+1). If not, fall back to per-m Allgatherv.
+    function _is_full_m()
+        first(gl_m) == 1 && last(gl_m) == mmax+1 && length(mloc) == mmax+1
+    end
+    if !_is_full_m()
+        # Fallback to Allgatherv per m
+        nl_local = length(lloc)
+        counts = MPI.Allgather(nl_local, comm)
+        displs = cumsum([0; counts[1:end-1]])
+        col_full = Vector{ComplexF64}(undef, lmax + 1)
+        for (jj, jm) in enumerate(mloc)
+            mglob = gl_m[jj]; mval = mglob - 1
+            mval > mmax && continue
+            col_local = Array(view(Alm_pencil, :, jm))
+            MPI.Allgatherv!(col_local, col_full, counts, displs, comm)
+            for (ii, il) in enumerate(lloc)
+                lval = gl_l[ii] - 1
+                idx = SHTnsKit.LM_index(lmax, cfg.mres, lval, mval)
+                c_minus = mx[2*idx + 1]; c_plus = mx[2*idx + 2]
+                acc = 0.0 + 0.0im
+                if lval > mval && lval > 0
+                    acc += c_minus * col_full[lval]
+                end
+                if lval < lmax
+                    acc += c_plus * col_full[lval + 2]
+                end
+                R_pencil[il, jm] = acc
+            end
+        end
+        return R_pencil
+    end
+    # Neighbor-only halo exchange along l
+    rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
     nl_local = length(lloc)
     counts = MPI.Allgather(nl_local, comm)
+    # Determine my position in l ordering by prefix sum
     displs = cumsum([0; counts[1:end-1]])
-    # Buffers
-    col_full = Vector{ComplexF64}(undef, lmax + 1)
+    # Find my index r s.t. displs[r+1] == sum_{k<r} counts[k]
+    r = findfirst(x -> x == displs[rank+1], displs) - 1
+    # Neighbors in l dimension
+    left_rank = r > 0 ? r - 1 : MPI.PROC_NULL
+    right_rank = r < np-1 ? r + 1 : MPI.PROC_NULL
+    # Build send/recv halos: each is length (#local m)
+    send_down = Array(view(Alm_pencil, first(lloc), :))  # l_start row
+    send_up   = Array(view(Alm_pencil, last(lloc),  :))  # l_end row
+    recv_down = similar(send_down)
+    recv_up   = similar(send_up)
+    # Exchange with neighbors
+    MPI.Sendrecv!(send_down, recv_up, left_rank, right_rank, comm)
+    MPI.Sendrecv!(send_up,   recv_down, right_rank, left_rank, comm)
+    # Compute results per local l and m
     for (jj, jm) in enumerate(mloc)
-        # Global m index (1-based)
-        mglob = PencilArrays.globalindices(Alm_pencil, 2)[jj]
-        mval = mglob - 1
+        mval = gl_m[jj] - 1
         mval > mmax && continue
-        # Local column to gather
-        col_local = Array(view(Alm_pencil, :, jm))
-        MPI.Allgatherv!(col_local, col_full, counts, displs, comm)
-        # Apply 3-diagonal per local l
         for (ii, il) in enumerate(lloc)
-            lglob = gl_l[ii]  # 1-based
-            lval = lglob - 1
+            lval = gl_l[ii] - 1
             idx = SHTnsKit.LM_index(lmax, cfg.mres, lval, mval)
-            c_minus = mx[2*idx + 1]
-            c_plus  = mx[2*idx + 2]
+            c_minus = mx[2*idx + 1]; c_plus = mx[2*idx + 2]
             acc = 0.0 + 0.0im
+            # l-1 neighbor
             if lval > mval && lval > 0
-                acc += c_minus * col_full[lval]           # (l-1)
+                if ii > 1
+                    acc += c_minus * Alm_pencil[il-1, jm]
+                else
+                    # Need from lower halo
+                    acc += c_minus * recv_down[jj]
+                end
             end
+            # l+1 neighbor
             if lval < lmax
-                acc += c_plus  * col_full[lval + 2]       # (l+1)
+                if ii < nl_local
+                    acc += c_plus * Alm_pencil[il+1, jm]
+                else
+                    # Need from upper halo
+                    acc += c_plus * recv_up[jj]
+                end
             end
             R_pencil[il, jm] = acc
         end
