@@ -54,6 +54,10 @@ export energy_vector_packed, grad_energy_vector_packed
 export loss_vorticity_grid, grad_loss_vorticity_Tlm, loss_and_grad_vorticity_Tlm
 export prepare_plm_tables!, enable_plm_tables!, disable_plm_tables!
 
+# Optional LoopVectorization-powered helpers (defined via extension)
+export analysis_turbo, synthesis_turbo
+export turbo_apply_laplacian!, benchmark_turbo_vs_simd
+
 # AD convenience wrappers (populated via extensions)
 export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm
 export fdgrad_scalar_energy, fdgrad_vector_energy
@@ -74,6 +78,12 @@ dist_analysis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loa
 dist_synthesis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_scalar_roundtrip!(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_vector_roundtrip!(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel extension not loaded")
+
+# LoopVectorization extension fallbacks
+analysis_turbo(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
+synthesis_turbo(::SHTConfig, ::AbstractMatrix; real_output::Bool=true) = error("LoopVectorization extension not loaded")
+turbo_apply_laplacian!(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
+benchmark_turbo_vs_simd(::SHTConfig; kwargs...) = error("LoopVectorization extension not loaded")
 export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
 export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form
