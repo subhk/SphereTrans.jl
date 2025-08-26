@@ -171,6 +171,43 @@ jobs:
           fail_ci_if_error: false
 
 
+  docs:
+    name: Docs (build + deploy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      - uses: julia-actions/cache@v2
+
+      - name: Configure doc environment
+        shell: julia --project=docs --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path=pwd()))
+          Pkg.instantiate()
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      - name: Deploy docs (Documenter.jl)
+        if: github.event_name == 'push'
+        uses: julia-actions/julia-docdeploy@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run doctests
+        shell: julia --project=docs --color=yes {0}
+        run: |
+          using Documenter: DocMeta, doctest
+          using SHTnsKit
+          DocMeta.setdocmeta!(SHTnsKit, :DocTestSetup, :(using SHTnsKit); recursive=true)
+          doctest(SHTnsKit)
+
   benchmark:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
