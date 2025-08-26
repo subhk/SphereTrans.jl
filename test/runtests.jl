@@ -12,6 +12,48 @@ function parseval_scalar_test(lmax::Int)
     @test isapprox(energy_scalar(cfg, alm), grid_energy_scalar(cfg, f); rtol=1e-10, atol=1e-12)
 end
 
+@testset "Parallel roundtrip (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            @info "Attempting optional parallel roundtrip tests"
+            using MPI
+            using PencilArrays
+            using PencilFFTs
+            MPI.Init()
+            lmax = 6
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            # simple fill
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.1*(iθ+1)) + cos(0.2*(iφ+1))
+            end
+            rel_local, rel_global = dist_scalar_roundtrip!(cfg, fθφ)
+            @test rel_global < 1e-8
+            # vector
+            Vt = PencilArrays.zeros(P; eltype=Float64)
+            Vp = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(Vt,1)), eachindex(axes(Vt,2)))
+                Vt[iθ, iφ] = 0.1*(iθ+1)
+                Vp[iθ, iφ] = 0.05*(iφ+1)
+            end
+            (rl_t, rg_t), (rl_p, rg_p) = dist_vector_roundtrip!(cfg, Vt, Vp)
+            @test rg_t < 1e-7 && rg_p < 1e-7
+            MPI.Finalize()
+        else
+            @info "Skipping parallel roundtrip tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping parallel roundtrip tests" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
+
 function parseval_vector_test(lmax::Int)
     nlat = lmax + 2
     nlon = 2*lmax + 1

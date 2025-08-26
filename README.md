@@ -319,14 +319,14 @@ vector_results = benchmark_vector_transforms(cfg, n_samples=50)
 ### Running Examples
 
 ```bash
-# Serial mode (no MPI required)
-julia --project=. examples/parallel_example.jl
+# Parallel scalar roundtrip (2 processes)
+mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl
 
-# Parallel mode with 4 processes
-mpiexec -n 4 julia --project=. examples/parallel_example.jl
+# Include vector field roundtrip
+mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
 
-# With performance benchmarking
-mpiexec -n 4 julia --project=. examples/parallel_example.jl --benchmark
+# Ensure required optional packages are available (first time)
+julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
 ```
 
 ### Architecture Overview
@@ -340,7 +340,7 @@ SHTnsKit/
 │   ├── SHTnsKitParallelExt.jl   # MPI + PencilArrays + PencilFFTs
 │   └── SHTnsKitLoopVecExt.jl    # LoopVectorization optimizations
 └── examples/
-    └── parallel_example.jl      # Complete parallel demo
+    └── parallel_roundtrip.jl    # Distributed scalar/vector roundtrip demo
 ```
 
 **Graceful Feature Detection:**
@@ -435,13 +435,19 @@ Run the comprehensive test suite:
 julia --project=. -e "using Pkg; Pkg.test()"
 
 # Parallel functionality tests  
-mpiexec -n 4 julia --project=. examples/parallel_example.jl
+mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
 
 # Performance benchmarks
 julia --project=. examples/benchmark_suite.jl
 
 # Automatic differentiation tests
 julia --project=. examples/ad_examples.jl
+```
+
+To include MPI-based roundtrip checks inside `Pkg.test()`, opt in via:
+
+```bash
+SHTNSKIT_RUN_MPI_TESTS=1 julia --project=. -e "using Pkg; Pkg.test()"
 ```
 
 ##  Contributing
