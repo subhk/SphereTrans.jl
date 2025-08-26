@@ -739,3 +739,73 @@ function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.Pencil
 end
 
 end # module
+"""
+Minimal distributed analysis plan to reuse FFT plan and (θ,k) buffer.
+Reuses caller-provided Alm output to avoid temporary matrix allocations.
+"""
+struct DistAnalysisPlan
+    cfg::SHTnsKit.SHTConfig
+    Fθk::PencilArrays.PencilArray
+    pfft::Any
+    P::Vector{Float64}
+end
+
+function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    pfft = PencilFFTs.plan_fft(Fθk; dims=2)
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    return DistAnalysisPlan(cfg, Fθk, pfft, P)
+end
+
+"""
+    dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix, fθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
+
+In-place distributed scalar analysis. Writes coefficients into Alm_out (lmax+1, mmax+1).
+Avoids internal Alm allocations and reuses FFT plan and buffers.
+"""
+function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix, fθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
+    cfg = plan.cfg
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm_out,1) == lmax+1 || throw(DimensionMismatch("Alm_out rows must be lmax+1"))
+    size(Alm_out,2) == mmax+1 || throw(DimensionMismatch("Alm_out cols must be mmax+1"))
+    # 1) FFT along φ into (θ,k)
+    PencilFFTs.fft!(fθφ, plan.pfft; dest=plan.Fθk)
+    # 2) Transpose to (θ,m)
+    Fθm = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+    # 3) Accumulate contributions into Alm_out
+    fill!(Alm_out, 0)
+    θrange = axes(Fθm, 1)
+    mrange = axes(Fθm, 2)
+    use_tbls = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables)
+    for m in mrange
+        mm = m - first(mrange)
+        mglob = PencilArrays.globalindices(Fθm, 2)[mm+1]
+        mval = mglob - 1
+        mval > mmax && continue
+        col = mval + 1
+        for (ii, iθ) in enumerate(θrange)
+            iglob = PencilArrays.globalindices(Fθm, 1)[ii]
+            Fi = Fθm[iθ, m]
+            wi = cfg.w[iglob]
+            if use_tbls
+                tbl = cfg.plm_tables[col]
+                @inbounds for l in mval:lmax
+                    Alm_out[l+1, col] += (wi * tbl[l+1, iglob]) * Fi
+                end
+            else
+                SHTnsKit.Plm_row!(plan.P, cfg.x[iglob], lmax, mval)
+                @inbounds for l in mval:lmax
+                    Alm_out[l+1, col] += (wi * plan.P[l+1]) * Fi
+                end
+            end
+        end
+    end
+    # 4) Global reduction over θ-pencil
+    MPI.Allreduce!(Alm_out, +, PencilArrays.communicator(fθφ))
+    # 5) Apply normalization and φ scaling
+    scaleφ = cfg.cphi
+    @inbounds for m in 0:mmax, l in m:lmax
+        Alm_out[l+1, m+1] *= cfg.Nlm[l+1, m+1] * scaleφ
+    end
+    return Alm_out
+end
