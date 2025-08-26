@@ -16,10 +16,9 @@ function main()
     β = 0.35
 
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    Pθφ = Pencil((:θ, :φ), (nlat, nlon); comm)
 
     # Build a test real field f(θ,φ)
-    fθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
+    fθφ = zeros(Float64, nlat, nlon)
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3*(iθ+1)) + 0.7*cos(0.2*(iφ+1))
     end
