@@ -24,7 +24,13 @@ function SH_to_lat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, cost::Real; n
     g0 = 0.0 + 0.0im
     @inbounds for l in 0:ltr
         lm = LM_index(lmax, cfg.mres, l, 0) + 1
-        g0 += cfg.Nlm[l+1, 1] * P[l+1] * Qlm[lm]
+        a = Qlm[lm]
+        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+            k = norm_scale_from_orthonormal(l, 0, cfg.norm)
+            α = cs_phase_factor(0, true, cfg.cs_phase)
+            a *= (k * α)
+        end
+        g0 += cfg.Nlm[l+1, 1] * P[l+1] * a
     end
     @inbounds for j in 0:(nphi-1)
         vals[j+1] = real(g0)
@@ -38,7 +44,13 @@ function SH_to_lat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, cost::Real; n
         col = m + 1
         @inbounds for l in m:min(ltr, lmax)
             lm = LM_index(lmax, cfg.mres, l, m) + 1
-            gm += cfg.Nlm[l+1, col] * P[l+1] * Qlm[lm]
+            a = Qlm[lm]
+            if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                k = norm_scale_from_orthonormal(l, m, cfg.norm)
+                α = cs_phase_factor(m, true, cfg.cs_phase)
+                a *= (k * α)
+            end
+            gm += cfg.Nlm[l+1, col] * P[l+1] * a
         end
         for j in 0:(nphi-1)
             vals[j+1] += 2 * real(gm * cis(2π * m * j / nphi))
@@ -63,36 +75,51 @@ function SHqst_to_point(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Slm::Abs
     dPdx = Vector{Float64}(undef, lmax + 1)
     sθ = sqrt(max(0.0, 1 - x*x))
     inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
-    vr = 0.0 + 0.0im
-    vt = 0.0 + 0.0im
-    vp = 0.0 + 0.0im
+    CT = promote_type(eltype(Qlm), eltype(Slm), eltype(Tlm))
+    vr = zero(CT)
+    vt = zero(CT)
+    vp = zero(CT)
     # m=0
     Plm_and_dPdx_row!(P, dPdx, x, lmax, 0)
     for l in 0:lmax
         N = cfg.Nlm[l+1, 1]
         lm = LM_index(lmax, cfg.mres, l, 0) + 1
+        aQ = Qlm[lm]; aS = Slm[lm]; aT = Tlm[lm]
+        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+            k = norm_scale_from_orthonormal(l, 0, cfg.norm)
+            α = cs_phase_factor(0, true, cfg.cs_phase)
+            s = k * α
+            aQ *= s; aS *= s; aT *= s
+        end
         Y = N * P[l+1]
         dθY = -sθ * N * dPdx[l+1]
-        vr += Y   * Qlm[lm]
-        vt += dθY * Slm[lm]
-        vp += (sθ * N * dPdx[l+1]) * Tlm[lm]
+        vr += Y   * aQ
+        vt += dθY * aS
+        vp += (sθ * N * dPdx[l+1]) * aT
     end
     # m>0
     for m in 1:mmax
         (m % cfg.mres == 0) || continue
         Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
-        gvr = 0.0 + 0.0im
-        gvt = 0.0 + 0.0im
-        gvp = 0.0 + 0.0im
+        gvr = zero(CT)
+        gvt = zero(CT)
+        gvp = zero(CT)
         col = m + 1
         for l in m:lmax
             N = cfg.Nlm[l+1, col]
             lm = LM_index(lmax, cfg.mres, l, m) + 1
+            aQ = Qlm[lm]; aS = Slm[lm]; aT = Tlm[lm]
+            if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                k = norm_scale_from_orthonormal(l, m, cfg.norm)
+                α = cs_phase_factor(m, true, cfg.cs_phase)
+                s = k * α
+                aQ *= s; aS *= s; aT *= s
+            end
             Y = N * P[l+1]
             dθY = -sθ * N * dPdx[l+1]
-            gvr += Y   * Qlm[lm]
-            gvt += dθY * Slm[lm] + (0 + 1im) * m * inv_sθ * Y * Tlm[lm]
-            gvp += (0 + 1im) * m * inv_sθ * Y * Slm[lm] + (sθ * N * dPdx[l+1]) * Tlm[lm]
+            gvr += Y   * aQ
+            gvt += dθY * aS + (0 + 1im) * m * inv_sθ * Y * aT
+            gvp += (0 + 1im) * m * inv_sθ * Y * aS + (sθ * N * dPdx[l+1]) * aT
         end
         ph = cis(m * phi)
         vr += 2 * real(gvr * ph)
@@ -147,11 +174,18 @@ function SHqst_to_lat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Slm::Abstr
     @inbounds for l in 0:ltr
         N = cfg.Nlm[l+1, 1]
         lm = LM_index(lmax, cfg.mres, l, 0) + 1
+        aQ = Qlm[lm]; aS = Slm[lm]; aT = Tlm[lm]
+        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+            k = norm_scale_from_orthonormal(l, 0, cfg.norm)
+            α = cs_phase_factor(0, true, cfg.cs_phase)
+            s = k * α
+            aQ *= s; aS *= s; aT *= s
+        end
         Y = N * P[l+1]
         dθY = -sθ * N * dPdx[l+1]
-        g0  += Y * Qlm[lm]
-        gθ0 += dθY * Slm[lm]
-        gφ0 += (sθ * N * dPdx[l+1]) * Tlm[lm]
+        g0  += Y * aQ
+        gθ0 += dθY * aS
+        gφ0 += (sθ * N * dPdx[l+1]) * aT
     end
     @inbounds for j in 1:nphi
         Vr[j] += real(g0); Vt[j] += real(gθ0); Vp[j] += real(gφ0)
@@ -169,11 +203,18 @@ function SHqst_to_lat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Slm::Abstr
         @inbounds for l in m:min(ltr, lmax)
             N = cfg.Nlm[l+1, col]
             lm = LM_index(lmax, cfg.mres, l, m) + 1
+            aQ = Qlm[lm]; aS = Slm[lm]; aT = Tlm[lm]
+            if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                k = norm_scale_from_orthonormal(l, m, cfg.norm)
+                α = cs_phase_factor(m, true, cfg.cs_phase)
+                s = k * α
+                aQ *= s; aS *= s; aT *= s
+            end
             Y = N * P[l+1]
             dθY = -sθ * N * dPdx[l+1]
-            g  += Y   * Qlm[lm]
-            gθ += dθY * Slm[lm] + (0 + 1im) * m * inv_sθ * Y * Tlm[lm]
-            gφ += (0 + 1im) * m * inv_sθ * Y * Slm[lm] + (sθ * N * dPdx[l+1]) * Tlm[lm]
+            g  += Y   * aQ
+            gθ += dθY * aS + (0 + 1im) * m * inv_sθ * Y * aT
+            gφ += (0 + 1im) * m * inv_sθ * Y * aS + (sθ * N * dPdx[l+1]) * aT
         end
         for j in 0:(nphi-1)
             phase = cis(2π * m * j / nphi)

@@ -145,6 +145,47 @@ function wigner_d_matrix(l::Int, beta::Float64)
 end
 
 """
+    wigner_d_matrix_deriv(l::Int, beta::Float64) -> Matrix{Float64}
+
+Derivative d/dβ of little Wigner-d matrix d^l_{m m'}(β).
+"""
+function wigner_d_matrix_deriv(l::Int, beta::Float64)
+    l ≥ 0 || throw(ArgumentError("l must be ≥ 0"))
+    n = 2l + 1
+    dβ = Matrix{Float64}(undef, n, n)
+    cb = cos(beta/2)
+    sb = sin(beta/2)
+    dcb = -0.5 * sb
+    dsb =  0.5 * cb
+    for m in -l:l
+        for mp in -l:l
+            kmin = max(0, m - mp)
+            kmax = min(l + m, l - mp)
+            logpref = 0.5*(loggamma(l+m+1) + loggamma(l-m+1) + loggamma(l+mp+1) + loggamma(l-mp+1))
+            s = 0.0
+            for k in kmin:kmax
+                logden = loggamma(l+m-k+1) + loggamma(k+1) + loggamma(mp-m+k+1) + loggamma(l-mp-k+1)
+                p = 2l + m - mp - 2k
+                q = mp - m + 2k
+                amp = (-1.0)^k * exp(logpref - logden)
+                # derivative of cb^p sb^q
+                term = amp * (cb^p) * (sb^q)
+                dterm = 0.0
+                if p != 0
+                    dterm += term * p * (dcb / cb)
+                end
+                if q != 0
+                    dterm += term * q * (dsb / sb)
+                end
+                s += dterm
+            end
+            dβ[m + l + 1, mp + l + 1] = s
+        end
+    end
+    return dβ
+end
+
+"""
     shtns_rotation_create(lmax::Integer, mmax::Integer, norm::Integer) -> SHTRotation
 """
 function shtns_rotation_create(lmax::Integer, mmax::Integer, norm::Integer)

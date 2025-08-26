@@ -33,12 +33,13 @@ function SH_to_spat_cplx(cfg::SHTConfig, alm_packed::AbstractVector{<:Complex})
     length(alm_packed) == expected || throw(DimensionMismatch("alm length $(length(alm_packed)) != expected $(expected)"))
 
     nlat, nlon = cfg.nlat, cfg.nlon
-    Fφ = Matrix{ComplexF64}(undef, nlat, nlon)
+    CT = eltype(alm_packed)
+    Fφ = Matrix{CT}(undef, nlat, nlon)
     fill!(Fφ, 0.0 + 0.0im)
 
     lmax, mmax = cfg.lmax, cfg.mmax
     P = Vector{Float64}(undef, lmax + 1)
-    G = Vector{ComplexF64}(undef, nlat)
+    G = Vector{CT}(undef, nlat)
     inv_scaleφ = nlon / (2π)
 
     for m in -mmax:mmax
@@ -51,7 +52,13 @@ function SH_to_spat_cplx(cfg::SHTConfig, alm_packed::AbstractVector{<:Complex})
             g = 0.0 + 0.0im
             @inbounds for l in am:lmax
                 idx = LM_cplx_index(lmax, mmax, l, m) + 1
-                g += (cfg.Nlm[l+1, am+1] * P[l+1]) * alm_packed[idx]
+                a = alm_packed[idx]
+                if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                    k = norm_scale_from_orthonormal(l, am, cfg.norm)
+                    α = cs_phase_factor(m, true, cfg.cs_phase)
+                    a *= (k * α)
+                end
+                g += (cfg.Nlm[l+1, am+1] * P[l+1]) * a
             end
             G[i] = g
         end
@@ -62,7 +69,7 @@ function SH_to_spat_cplx(cfg::SHTConfig, alm_packed::AbstractVector{<:Complex})
         end
     end
 
-    z = ifft(Fφ, 2)
+    z = ifft_phi(Fφ)
     return z
 end
 
@@ -78,11 +85,12 @@ function spat_cplx_to_SH(cfg::SHTConfig, z::AbstractMatrix{<:Complex})
     mres = cfg.mres
     mres == 1 || throw(ArgumentError("LM_cplx layout only defined for mres==1"))
     lmax, mmax = cfg.lmax, cfg.mmax
-    alm = Vector{ComplexF64}(undef, nlm_cplx_calc(lmax, mmax, 1))
+    CT = eltype(z)
+    alm = Vector{CT}(undef, nlm_cplx_calc(lmax, mmax, 1))
     fill!(alm, 0.0 + 0.0im)
 
     # FFT along φ
-    Fφ = fft(ComplexF64.(z), 2)
+    Fφ = fft_phi(complex.(z))
     P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi
 
@@ -95,7 +103,14 @@ function spat_cplx_to_SH(cfg::SHTConfig, z::AbstractMatrix{<:Complex})
             wi = cfg.w[i]
             @inbounds for l in am:lmax
                 idx = LM_cplx_index(lmax, mmax, l, m) + 1
-                alm[idx] += (wi * P[l+1]) * Fi * cfg.Nlm[l+1, am+1] * scaleφ
+                a = (wi * P[l+1]) * Fi * cfg.Nlm[l+1, am+1] * scaleφ
+                # Convert from internal to cfg normalization if needed when storing
+                if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                    k = norm_scale_from_orthonormal(l, am, cfg.norm)
+                    α = cs_phase_factor(m, true, cfg.cs_phase)
+                    a /= (k * α)
+                end
+                alm[idx] += a
             end
         end
     end
@@ -127,4 +142,3 @@ function SH_to_point_cplx(cfg::SHTConfig, alm::AbstractVector{<:Complex}, cost::
     end
     return acc
 end
-

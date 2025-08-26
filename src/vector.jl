@@ -20,9 +20,17 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Slm,1) == lmax+1 && size(Slm,2) == mmax+1 || throw(DimensionMismatch("Slm dims"))
     size(Tlm,1) == lmax+1 && size(Tlm,2) == mmax+1 || throw(DimensionMismatch("Tlm dims"))
+    # Convert incoming coefficients to internal normalization if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        S2 = similar(Slm); T2 = similar(Tlm)
+        convert_alm_norm!(S2, Slm, cfg; to_internal=true)
+        convert_alm_norm!(T2, Tlm, cfg; to_internal=true)
+        Slm = S2; Tlm = T2
+    end
     nlat, nlon = cfg.nlat, cfg.nlon
-    Fθ = Matrix{ComplexF64}(undef, nlat, nlon)
-    Fφ = Matrix{ComplexF64}(undef, nlat, nlon)
+    CT = eltype(Slm)
+    Fθ = Matrix{CT}(undef, nlat, nlon)
+    Fφ = Matrix{CT}(undef, nlat, nlon)
     fill!(Fθ, 0.0 + 0.0im); fill!(Fφ, 0.0 + 0.0im)
 
     P = Vector{Float64}(undef, lmax + 1)
@@ -38,6 +46,7 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
             gθ = 0.0 + 0.0im
             gφ = 0.0 + 0.0im
             inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            Ict = one(CT) * (0 + 1im)
             @inbounds for l in m:lmax
                 N = cfg.Nlm[l+1, col]
                 # ∂θ term: ∂θ Y = -sinθ * N * dPdx
@@ -45,8 +54,8 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
                 Y = N * P[l+1]
                 Sl = Slm[l+1, col]
                 Tl = Tlm[l+1, col]
-                gθ += dθY * Sl + (0 + 1im) * m * inv_sθ * Y * Tl
-                gφ += (0 + 1im) * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl
+                gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
+                gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl
             end
             Fθ[i, col] = inv_scaleφ * gθ
             Fφ[i, col] = inv_scaleφ * gφ
@@ -60,8 +69,15 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
         end
     end
 
-    Vt = real_output ? real.(ifft(Fθ, 2)) : ifft(Fθ, 2)
-    Vp = real_output ? real.(ifft(Fφ, 2)) : ifft(Fφ, 2)
+    Vt = real_output ? real.(ifft_phi(Fθ)) : ifft_phi(Fθ)
+    Vp = real_output ? real.(ifft_phi(Fφ)) : ifft_phi(Fφ)
+    if cfg.robert_form
+        @inbounds for i in 1:nlat
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
+            Vt[i, :] .*= sθ
+            Vp[i, :] .*= sθ
+        end
+    end
     return Vt, Vp
 end
 
@@ -130,11 +146,12 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
     size(Vt,1) == nlat && size(Vt,2) == nlon || throw(DimensionMismatch("Vt dims"))
     size(Vp,1) == nlat && size(Vp,2) == nlon || throw(DimensionMismatch("Vp dims"))
     lmax, mmax = cfg.lmax, cfg.mmax
-    Slm = zeros(ComplexF64, lmax+1, mmax+1)
-    Tlm = zeros(ComplexF64, lmax+1, mmax+1)
+    CT = eltype(Vt) <: Complex ? eltype(Vt) : Complex{eltype(Vt)}
+    Slm = zeros(CT, lmax+1, mmax+1)
+    Tlm = zeros(CT, lmax+1, mmax+1)
 
-    Fθ = fft(ComplexF64.(Vt), 2)
-    Fφ = fft(ComplexF64.(Vp), 2)
+    Fθ = fft_phi(complex.(Vt))
+    Fφ = fft_phi(complex.(Vp))
     P = Vector{Float64}(undef, lmax + 1)
     dPdx = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi
@@ -148,17 +165,31 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
             Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
             Fθ_i = Fθ[i, col]
             Fφ_i = Fφ[i, col]
+            if cfg.robert_form
+                if sθ > 0
+                    Fθ_i /= sθ
+                    Fφ_i /= sθ
+                end
+            end
             wi = cfg.w[i]
+            Ict = one(CT) * (0 + 1im)
             @inbounds for l in max(1,m):lmax
                 N = cfg.Nlm[l+1, col]
                 dθY = -sθ * N * dPdx[l+1]
                 Y = N * P[l+1]
                 # Projections using vector spherical harmonics orthogonality: divide by l(l+1)
                 coeff = wi * scaleφ / (l*(l+1))
-                Slm[l+1, col] += coeff * (Fθ_i * dθY + Fφ_i * (-(0 + 1im) * m * inv_sθ * Y))
-                Tlm[l+1, col] += coeff * (Fθ_i * ((0 + 1im) * m * inv_sθ * Y) + Fφ_i * (+sθ * N * dPdx[l+1]))
+                Slm[l+1, col] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+                Tlm[l+1, col] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
             end
         end
+    end
+    # Convert to cfg normalization if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        S2 = similar(Slm); T2 = similar(Tlm)
+        convert_alm_norm!(S2, Slm, cfg; to_internal=false)
+        convert_alm_norm!(T2, Tlm, cfg; to_internal=false)
+        return S2, T2
     end
     return Slm, Tlm
 end
@@ -190,7 +221,7 @@ end
 Synthesize only the spheroidal part (gradient of S).
 """
 function SHsph_to_spat(cfg::SHTConfig, Slm::AbstractMatrix; real_output::Bool=true)
-    Z = zeros(ComplexF64, size(Slm))
+    Z = zeros(eltype(Slm), size(Slm))
     return SHsphtor_to_spat(cfg, Slm, Z; real_output)
 end
 
@@ -201,7 +232,7 @@ end
 Synthesize only the toroidal part.
 """
 function SHtor_to_spat(cfg::SHTConfig, Tlm::AbstractMatrix; real_output::Bool=true)
-    Z = zeros(ComplexF64, size(Tlm))
+    Z = zeros(eltype(Tlm), size(Tlm))
     return SHsphtor_to_spat(cfg, Z, Tlm; real_output)
 end
 
@@ -280,8 +311,9 @@ function spat_to_SHsphtor_ml(cfg::SHTConfig, im::Int, Vt_m::AbstractVector{<:Com
     (lstart ≤ ltr ≤ cfg.lmax) || throw(ArgumentError("require max(1,m) ≤ ltr ≤ lmax"))
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
-    Sl = zeros(ComplexF64, ltr - lstart + 1)
-    Tl = zeros(ComplexF64, ltr - lstart + 1)
+    CT = eltype(Vt_m)
+    Sl = zeros(CT, ltr - lstart + 1)
+    Tl = zeros(CT, ltr - lstart + 1)
     for i in 1:nlat
         x = cfg.x[i]
         sθ = sqrt(max(0.0, 1 - x*x))
@@ -295,8 +327,9 @@ function spat_to_SHsphtor_ml(cfg::SHTConfig, im::Int, Vt_m::AbstractVector{<:Com
             dθY = -sθ * N * dPdx[l+1]
             Y = N * P[l+1]
             coeff = wi / (l*(l+1))
-            Sl[l - lstart + 1] += coeff * (Fθ_i * dθY + Fφ_i * (-(0 + 1im) * m * inv_sθ * Y))
-            Tl[l - lstart + 1] += coeff * (Fθ_i * ((0 + 1im) * m * inv_sθ * Y) + Fφ_i * (+sθ * N * dPdx[l+1]))
+            Ict = one(CT) * (0 + 1im)
+            Sl[l - lstart + 1] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+            Tl[l - lstart + 1] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
         end
     end
     return Sl, Tl
@@ -315,8 +348,9 @@ function SHsphtor_to_spat_ml(cfg::SHTConfig, im::Int, Sl::AbstractVector{<:Compl
     length(Tl) == ltr - lstart + 1 || throw(DimensionMismatch("Tl length must be ltr-max(1,m)+1"))
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
-    Vt_m = Vector{ComplexF64}(undef, cfg.nlat)
-    Vp_m = Vector{ComplexF64}(undef, cfg.nlat)
+    CT = promote_type(eltype(Sl), eltype(Tl))
+    Vt_m = Vector{CT}(undef, cfg.nlat)
+    Vp_m = Vector{CT}(undef, cfg.nlat)
     for i in 1:cfg.nlat
         x = cfg.x[i]
         sθ = sqrt(max(0.0, 1 - x*x))
@@ -330,8 +364,9 @@ function SHsphtor_to_spat_ml(cfg::SHTConfig, im::Int, Sl::AbstractVector{<:Compl
             Y = N * P[l+1]
             Slv = Sl[l - lstart + 1]
             Tlv = Tl[l - lstart + 1]
-            gθ += dθY * Slv + (0 + 1im) * m * inv_sθ * Y * Tlv
-            gφ += (0 + 1im) * m * inv_sθ * Y * Slv + (sθ * N * dPdx[l+1]) * Tlv
+            Ict = one(CT) * (0 + 1im)
+            gθ += dθY * Slv + Ict * m * inv_sθ * Y * Tlv
+            gφ += Ict * m * inv_sθ * Y * Slv + (sθ * N * dPdx[l+1]) * Tlv
         end
         Vt_m[i] = gθ
         Vp_m[i] = gφ

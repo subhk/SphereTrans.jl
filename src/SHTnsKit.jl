@@ -5,9 +5,11 @@ using LinearAlgebra
 using FFTW
 using Base.Threads
 
+include("fftutils.jl")
 include("layout.jl")
 include("gausslegendre.jl")
 include("legendre.jl")
+include("normalization.jl")
 include("config.jl")
 include("transform.jl")
 include("complex_packed.jl")
@@ -15,6 +17,7 @@ include("vector.jl")
 include("operators.jl")
 include("rotations.jl")
 include("local.jl")
+include("diagnostics.jl")
 include("api_compat.jl")
 
 export SHTConfig, create_gauss_config, destroy_config
@@ -35,6 +38,31 @@ export SH_Yrotate, SH_Yrotate90, SH_Xrotate90
 export SHTRotation, shtns_rotation_create, shtns_rotation_destroy
 export shtns_rotation_set_angles_ZYZ, shtns_rotation_set_angles_ZXZ
 export shtns_rotation_wigner_d_matrix, shtns_rotation_apply_cplx, shtns_rotation_apply_real, shtns_rotation_set_angle_axis
+export energy_scalar, energy_vector, enstrophy, vorticity_spectral, vorticity_grid
+export grid_energy_scalar, grid_energy_vector, grid_enstrophy
+export energy_scalar_l_spectrum, energy_scalar_m_spectrum
+export energy_vector_l_spectrum, energy_vector_m_spectrum
+export enstrophy_l_spectrum, enstrophy_m_spectrum
+export energy_scalar_lm, energy_vector_lm, enstrophy_lm
+export grad_energy_scalar_alm, grad_energy_vector_Slm_Tlm, grad_enstrophy_Tlm
+export grad_grid_energy_scalar_field, grad_grid_energy_vector_fields, grad_grid_enstrophy_zeta
+export energy_scalar_packed, grad_energy_scalar_packed
+export energy_vector_packed, grad_energy_vector_packed
+export loss_vorticity_grid, grad_loss_vorticity_Tlm, loss_and_grad_vorticity_Tlm
+
+# AD convenience wrappers (populated via extensions)
+export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm
+export fdgrad_scalar_energy, fdgrad_vector_energy
+export zgrad_rotation_angles_real, zgrad_rotation_angles_cplx
+
+# Default fallbacks if extensions are not loaded
+zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
+zgrad_vector_energy(::SHTConfig, ::AbstractMatrix, ::AbstractMatrix) = error("Zygote extension not loaded")
+zgrad_enstrophy_Tlm(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
+fdgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("ForwardDiff extension not loaded")
+fdgrad_vector_energy(::SHTConfig, ::AbstractMatrix, ::AbstractMatrix) = error("ForwardDiff extension not loaded")
+zgrad_rotation_angles_real(::SHTConfig, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
+zgrad_rotation_angles_cplx(::Integer, ::Integer, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
 export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
 export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form

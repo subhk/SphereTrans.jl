@@ -29,13 +29,18 @@ end
 
 """shtns_create(lmax, mmax, mres, norm) -> SHTConfig"""
 function shtns_create(lmax::Integer, mmax::Integer, mres::Integer, norm::Integer)
-    if norm != 0 # sht_orthonormal
-        throw(ArgumentError("only orthonormal normalization is supported"))
-    end
+    # Parse norm and flags per SHTns
+    nval = Int(norm)
+    SHT_NO_CS_PHASE = 256*4
+    SHT_REAL_NORM = 256*8
+    base_norm = nval % 256
+    cs_phase = (nval & SHT_NO_CS_PHASE) == 0
+    real_norm = (nval & SHT_REAL_NORM) != 0
+    nsym = base_norm == 0 ? :orthonormal : base_norm == 1 ? :fourpi : base_norm == 2 ? :schmidt : :orthonormal
     # defer grid selection to set_grid; but provide minimal Gauss grid consistent with sizes
     nlat = Int(lmax) + 1
     nphi = max(2*Int(mmax)+1, 4)
-    return create_gauss_config(Int(lmax), nlat; mmax=Int(mmax), mres=Int(mres), nlon=nphi)
+    return create_gauss_config(Int(lmax), nlat; mmax=Int(mmax), mres=Int(mres), nlon=nphi, norm=nsym, cs_phase=cs_phase, real_norm=real_norm)
 end
 
 """shtns_set_grid(cfg, flags, eps, nlat, nphi) -> Int"""
@@ -78,10 +83,8 @@ shtns_destroy(::SHTConfig) = nothing
 shtns_unset_grid(::SHTConfig) = nothing
 
 """shtns_robert_form(cfg, robert)"""
-function shtns_robert_form(::SHTConfig, robert::Integer)
-    if robert != 0
-        throw(ArgumentError("Robert form not implemented in pure Julia core yet"))
-    end
+function shtns_robert_form(cfg::SHTConfig, robert::Integer)
+    cfg.robert_form = robert != 0
     return nothing
 end
 

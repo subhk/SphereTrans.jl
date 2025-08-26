@@ -10,13 +10,12 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
     nlat, nlon = cfg.nlat, cfg.nlon
     size(f, 1) == nlat || throw(DimensionMismatch("first dim must be nlat=$(nlat)"))
     size(f, 2) == nlon || throw(DimensionMismatch("second dim must be nlon=$(nlon)"))
-    fC = ComplexF64.(f)
-
-    # FFT along φ (dimension 2): sums f * exp(-i 2π m j/N)
-    Fφ = fft(fC, 2)
+    fC = complex.(f)
+    Fφ = fft_phi(fC)
 
     lmax, mmax = cfg.lmax, cfg.mmax
-    alm = Matrix{ComplexF64}(undef, lmax + 1, mmax + 1)
+    CT = eltype(Fφ)
+    alm = Matrix{CT}(undef, lmax + 1, mmax + 1)
     fill!(alm, 0.0 + 0.0im)
 
     # Temporary buffer for P_l^m(x) at one θ
@@ -38,7 +37,14 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
             alm[l+1, col] *= cfg.Nlm[l+1, col] * scaleφ
         end
     end
-    return alm
+    # Convert to cfg's requested normalization/CS if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        alm2 = similar(alm)
+        convert_alm_norm!(alm2, alm, cfg; to_internal=false)
+        return alm2
+    else
+        return alm
+    end
 end
 
 """
@@ -55,15 +61,22 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     size(alm, 2) == mmax + 1 || throw(DimensionMismatch("second dim must be mmax+1=$(mmax+1)"))
 
     nlat, nlon = cfg.nlat, cfg.nlon
-    Fφ = Matrix{ComplexF64}(undef, nlat, nlon)
+    CT = eltype(alm)
+    Fφ = Matrix{CT}(undef, nlat, nlon)
     fill!(Fφ, 0.0 + 0.0im)
 
     # Temporary buffers
     P = Vector{Float64}(undef, lmax + 1)
-    G = Vector{ComplexF64}(undef, nlat)
+    G = Vector{CT}(undef, nlat)
     inv_scaleφ = nlon / (2π)
 
-    # Build azimuthal spectra from alm
+    # Convert incoming coefficients to internal norm if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        alm_int = similar(alm)
+        convert_alm_norm!(alm_int, alm, cfg; to_internal=true)
+        alm = alm_int
+    end
+    # Build azimuthal spectra from alm (internal)
     @threads for m in 0:mmax
         col = m + 1
         # G(θ_i) = sum_{l=m}^{lmax} Nlm * P_l^m(x_i) * alm_{l,m}
@@ -89,7 +102,7 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     end
 
     # Inverse FFT along φ
-    f = ifft(Fφ, 2)
+    f = ifft_phi(Fφ)
     return real_output ? real.(f) : f
 end
 
@@ -103,7 +116,7 @@ function spat_to_SH(cfg::SHTConfig, Vr::AbstractVector{<:Real})
     length(Vr) == cfg.nspat || throw(DimensionMismatch("Vr must have length $(cfg.nspat)"))
     f = reshape(Vr, cfg.nlat, cfg.nlon)
     alm_mat = analysis(cfg, f)
-    Qlm = Vector{ComplexF64}(undef, cfg.nlm)
+    Qlm = Vector{eltype(alm_mat)}(undef, cfg.nlm)
     @inbounds for m in 0:cfg.mmax
         (m % cfg.mres == 0) || continue
         for l in m:cfg.lmax
@@ -235,24 +248,37 @@ function SH_to_point(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, cost::Real,
     x = float(cost)
     lmax = cfg.lmax; mmax = cfg.mmax
     P = Vector{Float64}(undef, lmax + 1)
-    acc = 0.0 + 0.0im
+    CT = eltype(Qlm)
+    acc = zero(CT)
     # m = 0 term
     Plm_row!(P, x, lmax, 0)
-    g0 = 0.0 + 0.0im
+    g0 = zero(CT)
     @inbounds for l in 0:lmax
         lm = LM_index(lmax, cfg.mres, l, 0) + 1
-        g0 += cfg.Nlm[l+1, 1] * P[l+1] * Qlm[lm]
+        a = Qlm[lm]
+        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+            k = norm_scale_from_orthonormal(l, 0, cfg.norm)
+            α = cs_phase_factor(0, true, cfg.cs_phase)
+            a *= (k * α)
+        end
+        g0 += cfg.Nlm[l+1, 1] * P[l+1] * a
     end
     acc += g0
     # m > 0 with Hermitian symmetry for real field
     for m in 1:mmax
         (m % cfg.mres == 0) || continue
         Plm_row!(P, x, lmax, m)
-        gm = 0.0 + 0.0im
+        gm = zero(CT)
         col = m + 1
         @inbounds for l in m:lmax
             lm = LM_index(lmax, cfg.mres, l, m) + 1
-            gm += cfg.Nlm[l+1, col] * P[l+1] * Qlm[lm]
+            a = Qlm[lm]
+            if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                k = norm_scale_from_orthonormal(l, m, cfg.norm)
+                α = cs_phase_factor(m, true, cfg.cs_phase)
+                a *= (k * α)
+            end
+            gm += cfg.Nlm[l+1, col] * P[l+1] * a
         end
         acc += 2 * real(gm * cis(m * phi))
     end
