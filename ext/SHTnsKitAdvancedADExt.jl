@@ -132,6 +132,7 @@ end
 function ChainRulesCore.rrule(::typeof(SHTnsKit.SH_Zrotate), cfg::SHTnsKit.SHTConfig, Qlm, alpha::Real, Rlm)
     y = SHTnsKit.SH_Zrotate(cfg, Qlm, alpha, Rlm)
     function pullback(ȳ)
+        # Adjoint w.r.t Q: apply inverse rotation (A* ȳ with A=diag(e^{imα}))
         Q̄ = similar(Qlm)
         SHTnsKit.SH_Zrotate(cfg, ȳ, -alpha, Q̄)
         # angle gradient: dR/dα = i m R

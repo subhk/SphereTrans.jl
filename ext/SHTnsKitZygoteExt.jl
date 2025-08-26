@@ -159,8 +159,9 @@ end
 Zygote.@adjoint function SHTnsKit.SH_Zrotate(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
     y = SHTnsKit.SH_Zrotate(cfg, Qlm, alpha, Rlm)
     function back(ȳ)
-        # For loss 0.5||R||^2 with R = e^{i m α} ∘ Q, gradient wrt Q is conj(Q)
-        Q̄ = conj.(Qlm)
+        # Adjoint of SH_Zrotate w.r.t Q: apply inverse rotation to ȳ
+        Q̄ = similar(Qlm)
+        SHTnsKit.SH_Zrotate(cfg, ȳ, -alpha, Q̄)
         dα = 0.0
         for m in 0:cfg.mmax
             (m % cfg.mres == 0) || continue

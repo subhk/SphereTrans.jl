@@ -356,7 +356,7 @@ end
         gQz = Zygote.gradient(loss_zrot, Q0)[1]
         φz(ξ) = loss_zrot(Q0 .+ ξ .* h)
         dfdξ_fd = (φz(ϵ) - φz(-ϵ)) / (2ϵ)
-        dfdξ_ad = real(sum(gQz .* h))
+        dfdξ_ad = real(sum(conj(gQz) .* h))
         @test isapprox(dfdξ_ad, dfdξ_fd; rtol=5e-4, atol=1e-7)
 
         # Operator application: test gradients wrt Q and mx
