@@ -692,7 +692,8 @@ function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.Pencil
                     end
                 end
             end
-            plan.Gθm[iθ, jm] = cfg.w[iglobθ] * cfg.cphi * acc
+            # No Gauss weights during synthesis; store raw Gθm
+            plan.Gθm[iθ, jm] = acc
         end
     end
     MPI.Allreduce!(plan.Gθm, +, PencilArrays.communicator(plan.Gθm))
@@ -701,23 +702,24 @@ function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.Pencil
     kloc = axes(plan.Fθk, 2)
     mloc = axes(plan.Gθm, 2)
     nlon = cfg.nlon
+    inv_scaleφ = nlon / (2π)
     for (ii,iθ) in enumerate(θloc)
         for (jj,jk) in enumerate(kloc)
             kglob = PencilArrays.globalindices(plan.Fθk, 2)[jj] - 1
             if kglob == 0
                 if first(mloc) <= 1 <= last(mloc)
-                    plan.Fθk[iθ, jk] = plan.Gθm[iθ, 1]
+                    plan.Fθk[iθ, jk] = inv_scaleφ * plan.Gθm[iθ, 1]
                 end
             elseif kglob <= cfg.mmax
                 mpos = kglob + 1
                 if mpos in mloc
-                    plan.Fθk[iθ, jk] = plan.Gθm[iθ, mpos]
+                    plan.Fθk[iθ, jk] = inv_scaleφ * plan.Gθm[iθ, mpos]
                 end
             else
                 if real_output
                     mneg = nlon - kglob
                     if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
-                        plan.Fθk[iθ, jk] = conj(plan.Gθm[iθ, mneg+1])
+                        plan.Fθk[iθ, jk] = conj(inv_scaleφ * plan.Gθm[iθ, mneg+1])
                     end
                 end
             end
