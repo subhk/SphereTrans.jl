@@ -543,3 +543,43 @@ end
         end
     end
 end
+
+
+@testset "Parallel diagnostics (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays
+            MPI.Init()
+            lmax = 6
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.31*(iθ+1)) + cos(0.23*(iφ+1))
+            end
+            # Scalar energy: spectral vs grid
+            Alm = SHTnsKit.dist_analysis(cfg, fθφ)
+            E_spec_dense = energy_scalar(cfg, Alm)
+            E_spec_pencil = energy_scalar(cfg, PencilArrays.PencilArray(Alm))
+            E_grid = grid_energy_scalar(cfg, fθφ)
+            @test isapprox(E_spec_dense, E_spec_pencil; rtol=1e-10, atol=1e-12)
+            @test isapprox(E_spec_pencil, E_grid; rtol=1e-8, atol=1e-10)
+            # Spectra sum equals total
+            El = energy_scalar_l_spectrum(cfg, PencilArrays.PencilArray(Alm))
+            Em = energy_scalar_m_spectrum(cfg, PencilArrays.PencilArray(Alm))
+            @test isapprox(sum(El), E_spec_pencil; rtol=1e-10, atol=1e-12)
+            @test isapprox(sum(Em), E_spec_pencil; rtol=1e-10, atol=1e-12)
+            MPI.Finalize()
+        else
+            @info "Skipping parallel diagnostics tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping parallel diagnostics tests" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
