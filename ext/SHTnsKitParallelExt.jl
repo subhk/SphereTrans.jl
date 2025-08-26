@@ -1,5 +1,5 @@
-module SHTnsKitParallelExt
 __precompile__(false)
+module SHTnsKitParallelExt
 
 using MPI: Allreduce, Allreduce!, Allgather, Allgatherv, Comm_size, COMM_WORLD
 using PencilArrays: Pencil, PencilArray
