@@ -3,6 +3,7 @@ using LinearAlgebra
 using ChainRulesCore
 using Random
 using SHTnsKit
+using Zygote
 
 function parseval_scalar_test(lmax::Int)
     nlat = lmax + 2
@@ -296,7 +297,6 @@ end
 
 @testset "AD gradients - Zygote" begin
     try
-        using Zygote
         lmax = 3
         nlat = lmax + 2
         nlon = 2*lmax + 1
@@ -320,7 +320,6 @@ end
 
 @testset "AD gradients - Zygote: rotations and operators" begin
     try
-        using Zygote
         # Setup
         lmax = 3
         nlat = lmax + 2
@@ -335,7 +334,7 @@ end
 
         function loss_yrot(Q)
             R = similar(Q)
-            SH_Yrotate(cfg, Q, α, R)
+            R = SH_Yrotate(cfg, Q, α, R)
             return 0.5 * sum(abs2, R)
         end
 
@@ -350,7 +349,7 @@ end
         # Z-rotation
         function loss_zrot(Q)
             R = similar(Q)
-            SH_Zrotate(cfg, Q, α, R)
+            R = SH_Zrotate(cfg, Q, α, R)
             return 0.5 * sum(abs2, R)
         end
 
@@ -366,7 +365,7 @@ end
         Qv = ComplexF64.(randn(rng, cfg.nlm))
         function loss_op(Q, mx)
             R = similar(Q)
-            SH_mul_mx(cfg, mx, Q, R)
+            R = SH_mul_mx(cfg, mx, Q, R)
             return 0.5 * sum(abs2, R)
         end
 
@@ -387,11 +386,12 @@ end
         function loss_angles(a,b,c)
             r = SHTnsKit.SHTRotation(cfg.lmax, cfg.mmax; α=a, β=b, γ=c)
             R = similar(Q0)
-            SHTnsKit.shtns_rotation_apply_real(r, Q0, R)
+            R = SHTnsKit.shtns_rotation_apply_real(r, Q0, R)
             return 0.5 * sum(abs2, R)
         end
 
-        gα, gβ, gγ = Zygote.gradient(loss_angles, α, 0.1, -0.2)
+        # Use provided helper to get angle gradients (more robust than tracing struct fields)
+        gα, gβ, gγ = SHTnsKit.zgrad_rotation_angles_real(cfg, Q0, α, 0.1, -0.2)
 
         # Finite-diff check for α
         φa(ξ) = loss_angles(α + ξ, 0.1, -0.2)

@@ -107,7 +107,7 @@ Zygote.@adjoint function SHTnsKit.SH_Zrotate(cfg::SHTnsKit.SHTConfig, Qlm::Abstr
                 dα += real(conj(ȳ[lm]) * ((0 + 1im) * m * Rval))
             end
         end
-        return (Zygote.Ignore(), Q̄, dα, Zygote.zeros_like(Rlm))
+        return (nothing, Q̄, dα, nothing)
     end
     return y, back
 end
@@ -142,7 +142,7 @@ Zygote.@adjoint function SHTnsKit.SH_Yrotate(cfg::SHTnsKit.SHTConfig, Qlm::Abstr
                 dα += real(conj(ȳ[lm]) * s)
             end
         end
-        return (Zygote.Ignore(), Q̄, dα, Zygote.zeros_like(Rlm))
+        return (nothing, Q̄, dα, nothing)
     end
     return y, back
 end
@@ -169,7 +169,7 @@ Zygote.@adjoint function SHTnsKit.SH_mul_mx(cfg::SHTnsKit.SHTConfig, mx::Abstrac
                 mx̄[2*lm0 + 2] += real(conj(rbar) * Qlm[lm_next + 1])
             end
         end
-        return (Zygote.Ignore(), Zygote.AbstractZero(), Q̄, Zygote.zeros_like(Rlm)) |> x -> (x[1], mx̄, x[3], x[4])
+        return (nothing, mx̄, Q̄, nothing)
     end
     return y, back
 end

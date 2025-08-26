@@ -9,16 +9,51 @@ import SHTnsKit: wigner_d_matrix_deriv
     _to_complex(A) = eltype(A) <: Complex ? A : complex.(A)
 
     # analysis(cfg, f) :: (nlat×nlon) -> (lmax+1)×(mmax+1)
+    # Helper: exact adjoint of analysis (no Hermitian duplication)
+    function _adjoint_analysis(cfg::SHTnsKit.SHTConfig, Alm̄)
+        nlat, nlon = cfg.nlat, cfg.nlon
+        Fφ = Matrix{ComplexF64}(undef, nlat, nlon)
+        fill!(Fφ, 0.0 + 0.0im)
+        lmax, mmax = cfg.lmax, cfg.mmax
+        P = Vector{Float64}(undef, lmax + 1)
+        # scaling for adjoint: nlon (adjoint of fft) × scaleφ (2π/nlon) = 2π
+        φadj = 2π
+        for m in 0:mmax
+            col = m + 1
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
+                tbl = cfg.plm_tables[m+1]
+                for i in 1:nlat
+                    s = 0.0 + 0.0im
+                    @inbounds for l in m:lmax
+                        s += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * Alm̄[l+1, col]
+                    end
+                    Fφ[i, col] = φadj * cfg.w[i] * s
+                end
+            else
+                for i in 1:nlat
+                    SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
+                    s = 0.0 + 0.0im
+                    @inbounds for l in m:lmax
+                        s += (cfg.Nlm[l+1, col] * P[l+1]) * Alm̄[l+1, col]
+                    end
+                    Fφ[i, col] = φadj * cfg.w[i] * s
+                end
+            end
+            # Do NOT fill negative-m columns: adjoint places mass only in measured bins
+        end
+        f̄c = SHTnsKit.ifft_phi(Fφ)  # includes 1/nlon scaling already accounted via φadj
+        return real.(f̄c)
+    end
+
     function ChainRulesCore.rrule(::typeof(SHTnsKit.analysis), cfg::SHTnsKit.SHTConfig, f)
         y = SHTnsKit.analysis(cfg, f)
         function pullback(ȳ)
             ȳA = _to_complex(ȳ)
-            # Synthesis with real_output=true forms the Hermitian pair (m>0) -> adjoint
-            f̄ = SHTnsKit.synthesis(cfg, ȳA; real_output=true)
+            f̄ = _adjoint_analysis(cfg, ȳA)
             return NoTangent(), NoTangent(), f̄
         end
         return y, pullback
-end
+    end
 
 # synthesis(cfg, alm; real_output=true) :: (lmax+1)×(mmax+1) -> (nlat×nlon)
     function ChainRulesCore.rrule(::typeof(SHTnsKit.synthesis), cfg::SHTnsKit.SHTConfig, 
