@@ -34,3 +34,4 @@ end
 include("parallel_diagnostics.jl")
 
 include("parallel_dispatch.jl")
+include("parallel_plans.jl")
