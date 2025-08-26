@@ -7,6 +7,7 @@ using ..SHTnsKit
 
 """
 Internal helpers: try true in-place PencilFFTs, else copy from returned array.
+Also provide rfft/irfft variants with graceful fallback.
 """
 function _fft_to!(dest, src, plan)
     try
@@ -15,6 +16,36 @@ function _fft_to!(dest, src, plan)
     catch
         copyto!(dest, PencilFFTs.fft(src, plan))
         return dest
+    end
+end
+
+function _rfft_to!(dest, src, plan)
+    try
+        PencilFFTs.rfft!(src, plan; dest=dest)
+        return dest
+    catch
+        try
+            copyto!(dest, PencilFFTs.rfft(src, plan))
+            return dest
+        catch
+            # Fallback: complex FFT if real not available
+            return _fft_to!(dest, src, plan)
+        end
+    end
+end
+
+function _irfft_to!(dest, src, plan)
+    try
+        PencilFFTs.irfft!(src, plan; dest=dest)
+        return dest
+    catch
+        try
+            copyto!(dest, PencilFFTs.irfft(src, plan))
+            return dest
+        catch
+            # Fallback: complex iFFT; caller must handle conversion
+            return _ifft_to!(dest, src, plan)
+        end
     end
 end
 
@@ -106,9 +137,10 @@ struct DistQstPlan
     pifft::Any
     P::Vector{Float64}
     dPdx::Vector{Float64}
+    Fθφ_scratch::Union{Nothing,PencilArrays.PencilArray}
 end
 
-function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; with_spatial_scratch::Bool=false)
     Vrθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
@@ -117,7 +149,8 @@ function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.Penci
     pifft = PencilFFTs.plan_fft(Fθk; dims=2)
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
-    return DistQstPlan(cfg, Vrθm, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx)
+    Fθφ_scratch = with_spatial_scratch ? PencilArrays.allocate(prototype_θφ; dims=(:θ, :φ), eltype=ComplexF64) : nothing
+    return DistQstPlan(cfg, Vrθm, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx, Fθφ_scratch)
 end
 
 """
@@ -319,9 +352,21 @@ function SHTnsKit.dist_SHqst_to_spat!(plan::DistQstPlan, Vrθφ_out::PencilArray
         end
         return PencilFFTs.ifft(Fθk, plan.pifft)
     end
-    Vrθφ_tmp = place_ifft!(plan.Fθk, plan.Vrθm)
-    Vtθφ_tmp = place_ifft!(plan.Fθk, plan.Vtθm)
-    Vpθφ_tmp = place_ifft!(plan.Fθk, plan.Vpθm)
+    Vrθφ_tmp = if eltype(Vrθφ_out) <: Complex
+        place_ifft!(Vrθφ_out, plan.Vrθm)
+    else
+        plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vrθm) : place_ifft!(plan.Fθφ_scratch, plan.Vrθm)
+    end
+    Vtθφ_tmp = if eltype(Vtθφ_out) <: Complex
+        place_ifft!(Vtθφ_out, plan.Vtθm)
+    else
+        plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vtθm) : place_ifft!(plan.Fθφ_scratch, plan.Vtθm)
+    end
+    Vpθφ_tmp = if eltype(Vpθφ_out) <: Complex
+        place_ifft!(Vpθφ_out, plan.Vpθm)
+    else
+        plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vpθm) : place_ifft!(plan.Fθφ_scratch, plan.Vpθm)
+    end
     # Apply robert form and write to outputs
     if cfg.robert_form
         θl = axes(Vtθφ_tmp, 1)
@@ -1057,9 +1102,10 @@ struct DistSphtorPlan
     pifft::Any
     P::Vector{Float64}
     dPdx::Vector{Float64}
+    Fθφ_scratch::Union{Nothing,PencilArrays.PencilArray}
 end
 
-function DistSphtorPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+function DistSphtorPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; with_spatial_scratch::Bool=false)
     Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
@@ -1067,7 +1113,8 @@ function DistSphtorPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.Pe
     pifft = PencilFFTs.plan_fft(Fθk; dims=2)
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
-    return DistSphtorPlan(cfg, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx)
+    Fθφ_scratch = with_spatial_scratch ? PencilArrays.allocate(prototype_θφ; dims=(:θ, :φ), eltype=ComplexF64) : nothing
+    return DistSphtorPlan(cfg, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx, Fθφ_scratch)
 end
 
 """
@@ -1233,7 +1280,11 @@ function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::Penci
             end
         end
     end
-    Vtθφ_tmp = eltype(Vtθφ_out) <: Complex ? _ifft_to!(Vtθφ_out, plan.Fθk, plan.pifft) : PencilFFTs.ifft(plan.Fθk, plan.pifft)
+    Vtθφ_tmp = if eltype(Vtθφ_out) <: Complex
+        _ifft_to!(Vtθφ_out, plan.Fθk, plan.pifft)
+    else
+        plan.Fθφ_scratch === nothing ? PencilFFTs.ifft(plan.Fθk, plan.pifft) : _ifft_to!(plan.Fθφ_scratch, plan.Fθk, plan.pifft)
+    end
     # Reuse Fθk for Vp
     fill!(plan.Fθk, 0)
     for (ii,iθ) in enumerate(θloc)
@@ -1258,7 +1309,11 @@ function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::Penci
             end
         end
     end
-    Vpθφ_tmp = eltype(Vpθφ_out) <: Complex ? _ifft_to!(Vpθφ_out, plan.Fθk, plan.pifft) : PencilFFTs.ifft(plan.Fθk, plan.pifft)
+    Vpθφ_tmp = if eltype(Vpθφ_out) <: Complex
+        _ifft_to!(Vpθφ_out, plan.Fθk, plan.pifft)
+    else
+        plan.Fθφ_scratch === nothing ? PencilFFTs.ifft(plan.Fθk, plan.pifft) : _ifft_to!(plan.Fθφ_scratch, plan.Fθk, plan.pifft)
+    end
     # Robert form scaling
     if cfg.robert_form
         θl = axes(Vtθφ_tmp, 1)

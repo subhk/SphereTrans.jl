@@ -329,6 +329,7 @@ vector_results = benchmark_vector_transforms(cfg, n_samples=50)
 mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl
 
 # Include vector field roundtrip
+# (Use in-place plans; add spatial scratch to avoid allocs on real outputs)
 mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
 
 # Include 3D (Q,S,T) roundtrip
@@ -479,7 +480,7 @@ for (iθ, iφ) in zip(eachindex(axes(Vr,1)), eachindex(axes(Vr,2)))
     Vp[iθ, iφ] = 0.2*sin(0.1*(iφ+1))
 end
 
-plan = DistQstPlan(cfg, Vr)
+plan = DistQstPlan(cfg, Vr; with_spatial_scratch=true)
 Qlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
 Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
 Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
@@ -496,6 +497,8 @@ MPI.Finalize()
 # Serial and (if available) MPI allocation benchmarks
 julia --project=. examples/alloc_benchmark.jl 16
 mpiexec -n 2 julia --project=. examples/alloc_benchmark.jl 16
+
+Tip: To avoid allocations for real-output distributed synthesis, construct plans with `with_spatial_scratch=true`, which keeps a single complex (θ,φ) scratch buffer inside the plan. This modest, fixed footprint removes per-call allocations for iFFT writes when outputs are real.
 ```
 
 ##  Contributing
