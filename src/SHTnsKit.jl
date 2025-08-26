@@ -77,14 +77,14 @@ export dist_SHqst_to_lat
 export dist_SH_rotate_euler
 export dist_SH_Zrotate_packed, dist_SH_Yrotate_packed, dist_SH_Yrotate90_packed, dist_SH_Xrotate90_packed
 
-# Default fallbacks if extensions are not loaded
-zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
-zgrad_vector_energy(::SHTConfig, ::AbstractMatrix, ::AbstractMatrix) = error("Zygote extension not loaded")
-zgrad_enstrophy_Tlm(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
-fdgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("ForwardDiff extension not loaded")
-fdgrad_vector_energy(::SHTConfig, ::AbstractMatrix, ::AbstractMatrix) = error("ForwardDiff extension not loaded")
-zgrad_rotation_angles_real(::SHTConfig, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
-zgrad_rotation_angles_cplx(::Integer, ::Integer, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
+# Default fallbacks if extensions are not loaded (use broad signatures to avoid overwriting)
+zgrad_scalar_energy(::SHTConfig, ::Any) = error("Zygote extension not loaded")
+zgrad_vector_energy(::SHTConfig, ::Any, ::Any) = error("Zygote extension not loaded")
+zgrad_enstrophy_Tlm(::SHTConfig, ::Any) = error("Zygote extension not loaded")
+fdgrad_scalar_energy(::SHTConfig, ::Any) = error("ForwardDiff extension not loaded")
+fdgrad_vector_energy(::SHTConfig, ::Any, ::Any) = error("ForwardDiff extension not loaded")
+zgrad_rotation_angles_real(::SHTConfig, ::Any, ::Any, ::Any, ::Any) = error("Zygote extension not loaded")
+zgrad_rotation_angles_cplx(::Any, ::Any, ::Any, ::Any, ::Any, ::Any) = error("Zygote extension not loaded")
 dist_analysis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_synthesis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_scalar_roundtrip!(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
@@ -103,9 +103,9 @@ dist_SH_Yrotate_packed(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel e
 dist_SH_Yrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_SH_Xrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 
-# LoopVectorization extension fallbacks
-analysis_turbo(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
-synthesis_turbo(::SHTConfig, ::AbstractMatrix; real_output::Bool=true) = error("LoopVectorization extension not loaded")
+# LoopVectorization extension fallbacks (broad signatures to avoid overwriting)
+analysis_turbo(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
+synthesis_turbo(::SHTConfig, ::Any; real_output::Bool=true) = error("LoopVectorization extension not loaded")
 turbo_apply_laplacian!(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
 benchmark_turbo_vs_simd(::SHTConfig; kwargs...) = error("LoopVectorization extension not loaded")
 export shtns_verbose, shtns_print_version, shtns_get_build_info

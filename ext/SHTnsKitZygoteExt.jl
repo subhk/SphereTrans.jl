@@ -159,9 +159,11 @@ end
 Zygote.@adjoint function SHTnsKit.SH_Zrotate(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
     y = SHTnsKit.SH_Zrotate(cfg, Qlm, alpha, Rlm)
     function back(ȳ)
-        # Adjoint of SH_Zrotate w.r.t Q: apply inverse rotation to ȳ
-        Q̄ = similar(Qlm)
-        SHTnsKit.SH_Zrotate(cfg, ȳ, -alpha, Q̄)
+        # Adjoint of SH_Zrotate w.r.t Q under real inner product:
+        # If upstream cotangent is conj(R), map Q̄ = conj(A ȳ) to recover Q (A = diag(e^{i m α}))
+        tmp = similar(Qlm)
+        SHTnsKit.SH_Zrotate(cfg, ȳ, alpha, tmp)
+        Q̄ = conj.(tmp)
         dα = 0.0
         for m in 0:cfg.mmax
             (m % cfg.mres == 0) || continue

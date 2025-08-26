@@ -132,9 +132,10 @@ end
 function ChainRulesCore.rrule(::typeof(SHTnsKit.SH_Zrotate), cfg::SHTnsKit.SHTConfig, Qlm, alpha::Real, Rlm)
     y = SHTnsKit.SH_Zrotate(cfg, Qlm, alpha, Rlm)
     function pullback(ȳ)
-        # Adjoint w.r.t Q: apply inverse rotation (A* ȳ with A=diag(e^{imα}))
-        Q̄ = similar(Qlm)
-        SHTnsKit.SH_Zrotate(cfg, ȳ, -alpha, Q̄)
+        # Adjoint w.r.t Q under real inner product: Q̄ = conj(A ȳ)
+        tmp = similar(Qlm)
+        SHTnsKit.SH_Zrotate(cfg, ȳ, alpha, tmp)
+        Q̄ = conj.(tmp)
         # angle gradient: dR/dα = i m R
         dα = 0.0
         for m in 0:cfg.mmax

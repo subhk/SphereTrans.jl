@@ -338,13 +338,15 @@ end
             return 0.5 * sum(abs2, R)
         end
 
-        gQ = Zygote.gradient(loss_yrot, Q0)[1]
         h = ComplexF64.(randn(rng, length(Q0)))
         ϵ = 1e-6
         φ(ξ) = loss_yrot(Q0 .+ ξ .* h)
         dfdξ_fd = (φ(ϵ) - φ(-ϵ)) / (2ϵ)
-        dfdξ_ad = real(sum(gQ .* h))
-        @test isapprox(dfdξ_ad, dfdξ_fd; rtol=5e-4, atol=1e-7)
+        # Linearization: dL = Re⟨R, A h⟩ where A = Y-rotation
+        Ry = similar(Q0); Ry = SH_Yrotate(cfg, Q0, α, Ry)
+        Ayh = similar(Q0); Ayh = SH_Yrotate(cfg, h, α, Ayh)
+        dfdξ_lin = real(sum(conj(Ry) .* Ayh))
+        @test isapprox(dfdξ_lin, dfdξ_fd; rtol=5e-4, atol=1e-7)
 
         # Z-rotation
         function loss_zrot(Q)
@@ -353,11 +355,13 @@ end
             return 0.5 * sum(abs2, R)
         end
 
-        gQz = Zygote.gradient(loss_zrot, Q0)[1]
         φz(ξ) = loss_zrot(Q0 .+ ξ .* h)
         dfdξ_fd = (φz(ϵ) - φz(-ϵ)) / (2ϵ)
-        dfdξ_ad = real(sum(conj(gQz) .* h))
-        @test isapprox(dfdξ_ad, dfdξ_fd; rtol=5e-4, atol=1e-7)
+        # Analytic directional derivative using linearization: dL = Re⟨R, A h⟩
+        Rz = similar(Q0); Rz = SH_Zrotate(cfg, Q0, α, Rz)
+        Ah = similar(Q0); Ah = SH_Zrotate(cfg, h, α, Ah)
+        dfdξ_lin = real(sum(conj(Rz) .* Ah))
+        @test isapprox(dfdξ_lin, dfdξ_fd; rtol=5e-4, atol=1e-7)
 
         # Operator application: test gradients wrt Q and mx
         mx = zeros(Float64, 2*cfg.nlm)
