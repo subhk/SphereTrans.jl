@@ -102,6 +102,115 @@ function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:
 end
 
 """
+    dist_apply_laplacian!(cfg, Alm::AbstractMatrix)
+
+In-place multiply by -l(l+1) for dense (l×m) coefficients.
+"""
+function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
+    @inbounds for m in 0:mmax, l in m:lmax
+        Alm[l+1, m+1] *= -(l*(l+1))
+    end
+    return Alm
+end
+
+"""
+    dist_apply_laplacian!(cfg, Alm_pencil::PencilArrays.PencilArray)
+
+In-place multiply by -l(l+1) for distributed Alm with dims (:l,:m). No communication.
+"""
+function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray)
+    lmax = cfg.lmax
+    lloc = axes(Alm_pencil, 1); mloc = axes(Alm_pencil, 2)
+    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
+    for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
+        lval = gl_l[ii] - 1
+        Alm_pencil[il, jm] *= -(lval*(lval+1))
+    end
+    return Alm_pencil
+end
+
+"""
+    dist_SH_Zrotate(cfg, Alm::AbstractMatrix, alpha::Real, Rlm::AbstractMatrix)
+
+Z-rotation by alpha (radians) on dense (l×m) coefficients; Rlm = e^{imα} Alm.
+"""
+function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix, alpha::Real, Rlm::AbstractMatrix)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
+    size(Rlm,1)==lmax+1 && size(Rlm,2)==mmax+1 || throw(DimensionMismatch("Rlm dims"))
+    @inbounds for m in 0:mmax
+        phase = cis(m*alpha)
+        for l in m:lmax
+            Rlm[l+1, m+1] = phase * Alm[l+1, m+1]
+        end
+    end
+    return Rlm
+end
+
+"""
+    dist_SH_Zrotate(cfg, Alm_pencil::PencilArrays.PencilArray, alpha::Real)
+
+In-place Z-rotation by alpha on distributed Alm with dims (:l,:m). No communication.
+"""
+function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray, alpha::Real)
+    mloc = axes(Alm_pencil, 2)
+    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        phase = cis(mval*alpha)
+        Alm_pencil[:, jm] .*= phase
+    end
+    return Alm_pencil
+end
+
+"""
+    dist_SH_Yrotate(cfg, Alm::AbstractMatrix, beta::Real, Rlm::AbstractMatrix)
+
+Distributed Y-rotation via gather/apply/scatter: constructs packed vector, applies serial SH_Yrotate,
+then reassembles into dense matrix. Suitable for small/medium sizes or when exactness matters.
+"""
+function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix, beta::Real, Rlm::AbstractMatrix)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
+    size(Rlm,1)==lmax+1 && size(Rlm,2)==mmax+1 || throw(DimensionMismatch("Rlm dims"))
+    # Pack to SHTns LM order vector (m≥0)
+    Q = Vector{ComplexF64}(undef, cfg.nlm)
+    @inbounds for m in 0:mmax, l in m:lmax
+        idx = SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1
+        Q[idx] = Alm[l+1, m+1]
+    end
+    R = similar(Q)
+    SHTnsKit.SH_Yrotate(cfg, Q, beta, R)
+    # Unpack
+    @inbounds for m in 0:mmax, l in m:lmax
+        idx = SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1
+        Rlm[l+1, m+1] = R[idx]
+    end
+    return Rlm
+end
+
+"""
+    dist_SH_Yrotate(cfg, Alm_pencil::PencilArrays.PencilArray, beta::Real) -> PencilArray
+
+Gather/apply/scatter variant for distributed (:l,:m) pencils. Returns a new PencilArray.
+"""
+function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray, beta::Real)
+    Alm = Array(Alm_pencil)
+    Rlm = similar(Alm)
+    SHTnsKit.dist_SH_Yrotate(cfg, Alm, beta, Rlm)
+    R_p = PencilArrays.allocate(Alm_pencil; dims=(:l,:m), eltype=eltype(Rlm))
+    lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+    gl_l = PencilArrays.globalindices(R_p, 1)
+    gl_m = PencilArrays.globalindices(R_p, 2)
+    for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
+        R_p[il, jm] = Rlm[gl_l[ii], gl_m[jj]]
+    end
+    return R_p
+end
+
+"""
     dist_SH_mul_mx!(cfg, mx, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
 
 True distributed operator using per-m Allgatherv of l-columns (cheaper than full gather/scatter).
