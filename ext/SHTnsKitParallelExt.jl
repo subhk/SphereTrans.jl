@@ -482,19 +482,7 @@ function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:
     return R_p
 end
 
-"""
-    dist_apply_laplacian!(cfg, Alm::AbstractMatrix)
-
-In-place multiply by -l(l+1) for dense (l×m) coefficients.
-"""
-function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix)
-    lmax, mmax = cfg.lmax, cfg.mmax
-    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
-    @inbounds for m in 0:mmax, l in m:lmax
-        Alm[l+1, m+1] *= -(l*(l+1))
-    end
-    return Alm
-end
+## Dense Laplacian lives in src/parallel_dense.jl
 
 """
     dist_apply_laplacian!(cfg, Alm_pencil::PencilArrays.PencilArray)
@@ -512,23 +500,7 @@ function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm_pencil::Pen
     return Alm_pencil
 end
 
-"""
-    dist_SH_Zrotate(cfg, Alm::AbstractMatrix, alpha::Real, Rlm::AbstractMatrix)
-
-Z-rotation by alpha (radians) on dense (l×m) coefficients; Rlm = e^{imα} Alm.
-"""
-function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix, alpha::Real, Rlm::AbstractMatrix)
-    lmax, mmax = cfg.lmax, cfg.mmax
-    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
-    size(Rlm,1)==lmax+1 && size(Rlm,2)==mmax+1 || throw(DimensionMismatch("Rlm dims"))
-    @inbounds for m in 0:mmax
-        phase = cis(m*alpha)
-        for l in m:lmax
-            Rlm[l+1, m+1] = phase * Alm[l+1, m+1]
-        end
-    end
-    return Rlm
-end
+## Dense Z-rotation lives in src/parallel_dense.jl
 
 """
     dist_SH_Zrotate(cfg, Alm_pencil::PencilArrays.PencilArray, alpha::Real)
@@ -546,31 +518,7 @@ function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArr
     return Alm_pencil
 end
 
-"""
-    dist_SH_Yrotate(cfg, Alm::AbstractMatrix, beta::Real, Rlm::AbstractMatrix)
-
-Distributed Y-rotation via gather/apply/scatter: constructs packed vector, applies serial SH_Yrotate,
-then reassembles into dense matrix. Suitable for small/medium sizes or when exactness matters.
-"""
-function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix, beta::Real, Rlm::AbstractMatrix)
-    lmax, mmax = cfg.lmax, cfg.mmax
-    size(Alm,1)==lmax+1 && size(Alm,2)==mmax+1 || throw(DimensionMismatch("Alm dims"))
-    size(Rlm,1)==lmax+1 && size(Rlm,2)==mmax+1 || throw(DimensionMismatch("Rlm dims"))
-    # Pack to SHTns LM order vector (m≥0)
-    Q = Vector{ComplexF64}(undef, cfg.nlm)
-    @inbounds for m in 0:mmax, l in m:lmax
-        idx = SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1
-        Q[idx] = Alm[l+1, m+1]
-    end
-    R = similar(Q)
-    SHTnsKit.SH_Yrotate(cfg, Q, beta, R)
-    # Unpack
-    @inbounds for m in 0:mmax, l in m:lmax
-        idx = SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1
-        Rlm[l+1, m+1] = R[idx]
-    end
-    return Rlm
-end
+## Dense Y-rotation lives in src/parallel_dense.jl
 
 """
     dist_SH_Yrotate(cfg, Alm_pencil::PencilArrays.PencilArray, beta::Real) -> PencilArray
