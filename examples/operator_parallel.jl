@@ -35,6 +35,12 @@ function main()
         # Halo-exchange operator on distributed Alm
         Alm_p = PencilArrays.PencilArray(Alm)
         R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+        # Detect path: neighbor-only when full m is local
+        gl_m = PencilArrays.globalindices(Alm_p, 2)
+        full_m = (first(gl_m) == 1 && last(gl_m) == cfg.mmax+1 && length(axes(Alm_p,2)) == cfg.mmax+1)
+        if rank == 0
+            println(full_m ? "[halo] using neighbor Sendrecv halos along l" : "[halo] using per-m Allgatherv")
+        end
         dist_SH_mul_mx!(cfg, mx, Alm_p, R_p)
         # Synthesize result back to grid
         spln = DistPlan(cfg, fθφ)
