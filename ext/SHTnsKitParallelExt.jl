@@ -32,6 +32,5 @@ end
 
 
 include("parallel_diagnostics.jl")
-include("parallel_diagnostics.jl")
 
 include("parallel_dispatch.jl")
