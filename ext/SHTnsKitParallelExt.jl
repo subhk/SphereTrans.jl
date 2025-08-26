@@ -79,6 +79,24 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix)
 end
 
 """
+    dist_synthesis(cfg, Alm_pencil::PencilArrays.PencilArray; real_output=true)
+
+Distributed scalar synthesis from a distributed `(l,m)` PencilArray.
+Current implementation gathers local data to a dense Array and calls serial synthesis on each rank.
+Future improvements will implement the full inverse pipeline with transposes and PencilFFTs.
+"""
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArrays.PencilArray; real_output::Bool=true)
+    comm = PencilArrays.communicator(Alm_pencil)
+    np = MPI.Comm_size(comm)
+    if np == 1
+        return SHTnsKit.synthesis(cfg, Array(Alm_pencil); real_output=real_output)
+    end
+    # Fallback: local serial synthesis
+    Alm_local = Array(Alm_pencil)
+    return SHTnsKit.synthesis(cfg, Alm_local; real_output=real_output)
+end
+
+"""
     dist_spat_to_SHsphtor(cfg, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
 
 Distributed vector analysis. Returns local dense Slm,Tlm matrices reduced across θ-pencil communicators.
