@@ -397,9 +397,9 @@ using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
 
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-size = MPI.Comm_size(comm)
+comm = COMM_WORLD
+rank = Comm_rank(comm)
+size = Comm_size(comm)
 
 if rank == 0
     println("Running SHTnsKit parallel example with $size processes")
@@ -419,15 +419,15 @@ sh_coeffs = randn(Complex{Float64}, cfg.nlm)
 result = similar(sh_coeffs)
 
 # Benchmark parallel Laplacian operator
-MPI.Barrier(comm)  # Synchronize timing
-start_time = MPI.Wtime()
+Barrier(comm)  # Synchronize timing
+start_time = Wtime()
 
 for i in 1:50
     apply_laplacian!(cfg, sh_coeffs)  # Using standard matrix operators
 end
 
-MPI.Barrier(comm)
-end_time = MPI.Wtime()
+Barrier(comm)
+end_time = Wtime()
 
 if rank == 0
     avg_time = (end_time - start_time) / 50
@@ -524,9 +524,9 @@ using SHTnsKit, MPI, PencilArrays, PencilFFTs, LoopVectorization
 
 MPI.Init()
 
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-size = MPI.Comm_size(comm)
+comm = COMM_WORLD
+rank = Comm_rank(comm)
+size = Comm_size(comm)
 
 # Large problem that benefits from both MPI and SIMD
 cfg = create_gauss_config(Float64, 128, 128, 256, 512)
@@ -557,15 +557,15 @@ if rank == 0
 end
 
 for (name, test_func) in tests
-    MPI.Barrier(comm)
-    start_time = MPI.Wtime()
+    Barrier(comm)
+    start_time = Wtime()
     
     for i in 1:20
         test_func()
     end
     
-    MPI.Barrier(comm)
-    end_time = MPI.Wtime()
+    Barrier(comm)
+    end_time = Wtime()
     
     if rank == 0
         avg_time = (end_time - start_time) / 20
@@ -596,9 +596,9 @@ using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
 
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-size = MPI.Comm_size(comm)
+comm = COMM_WORLD
+rank = Comm_rank(comm)
+size = Comm_size(comm)
 
 cfg = create_gauss_config(Float64, 64, 48, 128, 192)
 pcfg = create_parallel_config(cfg, comm)
@@ -616,7 +616,7 @@ if rank == 0
 end
 
 # Synchronous (blocking)
-MPI.Barrier(comm)
+Barrier(comm)
 sync_time = @elapsed begin
     for i in 1:30
         apply_costheta_operator!(cfg, sh_coeffs, result)  # Using standard matrix operators
@@ -624,7 +624,7 @@ sync_time = @elapsed begin
 end
 
 # Asynchronous (non-blocking, if available)
-MPI.Barrier(comm)
+Barrier(comm)
 async_time = @elapsed begin
     for i in 1:30
         try
