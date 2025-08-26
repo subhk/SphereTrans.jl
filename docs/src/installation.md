@@ -82,8 +82,8 @@ Pkg.build("MPI")
 ```julia
 using MPI
 MPI.Init()
-rank = MPI.Comm_rank(MPI.COMM_WORLD)
-size = MPI.Comm_size(MPI.COMM_WORLD)
+rank = Comm_rank(COMM_WORLD)
+size = Comm_size(COMM_WORLD)
 println("Process $rank of $size")
 MPI.Finalize()
 ```

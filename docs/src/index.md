@@ -58,7 +58,7 @@ using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
 cfg = create_gauss_config(Float64, 20, 16, 48, 64)
-pcfg = create_parallel_config(cfg, MPI.COMM_WORLD)
+pcfg = create_parallel_config(cfg, COMM_WORLD)
 
 # Parallel operations
 sh_coeffs = randn(Complex{Float64}, cfg.nlm)
