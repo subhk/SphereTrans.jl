@@ -65,6 +65,7 @@ export zgrad_rotation_angles_real, zgrad_rotation_angles_cplx
 export dist_analysis, dist_synthesis
 export dist_scalar_roundtrip!, dist_vector_roundtrip!
 export DistPlan, dist_synthesis!
+export DistAnalysisPlan, dist_analysis!
 
 # Default fallbacks if extensions are not loaded
 zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
