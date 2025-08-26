@@ -612,4 +612,33 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
 end
 
 
+
+"""
+Minimal distributed plan to reuse allocated (θ,k) pencils and prototype metadata.
+"""
+struct DistPlan
+    cfg::SHTnsKit.SHTConfig
+    prototype_θφ::PencilArrays.PencilArray
+    Fθk::PencilArrays.PencilArray
+end
+
+function DistPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    return DistPlan(cfg, prototype_θφ, Fθk)
+end
+
+"""
+    dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.PencilArray, Alm::PencilArrays.PencilArray; real_output=true)
+
+In-place-like wrapper that runs prototype-based dist_synthesis and writes into fθφ_out.
+Current implementation delegates to dist_synthesis and copies; future versions will stream into plan.Fθk directly.
+"""
+function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.PencilArray, Alm::PencilArrays.PencilArray; real_output::Bool=true)
+    ftmp = SHTnsKit.dist_synthesis(plan.cfg, Alm; prototype_θφ=plan.prototype_θφ, real_output=real_output)
+    @inbounds for I in eachindex(ftmp)
+        fθφ_out[I] = ftmp[I]
+    end
+    return fθφ_out
+end
+
 end # module
