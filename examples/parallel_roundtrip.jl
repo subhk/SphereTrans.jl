@@ -17,16 +17,36 @@ function main()
     do_qst = any(x -> x == "--qst", ARGS)
 
     cfg = SHTnsKit.create_gauss_config(lmax, nlat; nlon=nlon)
-    # Scalar roundtrip (serial arrays; still running under MPI for reductions)
-    fθφ = zeros(Float64, nlat, nlon)
+    # Create a distributed pencil using PencilArrays 0.19 API
+    function _procgrid(p)
+        # choose near-square proc grid (pθ,pφ)
+        best = (1, p); bestdiff = p-1
+        for d in 1:p
+            if p % d == 0
+                d2 = div(p, d)
+                if abs(d - d2) < bestdiff
+                    best = (d, d2); bestdiff = abs(d - d2)
+                end
+            end
+        end
+        return best
+    end
+    p = MPI.Comm_size(comm)
+    pθ, pφ = _procgrid(p)
+    topo = Pencil((nlat, nlon), (pθ, pφ), comm)
+    fθφ = PencilArrays.zeros(topo; eltype=Float64)
     # Deterministic-ish local fill
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3 * (iθ + rank + 1)) + cos(0.2 * (iφ + 2))
     end
     # Plan-based distributed analysis + synthesis!
-    Alm = SHTnsKit.analysis(cfg, fθφ)
-    fθφ_out = SHTnsKit.synthesis(cfg, Alm; real_output=true)
-    fout = fθφ_out; f0 = fθφ
+    aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ)
+    Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+    SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+    spln = SHTnsKit.DistPlan(cfg, fθφ)
+    fθφ_out = similar(fθφ)
+    SHTnsKit.dist_synthesis!(spln, fθφ_out, PencilArray(Alm))
+    fout = Array(fθφ_out); f0 = Array(fθφ)
     num = sum(abs2, fout .- f0); den = sum(abs2, f0) + eps()
     rel_local = sqrt(num / den)
     rel_global = sqrt(MPI.Allreduce(num, +, comm) / MPI.Allreduce(den, +, comm))
@@ -35,17 +55,21 @@ function main()
     end
 
     if do_vector
-        Vtθφ = zeros(Float64, nlat, nlon)
-        Vpθφ = zeros(Float64, nlat, nlon)
+        Vtθφ = PencilArrays.zeros(topo; eltype=Float64)
+        Vpθφ = PencilArrays.zeros(topo; eltype=Float64)
         for (iθ, iφ) in zip(eachindex(axes(Vtθφ,1)), eachindex(axes(Vtθφ,2)))
             Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
             Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
         end
         # Plan-based distributed vector analysis + synthesis!
-        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Vtθφ, Vpθφ)
-        Vt_out, Vp_out = SHTnsKit.SHsphtor_to_spat(cfg, Slm, Tlm; real_output=true)
-        T1 = Vt_out; P1 = Vp_out
-        T0 = Vtθφ; P0 = Vpθφ
+        vplan = SHTnsKit.DistSphtorPlan(cfg, Vtθφ)
+        Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        SHTnsKit.dist_spat_to_SHsphtor!(vplan, Slm, Tlm, Vtθφ, Vpθφ)
+        Vt_out = similar(Vtθφ); Vp_out = similar(Vpθφ)
+        SHTnsKit.dist_SHsphtor_to_spat!(vplan, Vt_out, Vp_out, Slm, Tlm)
+        T1 = Array(Vt_out); P1 = Array(Vp_out)
+        T0 = Array(Vtθφ); P0 = Array(Vpθφ)
         num_t = sum(abs2, T1 .- T0); den_t = sum(abs2, T0) + eps()
         num_p = sum(abs2, P1 .- P0); den_p = sum(abs2, P0) + eps()
         rl_t = sqrt(num_t / den_t); rl_p = sqrt(num_p / den_p)
@@ -58,16 +82,21 @@ function main()
 
     if do_qst
         # Build simple synthetic 3D field
-        Vrθφ = zeros(Float64, nlat, nlon)
-        Vtθφ = zeros(Float64, nlat, nlon)
-        Vpθφ = zeros(Float64, nlat, nlon)
+        Vrθφ = PencilArrays.zeros(topo; eltype=Float64)
+        Vtθφ = PencilArrays.zeros(topo; eltype=Float64)
+        Vpθφ = PencilArrays.zeros(topo; eltype=Float64)
         for (iθ, iφ) in zip(eachindex(axes(Vrθφ,1)), eachindex(axes(Vrθφ,2)))
             Vrθφ[iθ, iφ] = 0.3*sin(0.1*(iθ+1)) + 0.2*cos(0.05*(iφ+1))
             Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
             Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
         end
-        Qlm, Slm, Tlm = SHTnsKit.spat_to_SHqst(cfg, Vrθφ, Vtθφ, Vpθφ)
-        Vr_out, Vt_out, Vp_out = SHTnsKit.SHqst_to_spat(cfg, Qlm, Slm, Tlm; real_output=true)
+        qplan = SHTnsKit.DistQstPlan(cfg, Vrθφ)
+        Qlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        SHTnsKit.dist_spat_to_SHqst!(qplan, Qlm, Slm, Tlm, Vrθφ, Vtθφ, Vpθφ)
+        Vr_out = similar(Vrθφ); Vt_out = similar(Vtθφ); Vp_out = similar(Vpθφ)
+        SHTnsKit.dist_SHqst_to_spat!(qplan, Vr_out, Vt_out, Vp_out, Qlm, Slm, Tlm)
         # Errors
         r0 = Array(Vrθφ); r1 = Array(Vr_out)
         t0 = Array(Vtθφ); t1 = Array(Vt_out)

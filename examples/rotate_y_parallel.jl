@@ -16,22 +16,42 @@ function main()
     β = 0.35
 
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-
-    # Build a test real field f(θ,φ)
-    fθφ = zeros(Float64, nlat, nlon)
+    # Build a distributed PencilArray field
+    function _procgrid(p)
+        best=(1,p); diff=p-1
+        for d in 1:p
+            if p % d == 0
+                d2 = div(p,d)
+                if abs(d-d2) < diff
+                    best=(d,d2); diff=abs(d-d2)
+                end
+            end
+        end
+        return best
+    end
+    p = MPI.Comm_size(comm)
+    pθ,pφ = _procgrid(p)
+    topo = Pencil((nlat, nlon), (pθ, pφ), comm)
+    # test real field
+    fθφ = PencilArrays.zeros(topo; eltype=Float64)
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3*(iθ+1)) + 0.7*cos(0.2*(iφ+1))
     end
 
-    # Analysis -> Alm (serial path)
-    Alm = analysis(cfg, fθφ)
+    # Distributed analysis -> Alm
+    aplan = DistAnalysisPlan(cfg, fθφ)
+    Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+    dist_analysis!(aplan, Alm, fθφ)
 
-    # Dense Y-rotation for reference
-    R_dense = zeros(ComplexF64, size(Alm))
-    dist_SH_Yrotate(cfg, Alm, β, R_dense)
+    # Allgatherm Y-rotation using PencilArray
+    Alm_p = PencilArray(Alm)
+    R_p = allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+    dist_SH_Yrotate_allgatherm!(cfg, Alm_p, β, R_p)
 
     # Synthesize rotated field (optional)
-    fθφ_rot = synthesis(cfg, R_dense; real_output=true)
+    spln = DistPlan(cfg, fθφ)
+    fθφ_rot = similar(fθφ)
+    dist_synthesis!(spln, fθφ_rot, R_p)
 
     MPI.Finalize()
 end
