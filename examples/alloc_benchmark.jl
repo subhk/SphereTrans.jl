@@ -46,7 +46,7 @@ function bench_distributed(lmax::Int)
     nlat = lmax + 2
     nlon = 2*lmax + 1
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    Pθφ = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm)
+    Pθφ = Pencil((:θ, :φ), (nlat, nlon); comm)
     fθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
     # Fill deterministic content
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
@@ -100,4 +100,3 @@ function main()
 end
 
 abspath(PROGRAM_FILE) == @__FILE__ && main()
-

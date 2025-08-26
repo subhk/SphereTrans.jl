@@ -68,7 +68,7 @@ nlon = 2*lmax + 1
 cfg = create_gauss_config(lmax, nlat; nlon=nlon)
 
 # Spatial grid on a Pencil communicator
-P = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+P = Pencil((:θ, :φ), (nlat, nlon); comm=MPI.COMM_WORLD)
 fθφ = PencilArrays.zeros(P; eltype=Float64)
 
 # Fill local block
@@ -129,7 +129,7 @@ SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
 
 spln = SHTnsKit.DistPlan(cfg, fθφ; use_rfft=true)
 fθφ_out = similar(fθφ)
-SHTnsKit.dist_synthesis!(spln, fθφ_out, PencilArrays.PencilArray(Alm))
+SHTnsKit.dist_synthesis!(spln, fθφ_out, PencilArray(Alm))
 ```
 
 Enable plan caching across calls (optional)
@@ -261,4 +261,3 @@ Conventions & tips
 - Keep normalization/phase conversions consistent by reusing `convert_alm_norm!` helpers.
 
 Have questions or want to contribute a feature? Start from the files above, mirror the scalar patterns, and open a PR — happy to review and iterate.
-
