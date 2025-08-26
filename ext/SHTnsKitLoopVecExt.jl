@@ -205,6 +205,7 @@ function SHTnsKit.benchmark_turbo_vs_simd(cfg::SHTnsKit.SHTConfig; trials::Integ
         synthesis_turbo=t_synth_turbo,
         analysis_speedup = t_analysis_baseline / max(t_analysis_turbo, eps()),
         synthesis_speedup = t_synth_baseline / max(t_synth_turbo, eps()),
+        speedup = t_analysis_baseline / max(t_analysis_turbo, eps()),
     )
 end
 

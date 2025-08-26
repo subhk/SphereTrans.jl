@@ -82,7 +82,7 @@ dist_vector_roundtrip!(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel e
 # LoopVectorization extension fallbacks
 analysis_turbo(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
 synthesis_turbo(::SHTConfig, ::AbstractMatrix; real_output::Bool=true) = error("LoopVectorization extension not loaded")
-turbo_apply_laplacian!(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
+turbo_apply_laplacian!(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
 benchmark_turbo_vs_simd(::SHTConfig; kwargs...) = error("LoopVectorization extension not loaded")
 export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
