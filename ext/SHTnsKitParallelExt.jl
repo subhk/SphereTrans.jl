@@ -213,17 +213,17 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penc
                     end
                 end
             end
-            # Gauss weight and φ scaling
-            acc *= cfg.w[iglobθ] * cfg.cphi
+            # No Gauss weights here (synthesis); defer φ scaling to placement step.
             Gθm[iθ, jm] += acc
         end
     end
-    # Reduce across l-pencil communicator (sum partials). Using global comm is acceptable as first pass.
+    # Reduce across l-pencil communicator (sum partials)
     MPI.Allreduce!(Gθm, +, PencilArrays.communicator(Gθm))
     # Map to (θ,k)
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
     fill!(Fθk, 0)
     nlon = cfg.nlon
+    inv_scaleφ = nlon / (2π)
     θloc = axes(Fθk, 1)
     kloc = axes(Fθk, 2)
     for (ii,iθ) in enumerate(θloc)
@@ -232,13 +232,13 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penc
             if kglob == 0
                 # m=0 bin
                 if first(mloc) <= 1 <= last(mloc)
-                    Fθk[iθ, jk] = Gθm[iθ, 1]
+                    Fθk[iθ, jk] = inv_scaleφ * Gθm[iθ, 1]
                 end
             elseif kglob <= cfg.mmax
                 # positive m
                 mpos = kglob + 1
                 if mpos in mloc
-                    Fθk[iθ, jk] = Gθm[iθ, mpos]
+                    Fθk[iθ, jk] = inv_scaleφ * Gθm[iθ, mpos]
                 end
             else
                 # negative m mirror if real_output: k = n - m
@@ -246,7 +246,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penc
                     mneg = nlon - kglob
                     if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
                         # assign conj of positive m (ensure both owners set same bin if overlap)
-                        Fθk[iθ, jk] = conj(Gθm[iθ, mneg+1])
+                        Fθk[iθ, jk] = conj(inv_scaleφ * Gθm[iθ, mneg+1])
                     end
                 end
             end
@@ -303,11 +303,10 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArra
                         N = cfg.Nlm[lval+1, col]
                         dθY = -sθ * N * tbld[lval+1, iglobθ]
                         Y = N * tblP[lval+1, iglobθ]
-                        coeff = cfg.w[iglobθ] * cfg.cphi / (lval*(lval+1))
                         Sl = Slm_local[il, iglobm]
                         Tl = Tlm_local[il, iglobm]
-                        acc_t += coeff * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
-                        acc_p += coeff * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
+                        acc_t += (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
                     end
                 end
             else
@@ -319,11 +318,10 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArra
                         N = cfg.Nlm[lval+1, col]
                         dθY = -sθ * N * dPdx[lval+1]
                         Y = N * P[lval+1]
-                        coeff = cfg.w[iglobθ] * cfg.cphi / (lval*(lval+1))
                         Sl = Slm_local[il, iglobm]
                         Tl = Tlm_local[il, iglobm]
-                        acc_t += coeff * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
-                        acc_p += coeff * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
+                        acc_t += (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
                     end
                 end
             end
@@ -339,6 +337,7 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArra
     Fθk_p = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
     fill!(Fθk_t, 0); fill!(Fθk_p, 0)
     nlon = cfg.nlon
+    inv_scaleφ = nlon / (2π)
     θloc = axes(Fθk_t, 1)
     kloc = axes(Fθk_t, 2)
     for (ii,iθ) in enumerate(θloc)
@@ -346,21 +345,21 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArra
             kglob = PencilArrays.globalindices(Fθk_t, 2)[jj] - 1
             if kglob == 0
                 if first(mloc) <= 1 <= last(mloc)
-                    Fθk_t[iθ, jk] = Vtθm[iθ, 1]
-                    Fθk_p[iθ, jk] = Vpθm[iθ, 1]
+                    Fθk_t[iθ, jk] = inv_scaleφ * Vtθm[iθ, 1]
+                    Fθk_p[iθ, jk] = inv_scaleφ * Vpθm[iθ, 1]
                 end
             elseif kglob <= cfg.mmax
                 mpos = kglob + 1
                 if mpos in mloc
-                    Fθk_t[iθ, jk] = Vtθm[iθ, mpos]
-                    Fθk_p[iθ, jk] = Vpθm[iθ, mpos]
+                    Fθk_t[iθ, jk] = inv_scaleφ * Vtθm[iθ, mpos]
+                    Fθk_p[iθ, jk] = inv_scaleφ * Vpθm[iθ, mpos]
                 end
             else
                 if real_output
                     mneg = nlon - kglob
                     if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
-                        Fθk_t[iθ, jk] = conj(Vtθm[iθ, mneg+1])
-                        Fθk_p[iθ, jk] = conj(Vpθm[iθ, mneg+1])
+                        Fθk_t[iθ, jk] = conj(inv_scaleφ * Vtθm[iθ, mneg+1])
+                        Fθk_p[iθ, jk] = conj(inv_scaleφ * Vpθm[iθ, mneg+1])
                     end
                 end
             end
@@ -436,14 +435,12 @@ function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.
                         N = cfg.Nlm[lval+1, col]
                         Y = N * tblP[lval+1, iglobθ]
                         dθY = -sθ * N * tbld[lval+1, iglobθ]
-                        coeff_r = wi * cfg.cphi
-                        coeff_v = wi * cfg.cphi / (lval*(lval+1) == 0 ? 1 : (lval*(lval+1)))
                         Ql = Qlm_local[il, iglobm]
                         Sl = Slm_local[il, iglobm]
                         Tl = Tlm_local[il, iglobm]
-                        acc_r += coeff_r * (Y * Ql)
-                        acc_t += coeff_v * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
-                        acc_p += coeff_v * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
+                        acc_r += (Y * Ql)
+                        acc_t += (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
                     end
                 end
             else
@@ -455,15 +452,12 @@ function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.
                         N = cfg.Nlm[lval+1, col]
                         Y = N * P[lval+1]
                         dθY = -sθ * N * dPdx[lval+1]
-                        coeff_r = wi * cfg.cphi
-                        denom = lval*(lval+1)
-                        coeff_v = wi * cfg.cphi / (denom == 0 ? 1 : denom)
                         Ql = Qlm_local[il, iglobm]
                         Sl = Slm_local[il, iglobm]
                         Tl = Tlm_local[il, iglobm]
-                        acc_r += coeff_r * (Y * Ql)
-                        acc_t += coeff_v * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
-                        acc_p += coeff_v * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
+                        acc_r += (Y * Ql)
+                        acc_t += (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
                     end
                 end
             end
@@ -482,23 +476,24 @@ function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.
         θloc = axes(Fθk, 1); kloc = axes(Fθk, 2)
         mloc = axes(Vθm, 2)
         nlon = cfg.nlon
+        inv_scaleφ = nlon / (2π)
         for (ii,iθ) in enumerate(θloc)
             for (jj,jk) in enumerate(kloc)
                 kglob = PencilArrays.globalindices(Fθk, 2)[jj] - 1
                 if kglob == 0
                     if first(mloc) <= 1 <= last(mloc)
-                        Fθk[iθ, jk] = Vθm[iθ, 1]
+                        Fθk[iθ, jk] = inv_scaleφ * Vθm[iθ, 1]
                     end
                 elseif kglob <= mmax
                     mpos = kglob + 1
                     if mpos in mloc
-                        Fθk[iθ, jk] = Vθm[iθ, mpos]
+                        Fθk[iθ, jk] = inv_scaleφ * Vθm[iθ, mpos]
                     end
                 else
                     if real_output
                         mneg = nlon - kglob
                         if 1 <= mneg <= mmax && (mneg+1) in mloc
-                            Fθk[iθ, jk] = conj(Vθm[iθ, mneg+1])
+                            Fθk[iθ, jk] = conj(inv_scaleφ * Vθm[iθ, mneg+1])
                         end
                     end
                 end
@@ -571,6 +566,9 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
         mm = m - first(mrange)
         mglob = PencilArrays.globalindices(Fθm_t, 2)[mm+1]
         mval = mglob - 1
+        if mval > mmax
+            continue
+        end
         col = mval + 1
         for (ii,i) in enumerate(θrange)
             iglob = PencilArrays.globalindices(Fθm_t, 1)[ii]
@@ -580,6 +578,11 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
             Ft = Fθm_t[i, m]
             Fp = Fθm_p[i, m]
             wi = cfg.w[iglob]
+            # Undo Robert form scaling for analysis if enabled
+            if cfg.robert_form && sθ > 0
+                Ft /= sθ
+                Fp /= sθ
+            end
             if use_tbl
                 tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
                 @inbounds for l in max(1,mval):lmax
