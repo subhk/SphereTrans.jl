@@ -30,13 +30,24 @@ function main()
     # Build cosθ operator coefficients (packed) and apply in spectral space
     mx = zeros(Float64, 2*cfg.nlm)
     mul_ct_matrix(cfg, mx)
-    Rlm = zeros(ComplexF64, size(Alm))
-    dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
-
-    # Synthesize result back to grid
-    spln = DistPlan(cfg, fθφ)
-    fθφ_op = similar(fθφ)
-    dist_synthesis!(spln, fθφ_op, PencilArrays.PencilArray(Rlm))
+    use_halo = any(x -> x == "--halo", ARGS)
+    if use_halo
+        # Halo-exchange operator on distributed Alm
+        Alm_p = PencilArrays.PencilArray(Alm)
+        R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+        dist_SH_mul_mx!(cfg, mx, Alm_p, R_p)
+        # Synthesize result back to grid
+        spln = DistPlan(cfg, fθφ)
+        fθφ_op = similar(fθφ)
+        dist_synthesis!(spln, fθφ_op, R_p)
+    else
+        # Dense path
+        Rlm = zeros(ComplexF64, size(Alm))
+        dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
+        spln = DistPlan(cfg, fθφ)
+        fθφ_op = similar(fθφ)
+        dist_synthesis!(spln, fθφ_op, PencilArrays.PencilArray(Rlm))
+    end
 
     # Reference: multiply in grid-space by cosθ and compare
     gθφ = similar(fθφ)
@@ -60,4 +71,3 @@ function main()
 end
 
 abspath(PROGRAM_FILE) == @__FILE__ && main()
-

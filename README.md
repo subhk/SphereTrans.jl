@@ -349,7 +349,8 @@ julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
 Spectral operator demo (cosθ application in spectral space):
 
 ```bash
-mpiexec -n 2 julia --project=. examples/operator_parallel.jl
+mpiexec -n 2 julia --project=. examples/operator_parallel.jl           # dense
+mpiexec -n 2 julia --project=. examples/operator_parallel.jl --halo    # per-m Allgatherv halo
 ```
 
 Enable rfft in distributed plans (when supported):

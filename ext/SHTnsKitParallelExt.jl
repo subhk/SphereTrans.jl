@@ -5,6 +5,31 @@ using PencilArrays
 using PencilFFTs
 using ..SHTnsKit
 
+# Optional plan caching (opt-in via ENV SHTNSKIT_CACHE_PENCILFFTS=1)
+const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") == "1")
+const _pfft_cache = IdDict{Any,Any}()
+_cache_key(kind::Symbol, A) = (kind, size(A,1), size(A,2), eltype(A), try MPI.Comm_size(PencilArrays.communicator(A)) catch; 1 end)
+function _get_or_plan(kind::Symbol, A)
+    if !_CACHE_PENCILFFTS[]
+        return kind === :fft  ? PencilFFTs.plan_fft(A; dims=2) :
+               kind === :ifft ? PencilFFTs.plan_fft(A; dims=2) :
+               kind === :rfft ? (try PencilFFTs.plan_rfft(A; dims=2) catch; nothing end) :
+               kind === :irfft? (try PencilFFTs.plan_irfft(A; dims=2) catch; nothing end) :
+               error("unknown plan kind")
+    end
+    key = _cache_key(kind, A)
+    if haskey(_pfft_cache, key)
+        return _pfft_cache[key]
+    end
+    plan = kind === :fft  ? PencilFFTs.plan_fft(A; dims=2) :
+           kind === :ifft ? PencilFFTs.plan_fft(A; dims=2) :
+           kind === :rfft ? (try PencilFFTs.plan_rfft(A; dims=2) catch; nothing end) :
+           kind === :irfft? (try PencilFFTs.plan_irfft(A; dims=2) catch; nothing end) :
+           error("unknown plan kind")
+    _pfft_cache[key] = plan
+    return plan
+end
+
 """
 Internal helpers: try true in-place PencilFFTs, else copy from returned array.
 Also provide rfft/irfft variants with graceful fallback.
@@ -266,14 +291,10 @@ function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.Penci
     Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
-    pfft = PencilFFTs.plan_fft(Fθk; dims=2)
-    pifft = PencilFFTs.plan_fft(Fθk; dims=2)
-    prfft = try
-        PencilFFTs.plan_rfft(Fθk; dims=2)
-    catch; nothing end
-    pirfft = try
-        PencilFFTs.plan_irfft(Fθk; dims=2)
-    catch; nothing end
+    pfft = _get_or_plan(:fft, Fθk)
+    pifft = _get_or_plan(:ifft, Fθk)
+    prfft = _get_or_plan(:rfft, Fθk)
+    pirfft = _get_or_plan(:irfft, Fθk)
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
     Fθφ_scratch = with_spatial_scratch ? PencilArrays.allocate(prototype_θφ; dims=(:θ, :φ), eltype=ComplexF64) : nothing
@@ -728,7 +749,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penc
         end
     end
     # Inverse FFT along φ to produce (θ,φ) pencils
-    pifft = PencilFFTs.plan_fft(Fθk; dims=2)  # assuming plan_fft handles inverse when applied with ifft
+    pifft = _get_or_plan(:ifft, Fθk)  # inverse plan used with ifft
     fθφ = PencilFFTs.ifft(Fθk, pifft)
     return real_output ? real.(fθφ) : fθφ
 end
@@ -1234,10 +1255,8 @@ function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.
     else
         PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
     end
-    pfft = PencilFFTs.plan_fft(Fθk; dims=2)
-    prfft = try
-        PencilFFTs.plan_rfft(Fθk; dims=2)
-    catch; nothing end
+    pfft = _get_or_plan(:fft, Fθk)
+    prfft = _get_or_plan(:rfft, Fθk)
     P = Vector{Float64}(undef, cfg.lmax + 1)
     return DistAnalysisPlan(cfg, Fθk, pfft, prfft, P, use_rfft)
 end

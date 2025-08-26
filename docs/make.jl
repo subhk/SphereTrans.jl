@@ -98,6 +98,7 @@ pages = Any[
         "API Reference" => "api/index.md",
         "Examples Gallery" => "examples/index.md", 
         "Performance Guide" => "performance.md",
+        "Performance Tips" => "performance_tips.md",
         "Advanced Usage" => "advanced.md"
     ]
 ]
