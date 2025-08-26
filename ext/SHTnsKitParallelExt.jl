@@ -99,14 +99,97 @@ end
 """
     dist_synthesis(cfg, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
 
-Prototype-based distributed synthesis. Uses `prototype_θφ` (dims (:θ,:φ)) to infer the target
-shape/layout. Current implementation computes the local Array via serial synthesis and returns it.
-This will be upgraded to a full inverse pipeline that returns a PencilArray matching `prototype_θφ`.
+Prototype-based distributed synthesis. Builds (θ,m) spectra from Alm (:l,:m), reduces across l-pencil,
+maps to (θ,k) with Hermitian, and inverse FFTs along φ to return a (θ,φ) PencilArray matching prototype_θφ.
 """
 function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    # Placeholder: compute local result as dense Array and return it.
-    # TODO: implement full inverse pipeline using prototype_θφ decomposition to produce a PencilArray.
-    return SHTnsKit.synthesis(cfg, Array(Alm); real_output=real_output)
+    # Convert Alm to internal normalization if needed
+    Alm_mat = Array(Alm)
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Alm_int = similar(Alm_mat)
+        SHTnsKit.convert_alm_norm!(Alm_int, Alm_mat, cfg; to_internal=true)
+        Alm_mat = Alm_int
+    end
+    # Allocate (θ,m) spectrum pencil using prototype
+    Gθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    fill!(Gθm, 0)
+    # Local ranges
+    θloc = axes(Gθm, 1)
+    mloc = axes(Gθm, 2)
+    lloc = axes(Alm, 1)
+    # Accumulate over local l for owned θ,m
+    use_tbl = cfg.use_plm_tables && !isempty(cfg.plm_tables)
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    for (ii,iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(Gθm, 1)[ii]
+        xθ = cfg.x[iglobθ]
+        for (jj,jm) in enumerate(mloc)
+            iglobm = PencilArrays.globalindices(Gθm, 2)[jj]
+            mval = iglobm - 1
+            col = mval + 1
+            acc = 0.0 + 0.0im
+            if use_tbl
+                tbl = cfg.plm_tables[col]
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Alm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= mval
+                        acc += (cfg.Nlm[lval+1, col] * tbl[lval+1, iglobθ]) * Alm_mat[il, iglobm]
+                    end
+                end
+            else
+                SHTnsKit.Plm_row!(P, xθ, cfg.lmax, mval)
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Alm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= mval
+                        acc += (cfg.Nlm[lval+1, col] * P[lval+1]) * Alm_mat[il, iglobm]
+                    end
+                end
+            end
+            # Gauss weight and φ scaling
+            acc *= cfg.w[iglobθ] * cfg.cphi
+            Gθm[iθ, jm] += acc
+        end
+    end
+    # Reduce across l-pencil communicator (sum partials). Using global comm is acceptable as first pass.
+    MPI.Allreduce!(Gθm, +, PencilArrays.communicator(Gθm))
+    # Map to (θ,k)
+    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    fill!(Fθk, 0)
+    nlon = cfg.nlon
+    θloc = axes(Fθk, 1)
+    kloc = axes(Fθk, 2)
+    for (ii,iθ) in enumerate(θloc)
+        for (jj,jk) in enumerate(kloc)
+            kglob = PencilArrays.globalindices(Fθk, 2)[jj] - 1
+            if kglob == 0
+                # m=0 bin
+                if first(mloc) <= 1 <= last(mloc)
+                    Fθk[iθ, jk] = Gθm[iθ, 1]
+                end
+            elseif kglob <= cfg.mmax
+                # positive m
+                mpos = kglob + 1
+                if mpos in mloc
+                    Fθk[iθ, jk] = Gθm[iθ, mpos]
+                end
+            else
+                # negative m mirror if real_output: k = n - m
+                if real_output
+                    mneg = nlon - kglob
+                    if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
+                        # assign conj of positive m (ensure both owners set same bin if overlap)
+                        Fθk[iθ, jk] = conj(Gθm[iθ, mneg+1])
+                    end
+                end
+            end
+        end
+    end
+    # Inverse FFT along φ to produce (θ,φ) pencils
+    pifft = PencilFFTs.plan_fft(Fθk; dims=2)  # assuming plan_fft handles inverse when applied with ifft
+    fθφ = PencilFFTs.ifft(Fθk, pifft)
+    return real_output ? real.(fθφ) : fθφ
 end
 
 """
@@ -115,8 +198,121 @@ end
 Prototype-based distributed vector synthesis (placeholder). Computes local dense result for now.
 """
 function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    Vt, Vp = SHTnsKit.SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); real_output=real_output)
-    return Vt, Vp
+    # Convert to internal normalization
+    Slm_local = Array(Slm); Tlm_local = Array(Tlm)
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        S2 = similar(Slm_local); T2 = similar(Tlm_local)
+        SHTnsKit.convert_alm_norm!(S2, Slm_local, cfg; to_internal=true)
+        SHTnsKit.convert_alm_norm!(T2, Tlm_local, cfg; to_internal=true)
+        Slm_local = S2; Tlm_local = T2
+    end
+    # (θ,m) spectra for Vt and Vp
+    Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    fill!(Vtθm, 0); fill!(Vpθm, 0)
+    θloc = axes(Vtθm, 1); mloc = axes(Vtθm, 2)
+    lloc = axes(Slm, 1)
+    use_tbl = cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
+    for (ii,iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(Vtθm, 1)[ii]
+        xθ = cfg.x[iglobθ]
+        sθ = sqrt(max(0.0, 1 - xθ*xθ))
+        inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+        for (jj,jm) in enumerate(mloc)
+            iglobm = PencilArrays.globalindices(Vtθm, 2)[jj]
+            mval = iglobm - 1
+            col = mval + 1
+            acc_t = 0.0 + 0.0im
+            acc_p = 0.0 + 0.0im
+            if use_tbl
+                tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Slm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= max(1, mval)
+                        N = cfg.Nlm[lval+1, col]
+                        dθY = -sθ * N * tbld[lval+1, iglobθ]
+                        Y = N * tblP[lval+1, iglobθ]
+                        coeff = cfg.w[iglobθ] * cfg.cphi / (lval*(lval+1))
+                        Sl = Slm_local[il, iglobm]
+                        Tl = Tlm_local[il, iglobm]
+                        acc_t += coeff * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += coeff * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
+                    end
+                end
+            else
+                SHTnsKit.Plm_and_dPdx_row!(P, dPdx, xθ, cfg.lmax, mval)
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Slm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= max(1, mval)
+                        N = cfg.Nlm[lval+1, col]
+                        dθY = -sθ * N * dPdx[lval+1]
+                        Y = N * P[lval+1]
+                        coeff = cfg.w[iglobθ] * cfg.cphi / (lval*(lval+1))
+                        Sl = Slm_local[il, iglobm]
+                        Tl = Tlm_local[il, iglobm]
+                        acc_t += coeff * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += coeff * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
+                    end
+                end
+            end
+            Vtθm[iθ, jm] += acc_t
+            Vpθm[iθ, jm] += acc_p
+        end
+    end
+    # Reduce across l-pencil
+    MPI.Allreduce!(Vtθm, +, PencilArrays.communicator(Vtθm))
+    MPI.Allreduce!(Vpθm, +, PencilArrays.communicator(Vpθm))
+    # Map to (θ,k) and inverse FFT
+    Fθk_t = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    Fθk_p = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    fill!(Fθk_t, 0); fill!(Fθk_p, 0)
+    nlon = cfg.nlon
+    θloc = axes(Fθk_t, 1)
+    kloc = axes(Fθk_t, 2)
+    for (ii,iθ) in enumerate(θloc)
+        for (jj,jk) in enumerate(kloc)
+            kglob = PencilArrays.globalindices(Fθk_t, 2)[jj] - 1
+            if kglob == 0
+                if first(mloc) <= 1 <= last(mloc)
+                    Fθk_t[iθ, jk] = Vtθm[iθ, 1]
+                    Fθk_p[iθ, jk] = Vpθm[iθ, 1]
+                end
+            elseif kglob <= cfg.mmax
+                mpos = kglob + 1
+                if mpos in mloc
+                    Fθk_t[iθ, jk] = Vtθm[iθ, mpos]
+                    Fθk_p[iθ, jk] = Vpθm[iθ, mpos]
+                end
+            else
+                if real_output
+                    mneg = nlon - kglob
+                    if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
+                        Fθk_t[iθ, jk] = conj(Vtθm[iθ, mneg+1])
+                        Fθk_p[iθ, jk] = conj(Vpθm[iθ, mneg+1])
+                    end
+                end
+            end
+        end
+    end
+    pifft_t = PencilFFTs.plan_fft(Fθk_t; dims=2)
+    pifft_p = PencilFFTs.plan_fft(Fθk_p; dims=2)
+    Vtθφ = PencilFFTs.ifft(Fθk_t, pifft_t)
+    Vpθφ = PencilFFTs.ifft(Fθk_p, pifft_p)
+    # Robert form scaling
+    if cfg.robert_form
+        θloc = axes(Vtθφ, 1)
+        for (ii,iθ) in enumerate(θloc)
+            iglobθ = PencilArrays.globalindices(Vtθφ, 1)[ii]
+            sθ = sqrt(max(0.0, 1 - cfg.x[iglobθ]^2))
+            Vtθφ[iθ, :] .*= sθ
+            Vpθφ[iθ, :] .*= sθ
+        end
+    end
+    return real_output ? (real.(Vtθφ), real.(Vpθφ)) : (Vtθφ, Vpθφ)
 end
 
 """
@@ -125,9 +321,147 @@ end
 Prototype-based distributed qst synthesis (placeholder). Computes local dense result for now.
 """
 function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    Vr = SHTnsKit.synthesis(cfg, Array(Qlm); real_output=real_output)
-    Vt, Vp = SHTnsKit.SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); real_output=real_output)
-    return Vr, Vt, Vp
+    # Convert spectra to internal normalization if needed
+    Qlm_local = Array(Qlm); Slm_local = Array(Slm); Tlm_local = Array(Tlm)
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Q2 = similar(Qlm_local); S2 = similar(Slm_local); T2 = similar(Tlm_local)
+        SHTnsKit.convert_alm_norm!(Q2, Qlm_local, cfg; to_internal=true)
+        SHTnsKit.convert_alm_norm!(S2, Slm_local, cfg; to_internal=true)
+        SHTnsKit.convert_alm_norm!(T2, Tlm_local, cfg; to_internal=true)
+        Qlm_local = Q2; Slm_local = S2; Tlm_local = T2
+    end
+    lmax, mmax = cfg.lmax, cfg.mmax
+    # Allocate (θ,m) pencils
+    Vrθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    fill!(Vrθm, 0); fill!(Vtθm, 0); fill!(Vpθm, 0)
+    θloc = axes(Vrθm, 1)
+    mloc = axes(Vrθm, 2)
+    lloc = axes(Qlm, 1)
+    use_tbl = cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
+    P = Vector{Float64}(undef, lmax + 1)
+    dPdx = Vector{Float64}(undef, lmax + 1)
+    for (ii,iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(Vrθm, 1)[ii]
+        xθ = cfg.x[iglobθ]
+        sθ = sqrt(max(0.0, 1 - xθ*xθ))
+        inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+        wi = cfg.w[iglobθ]
+        for (jj,jm) in enumerate(mloc)
+            iglobm = PencilArrays.globalindices(Vrθm, 2)[jj]
+            mval = iglobm - 1
+            col = mval + 1
+            acc_r = 0.0 + 0.0im
+            acc_t = 0.0 + 0.0im
+            acc_p = 0.0 + 0.0im
+            if use_tbl
+                tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Qlm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= mval
+                        N = cfg.Nlm[lval+1, col]
+                        Y = N * tblP[lval+1, iglobθ]
+                        dθY = -sθ * N * tbld[lval+1, iglobθ]
+                        coeff_r = wi * cfg.cphi
+                        coeff_v = wi * cfg.cphi / (lval*(lval+1) == 0 ? 1 : (lval*(lval+1)))
+                        Ql = Qlm_local[il, iglobm]
+                        Sl = Slm_local[il, iglobm]
+                        Tl = Tlm_local[il, iglobm]
+                        acc_r += coeff_r * (Y * Ql)
+                        acc_t += coeff_v * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += coeff_v * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * tbld[lval+1, iglobθ]) * Tl)
+                    end
+                end
+            else
+                SHTnsKit.Plm_and_dPdx_row!(P, dPdx, xθ, lmax, mval)
+                @inbounds for (kk, il) in enumerate(lloc)
+                    iglobl = PencilArrays.globalindices(Qlm, 1)[kk]
+                    lval = iglobl - 1
+                    if lval >= mval
+                        N = cfg.Nlm[lval+1, col]
+                        Y = N * P[lval+1]
+                        dθY = -sθ * N * dPdx[lval+1]
+                        coeff_r = wi * cfg.cphi
+                        denom = lval*(lval+1)
+                        coeff_v = wi * cfg.cphi / (denom == 0 ? 1 : denom)
+                        Ql = Qlm_local[il, iglobm]
+                        Sl = Slm_local[il, iglobm]
+                        Tl = Tlm_local[il, iglobm]
+                        acc_r += coeff_r * (Y * Ql)
+                        acc_t += coeff_v * (dθY * Sl + (0 + 1im) * mval * inv_sθ * Y * Tl)
+                        acc_p += coeff_v * ((0 + 1im) * mval * inv_sθ * Y * Sl + (sθ * N * dPdx[lval+1]) * Tl)
+                    end
+                end
+            end
+            Vrθm[iθ, jm] += acc_r
+            Vtθm[iθ, jm] += acc_t
+            Vpθm[iθ, jm] += acc_p
+        end
+    end
+    # Reduce across l-pencil communicator
+    MPI.Allreduce!(Vrθm, +, PencilArrays.communicator(Vrθm))
+    MPI.Allreduce!(Vtθm, +, PencilArrays.communicator(Vtθm))
+    MPI.Allreduce!(Vpθm, +, PencilArrays.communicator(Vpθm))
+    # Map to (θ,k) and inverse FFT (enforce Hermitian if real)
+    function θm_to_θφ!(Fθk, Vθm)
+        fill!(Fθk, 0)
+        θloc = axes(Fθk, 1); kloc = axes(Fθk, 2)
+        mloc = axes(Vθm, 2)
+        nlon = cfg.nlon
+        for (ii,iθ) in enumerate(θloc)
+            for (jj,jk) in enumerate(kloc)
+                kglob = PencilArrays.globalindices(Fθk, 2)[jj] - 1
+                if kglob == 0
+                    if first(mloc) <= 1 <= last(mloc)
+                        Fθk[iθ, jk] = Vθm[iθ, 1]
+                    end
+                elseif kglob <= mmax
+                    mpos = kglob + 1
+                    if mpos in mloc
+                        Fθk[iθ, jk] = Vθm[iθ, mpos]
+                    end
+                else
+                    if real_output
+                        mneg = nlon - kglob
+                        if 1 <= mneg <= mmax && (mneg+1) in mloc
+                            Fθk[iθ, jk] = conj(Vθm[iθ, mneg+1])
+                        end
+                    end
+                end
+            end
+        end
+        return Fθk
+    end
+    Fθk_r = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    Fθk_t = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    Fθk_p = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    θm_to_θφ!(Fθk_r, Vrθm)
+    θm_to_θφ!(Fθk_t, Vtθm)
+    θm_to_θφ!(Fθk_p, Vpθm)
+    # Inverse FFTs
+    pr = PencilFFTs.plan_fft(Fθk_r; dims=2)
+    pt = PencilFFTs.plan_fft(Fθk_t; dims=2)
+    pp = PencilFFTs.plan_fft(Fθk_p; dims=2)
+    Vrθφ = PencilFFTs.ifft(Fθk_r, pr)
+    Vtθφ = PencilFFTs.ifft(Fθk_t, pt)
+    Vpθφ = PencilFFTs.ifft(Fθk_p, pp)
+    # Robert form on vector components
+    if cfg.robert_form
+        θloc = axes(Vtθφ, 1)
+        for (ii,iθ) in enumerate(θloc)
+            iglobθ = PencilArrays.globalindices(Vtθφ, 1)[ii]
+            sθ = sqrt(max(0.0, 1 - cfg.x[iglobθ]^2))
+            Vtθφ[iθ, :] .*= sθ
+            Vpθφ[iθ, :] .*= sθ
+        end
+    end
+    if real_output
+        return real.(Vrθφ), real.(Vtθφ), real.(Vpθφ)
+    else
+        return Vrθφ, Vtθφ, Vpθφ
+    end
 end
 
 """
