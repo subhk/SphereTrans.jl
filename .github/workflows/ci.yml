@@ -194,11 +194,12 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      - name: Deploy docs (Documenter.jl)
+      - name: Build + deploy docs (Documenter.jl)
         if: github.event_name == 'push'
-        uses: julia-actions/julia-docdeploy@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          julia --project=docs --color=yes docs/make.jl
 
       - name: Run doctests
         shell: julia --project=docs --color=yes {0}
