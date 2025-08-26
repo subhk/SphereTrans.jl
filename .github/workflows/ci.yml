@@ -186,10 +186,13 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Configure doc environment
-        shell: julia --project=docs --color=yes {0}
+        shell: julia --color=yes {0}
         run: |
           using Pkg
-          Pkg.develop(PackageSpec(path=pwd()))
+          cd("docs")
+          Pkg.activate(".")
+          # Develop the parent package into the docs environment
+          Pkg.develop(; path=joinpath(pwd(), ".."))
           Pkg.instantiate()
 
       - uses: julia-actions/julia-buildpkg@v1
