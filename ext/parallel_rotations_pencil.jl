@@ -3,9 +3,9 @@
 ##########
 
 function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig, 
-                            Alm_pencil::PencilArrays.PencilArray, alpha::Real)
+                            Alm_pencil::PencilArray, alpha::Real)
     mloc = axes(Alm_pencil, 2)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_m = globalindices(Alm_pencil, 2)
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         phase = cis(mval * alpha)
@@ -16,10 +16,10 @@ function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig,
 end
 
 function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig,
-                            Alm_pencil::PencilArrays.PencilArray, alpha::Real,
-                            R_pencil::PencilArrays.PencilArray)
+                            Alm_pencil::PencilArray, alpha::Real,
+                            R_pencil::PencilArray)
     mloc = axes(Alm_pencil, 2)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_m = globalindices(Alm_pencil, 2)
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         phase = cis(mval * alpha)
@@ -29,29 +29,29 @@ function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig,
 end
 
 function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig, 
-                                            Alm_pencil::PencilArrays.PencilArray, 
+                                            Alm_pencil::PencilArray, 
                                             beta::Real, 
-                                            R_pencil::PencilArrays.PencilArray)
+                                            R_pencil::PencilArray)
 
     lmax, mmax = cfg.lmax, cfg.mmax
     
-    comm = PencilArrays.communicator(Alm_pencil)
+    comm = communicator(Alm_pencil)
 
     lloc = axes(Alm_pencil, 1)
     mloc = axes(Alm_pencil, 2)
     
-    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_l = globalindices(Alm_pencil, 1)
+    gl_m = globalindices(Alm_pencil, 2)
 
     nm_local = length(mloc)
-    counts_m = MPI.Allgather(nm_local, comm)
+    counts_m = Allgather(nm_local, comm)
     displs_m = cumsum([0; counts_m[1:end-1]])
     a_full = Vector{ComplexF64}(undef, mmax + 1)
 
     for (ii, il) in enumerate(lloc)
         lval = gl_l[ii] - 1
         a_local = Array(view(Alm_pencil, il, :))
-        MPI.Allgatherv!(a_local, a_full, counts_m, displs_m, comm)
+        Allgatherv(a_local, a_full, counts_m, displs_m, comm)
         mm = min(lval, mmax)
         n2 = 2*lval + 1
         b = Vector{ComplexF64}(undef, n2); fill!(b, 0.0 + 0.0im)
@@ -101,15 +101,15 @@ end
 Allgather only m-columns with m ≤ l for each l-row, reducing communication for small l.
 """
 function SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg::SHTnsKit.SHTConfig,
-                                               Alm_pencil::PencilArrays.PencilArray,
+                                               Alm_pencil::PencilArray,
                                                beta::Real,
-                                               R_pencil::PencilArrays.PencilArray)
+                                               R_pencil::PencilArray)
     lmax, mmax = cfg.lmax, cfg.mmax
-    comm = PencilArrays.communicator(Alm_pencil)
+    comm = communicator(Alm_pencil)
     lloc = axes(Alm_pencil, 1)
     mloc = axes(Alm_pencil, 2)
-    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
-    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    gl_l = globalindices(Alm_pencil, 1)
+    gl_m = globalindices(Alm_pencil, 2)
 
     for (ii, il) in enumerate(lloc)
         lval = gl_l[ii] - 1
@@ -125,13 +125,13 @@ function SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg::SHTnsKit.SHTConfig,
         end
         # Gather sizes
         count_local = length(msel_val)
-        counts = MPI.Allgather(count_local, comm)
+        counts = Allgather(count_local, comm)
         displs = cumsum([0; counts[1:end-1]])
         total = sum(counts)
         m_all = Vector{Int}(undef, total)
         a_all = Vector{ComplexF64}(undef, total)
-        MPI.Allgatherv!(msel_val, m_all, counts, displs, comm)
-        MPI.Allgatherv!(a_loc, a_all, counts, displs, comm)
+        Allgatherv(msel_val, m_all, counts, displs, comm)
+        Allgatherv(a_loc, a_all, counts, displs, comm)
         # Reconstruct a_full[0:mm]
         a_full = zeros(ComplexF64, mm + 1)
         for k in 1:total
@@ -180,32 +180,32 @@ function SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg::SHTnsKit.SHTConfig,
     return R_pencil
 end
 function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig,
-                                  Alm_pencil::PencilArrays.PencilArray,
+                                  Alm_pencil::PencilArray,
                                   beta::Real,
-                                  R_pencil::PencilArrays.PencilArray)
+                                  R_pencil::PencilArray)
     # Truncated gather reduces bandwidth for small l
     return SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg, Alm_pencil, beta, R_pencil)
 end
 
 """
-    dist_SH_Yrotate90(cfg, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+    dist_SH_Yrotate90(cfg, Alm_pencil::PencilArray, R_pencil::PencilArray)
 
 Rotate distributed Alm by +90° around Y in Pencil layout.
 """
 function SHTnsKit.dist_SH_Yrotate90(cfg::SHTnsKit.SHTConfig,
-                                    Alm_pencil::PencilArrays.PencilArray,
-                                    R_pencil::PencilArrays.PencilArray)
+                                    Alm_pencil::PencilArray,
+                                    R_pencil::PencilArray)
     return SHTnsKit.dist_SH_Yrotate(cfg, Alm_pencil, π/2, R_pencil)
 end
 
 """
-    dist_SH_Xrotate90(cfg, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+    dist_SH_Xrotate90(cfg, Alm_pencil::PencilArray, R_pencil::PencilArray)
 
 Rotate distributed Alm by +90° around X using Z(π/2) → Y(π/2) → Z(-π/2).
 """
 function SHTnsKit.dist_SH_Xrotate90(cfg::SHTnsKit.SHTConfig,
-                                    Alm_pencil::PencilArrays.PencilArray,
-                                    R_pencil::PencilArrays.PencilArray)
+                                    Alm_pencil::PencilArray,
+                                    R_pencil::PencilArray)
     return SHTnsKit.dist_SH_rotate_euler(cfg, Alm_pencil, π/2, π/2, -π/2, R_pencil)
 end
 
@@ -214,9 +214,9 @@ end
 ##########
 
 function SHTnsKit.dist_SH_rotate_euler(cfg::SHTnsKit.SHTConfig,
-                                       Alm_pencil::PencilArrays.PencilArray,
+                                       Alm_pencil::PencilArray,
                                        α::Real, β::Real, γ::Real,
-                                       R_pencil::PencilArrays.PencilArray)
+                                       R_pencil::PencilArray)
     # Temp buffer with same layout
     tmp1 = similar(Alm_pencil)
     tmp2 = similar(Alm_pencil)
