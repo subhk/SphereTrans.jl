@@ -115,7 +115,7 @@ function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.Pencil
     return fθφ_out
 end
 
-# Vector/QST fallbacks for now
+## Vector/QST distributed implementations
 
 function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
     return SHTnsKit.spat_to_SHsphtor(cfg, Array(Vtθφ), Array(Vpθφ))
