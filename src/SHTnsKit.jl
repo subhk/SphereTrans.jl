@@ -20,6 +20,7 @@ include("rotations.jl")
 include("local.jl")
 include("diagnostics.jl")
 include("api_compat.jl")
+include("parallel_dense.jl")
 
 export SHTConfig, create_gauss_config, destroy_config
 export analysis, synthesis
