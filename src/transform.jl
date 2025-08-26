@@ -79,7 +79,7 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     # Temporary buffers
     P = Vector{Float64}(undef, lmax + 1)
     G = Vector{CT}(undef, nlat)
-    inv_scaleφ = nlon / (2π)
+    inv_scaleφ = nlon
 
     # Convert incoming coefficients to internal norm if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false

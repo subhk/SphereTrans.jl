@@ -41,6 +41,11 @@ Base.@kwdef mutable struct SHTRotation
     conv::Symbol = :ZYZ
 end
 
+# Convenient outer constructor with keyword defaults (to mirror SHTns usage)
+function SHTRotation(lmax::Integer, mmax::Integer; α::Real=0.0, β::Real=0.0, γ::Real=0.0, conv::Symbol=:ZYZ)
+    return SHTRotation(Int(lmax), Int(mmax), float(α), float(β), float(γ), conv)
+end
+
 """
     SH_Yrotate(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
 

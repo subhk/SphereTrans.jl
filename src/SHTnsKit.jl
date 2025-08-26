@@ -7,11 +7,12 @@ using Base.Threads
 
 include("fftutils.jl")
 include("layout.jl")
+include("mathutils.jl")
 include("gausslegendre.jl")
 include("legendre.jl")
-include("plan.jl")
 include("normalization.jl")
 include("config.jl")
+include("plan.jl")
 include("transform.jl")
 include("complex_packed.jl")
 include("vector.jl")

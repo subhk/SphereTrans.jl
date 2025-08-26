@@ -6,7 +6,7 @@ All spectral functions accept matrices shaped (lmax+1, mmax+1) with m ≥ 0.
 For real fields (default), contributions for m>0 are doubled.
 """
 
-_wm_real(cfg::SHTConfig) = (w = ones(Float64, cfg.mmax + 1); @inbounds for m in 1:cfg.mmax w[m+1] = 2.0; end; w)
+_wm_real(cfg::SHTConfig) = [m == 0 ? 1.0 : 2.0 for m in 0:cfg.mmax]
 
 """energy_scalar(cfg, alm; real_field=true) -> Float64"""
 function energy_scalar(cfg::SHTConfig, alm::AbstractMatrix; real_field::Bool=true)

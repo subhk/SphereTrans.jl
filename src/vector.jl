@@ -35,7 +35,7 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
 
     P = Vector{Float64}(undef, lmax + 1)
     dPdx = Vector{Float64}(undef, lmax + 1)
-    inv_scaleφ = nlon / (2π)
+    inv_scaleφ = nlon
 
     @threads for m in 0:mmax
         col = m + 1

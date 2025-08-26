@@ -3,7 +3,7 @@ module SHTnsKitParallelExt
 using MPI: Allreduce, Allreduce!, Allgather, Allgatherv, Comm_size, COMM_WORLD
 using PencilArrays: Pencil, PencilArray, communicator, allocate, transpose, globalindices
 using PencilFFTs: plan_fft, fft, ifft, plan_rfft, plan_irfft, rfft, irfft
-using ..SHTnsKit
+using SHTnsKit
 
 # Optional plan caching (opt-in via ENV SHTNSKIT_CACHE_PENCILFFTS=1)
 const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") == "1")

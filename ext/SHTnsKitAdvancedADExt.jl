@@ -1,9 +1,9 @@
 module SHTnsKitAdvancedADExt
 
 using ChainRulesCore
-using ..SHTnsKit
-using ..SHTnsKit: LM_index, LM_cplx_index, wigner_d_matrix
-import ..SHTnsKit: wigner_d_matrix_deriv
+using SHTnsKit
+using SHTnsKit: LM_index, LM_cplx_index, wigner_d_matrix
+import SHTnsKit: wigner_d_matrix_deriv
 
     # Helper to ensure array eltype is complex for adjoints when needed
     _to_complex(A) = eltype(A) <: Complex ? A : complex.(A)
@@ -13,8 +13,8 @@ import ..SHTnsKit: wigner_d_matrix_deriv
         y = SHTnsKit.analysis(cfg, f)
         function pullback(ȳ)
             ȳA = _to_complex(ȳ)
-            # Synthesis is the adjoint of analysis under our inner products
-            f̄ = SHTnsKit.synthesis(cfg, ȳA; real_output=false)
+            # Synthesis with real_output=true forms the Hermitian pair (m>0) -> adjoint
+            f̄ = SHTnsKit.synthesis(cfg, ȳA; real_output=true)
             return NoTangent(), NoTangent(), f̄
         end
         return y, pullback
@@ -56,7 +56,7 @@ end
         Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Vt, Vp)
         function pullback(ṠTl)
             Slm̄, Tlm̄ = ṠTl
-            Vt̄, Vp̄ = SHTnsKit.SHsphtor_to_spat(cfg, _to_complex(Slm̄), _to_complex(Tlm̄); real_output=false)
+            Vt̄, Vp̄ = SHTnsKit.SHsphtor_to_spat(cfg, _to_complex(Slm̄), _to_complex(Tlm̄); real_output=true)
             return NoTangent(), NoTangent(), Vt̄, Vp̄
         end
         return (Slm, Tlm), pullback

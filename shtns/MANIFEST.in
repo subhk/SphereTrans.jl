@@ -1,0 +1,9 @@
+include *.py
+include *.c *.h
+include *.md
+include configure
+include *.in
+include fftw3/*
+include SHT/*
+include hiprec/*
+exclude *cuda* SHT/*cu

@@ -4,7 +4,7 @@
 
 using MPI
 using PencilArrays
-using ..SHTnsKit
+using SHTnsKit
 
 """
     dist_SH_to_lat(cfg, Alm_pencil::PencilArray, cost::Real;
