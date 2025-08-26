@@ -38,6 +38,10 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
         mm = m - first(mrange)  # local index offset
         mglob = PencilArrays.globalindices(Fθm, 2)[mm+1]  # global m index (1-based)
         mval = mglob - 1
+        # Only accumulate for resolved orders 0..mmax
+        if mval > mmax
+            continue
+        end
         col = mval + 1
         for (ii,i) in enumerate(θrange)
             iglob = PencilArrays.globalindices(Fθm, 1)[ii]
