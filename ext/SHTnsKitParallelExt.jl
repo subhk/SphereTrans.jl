@@ -1,8 +1,8 @@
 module SHTnsKitParallelExt
 
 using MPI: Allreduce, Allreduce!, Allgather, Allgatherv, Comm_size, COMM_WORLD
-using PencilArrays: Pencil, PencilArray, communicator, allocate, transpose, globalindices
-using PencilFFTs: plan_fft, fft, ifft, plan_rfft, plan_irfft, rfft, irfft
+using PencilArrays: Pencil, PencilArray
+using PencilFFTs
 using SHTnsKit
 
 # Optional plan caching (opt-in via ENV SHTNSKIT_CACHE_PENCILFFTS=1)
@@ -36,6 +36,20 @@ function _get_or_plan(kind::Symbol, A)
     _pfft_cache[key] = plan
     return plan
 end
+
+
+# Local aliases for commonly used PencilArrays/PencilFFTs functions
+const communicator = PencilArrays.communicator
+const allocate = PencilArrays.allocate
+const globalindices = PencilArrays.globalindices
+
+const plan_fft = PencilFFTs.plan_fft
+const fft = PencilFFTs.fft
+const ifft = PencilFFTs.ifft
+const plan_rfft = PencilFFTs.plan_rfft
+const plan_irfft = PencilFFTs.plan_irfft
+const rfft = PencilFFTs.rfft
+const irfft = PencilFFTs.irfft
 
 
 include("parallel_diagnostics.jl")
