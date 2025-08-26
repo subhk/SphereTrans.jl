@@ -809,7 +809,7 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
     if np == 1
         return SHTnsKit.spat_to_SHsphtor(cfg, Array(Vtθφ), Array(Vpθφ))
     end
-    # FFT along φ
+    # FFT along φ (no persistent plan here; initial version uses alloc)
     pfft_t = PencilFFTs.plan_fft(Vtθφ; dims=2)
     pfft_p = PencilFFTs.plan_fft(Vpθφ; dims=2)
     Fθk_t = PencilFFTs.fft(Vtθφ, pfft_t)

@@ -331,6 +331,9 @@ mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl
 # Include vector field roundtrip
 mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
 
+# Include 3D (Q,S,T) roundtrip
+mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --qst
+
 # Ensure required optional packages are available (first time)
 julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
 ```
@@ -346,7 +349,8 @@ SHTnsKit/
 │   ├── SHTnsKitParallelExt.jl   # MPI + PencilArrays + PencilFFTs
 │   └── SHTnsKitLoopVecExt.jl    # LoopVectorization optimizations
 └── examples/
-    └── parallel_roundtrip.jl    # Distributed scalar/vector roundtrip demo
+    ├── parallel_roundtrip.jl    # Distributed scalar/vector/3D roundtrip demo
+    └── alloc_benchmark.jl       # Allocation micro-benchmark for plan vs baseline
 ```
 
 **Graceful Feature Detection:**
@@ -454,6 +458,44 @@ To include MPI-based roundtrip checks inside `Pkg.test()`, opt in via:
 
 ```bash
 SHTNSKIT_RUN_MPI_TESTS=1 julia --project=. -e "using Pkg; Pkg.test()"
+```
+
+### QST (Radial + Tangential) Example
+
+```julia
+using SHTnsKit, MPI, PencilArrays, PencilFFTs
+
+MPI.Init()
+cfg = create_gauss_config(16, 18; nlon=33)
+Pθφ = PencilArrays.Pencil((:θ,:φ), (cfg.nlat, cfg.nlon); comm=MPI.COMM_WORLD)
+Vr = PencilArrays.zeros(Pθφ; eltype=Float64)
+Vt = PencilArrays.zeros(Pθφ; eltype=Float64)
+Vp = PencilArrays.zeros(Pθφ; eltype=Float64)
+
+# Fill fields (example)
+for (iθ, iφ) in zip(eachindex(axes(Vr,1)), eachindex(axes(Vr,2)))
+    Vr[iθ, iφ] = 0.3*sin(0.1*(iθ+1))
+    Vt[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
+    Vp[iθ, iφ] = 0.2*sin(0.1*(iφ+1))
+end
+
+plan = DistQstPlan(cfg, Vr)
+Qlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+dist_spat_to_SHqst!(plan, Qlm, Slm, Tlm, Vr, Vt, Vp)
+
+Vr_out = similar(Vr); Vt_out = similar(Vt); Vp_out = similar(Vp)
+dist_SHqst_to_spat!(plan, Vr_out, Vt_out, Vp_out, Qlm, Slm, Tlm)
+MPI.Finalize()
+```
+
+### Allocation Benchmarks
+
+```bash
+# Serial and (if available) MPI allocation benchmarks
+julia --project=. examples/alloc_benchmark.jl 16
+mpiexec -n 2 julia --project=. examples/alloc_benchmark.jl 16
 ```
 
 ##  Contributing
