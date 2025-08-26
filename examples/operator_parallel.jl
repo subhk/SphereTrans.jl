@@ -20,38 +20,17 @@ function main()
         fθφ[iθ, iφ] = sin(0.3*(iθ+1)) * cos(0.2*(iφ+1))
     end
 
-    # Distributed analysis -> Alm
-    aplan = DistAnalysisPlan(cfg, fθφ)
-    Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
-    dist_analysis!(aplan, Alm, fθφ)
+    # Analysis -> Alm (serial transform)
+    Alm = analysis(cfg, fθφ)
 
     # Build cosθ operator coefficients (packed) and apply in spectral space
     mx = zeros(Float64, 2*cfg.nlm)
     mul_ct_matrix(cfg, mx)
-    use_halo = any(x -> x == "--halo", ARGS)
-    if use_halo
-        # Halo-exchange operator on distributed Alm
-        Alm_p = PencilArray(Alm)
-        R_p = allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
-        # Detect path: neighbor-only when full m is local
-        gl_m = globalindices(Alm_p, 2)
-        full_m = (first(gl_m) == 1 && last(gl_m) == cfg.mmax+1 && length(axes(Alm_p,2)) == cfg.mmax+1)
-        if rank == 0
-            println(full_m ? "[halo] using neighbor Sendrecv halos along l" : "[halo] using per-m Allgatherv")
-        end
-        dist_SH_mul_mx!(cfg, mx, Alm_p, R_p)
-        # Synthesize result back to grid
-        spln = DistPlan(cfg, fθφ)
-        fθφ_op = similar(fθφ)
-        dist_synthesis!(spln, fθφ_op, R_p)
-    else
-        # Dense path
-        Rlm = zeros(ComplexF64, size(Alm))
-        dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
-        spln = DistPlan(cfg, fθφ)
-        fθφ_op = similar(fθφ)
-        dist_synthesis!(spln, fθφ_op, PencilArray(Rlm))
-    end
+    # Apply operator in spectral space (dense path)
+    Rlm = zeros(ComplexF64, size(Alm))
+    dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
+    # Synthesize back to grid (serial)
+    fθφ_op = synthesis(cfg, Rlm; real_output=true)
 
     # Reference: multiply in grid-space by cosθ and compare
     gθφ = similar(fθφ)
@@ -62,8 +41,8 @@ function main()
 
     # Analysis→synthesis to align normalization if needed (direct compare in grid space)
     # Compute relative error between spectral-operator result and grid-space multiplication
-    op_out = Array(fθφ_op)
-    ref = Array(gθφ)
+    op_out = fθφ_op
+    ref = gθφ
     rel = sqrt(sum(abs2, op_out .- ref) / (sum(abs2, ref) + eps()))
     if rank == 0
         println("[cosθ operator] relative grid error: ", rel)
