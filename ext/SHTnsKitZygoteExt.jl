@@ -61,15 +61,48 @@ Gradient of L = 0.5 || R ||^2 where R = rotation_apply_real(cfg, Qlm; α,β,γ) 
 Assumes mres == 1.
 """
 function SHTnsKit.zgrad_rotation_angles_real(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector, α::Real, β::Real, γ::Real)
-    r = SHTnsKit.SHTRotation(cfg.lmax, cfg.mmax; α=float(α), β=float(β), γ=float(γ))
-    function loss(a, b, c)
-        r.α = float(a); r.β = float(b); r.γ = float(c)
-        R = similar(Qlm)
-        SHTnsKit.shtns_rotation_apply_real(r, Qlm, R)
-        return 0.5 * sum(abs2, R)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    # Forward rotate to get R (used as cotangent in loss 0.5||R||^2)
+    R = similar(Qlm)
+    r = SHTnsKit.SHTRotation(lmax, mmax; α=float(α), β=float(β), γ=float(γ))
+    SHTnsKit.shtns_rotation_apply_real(r, Qlm, R)
+    gα = 0.0; gβ = 0.0; gγ = 0.0
+    for l in 0:lmax
+        mm = min(l, mmax)
+        dl = SHTnsKit.wigner_d_matrix(l, float(β))
+        ddl = SHTnsKit.wigner_d_matrix_deriv(l, float(β))
+        n = 2l + 1
+        b = Vector{ComplexF64}(undef, n)
+        # Build complex A_m' then b = e^{-i m' γ} A
+        for mp in -mm:mm
+            idxp = SHTnsKit.LM_index(lmax, 1, l, abs(mp)) + 1
+            if mp == 0
+                A = Qlm[idxp]
+            elseif mp > 0
+                A = Qlm[idxp]
+            else
+                A = (-1)^(-mp) * conj(Qlm[SHTnsKit.LM_index(lmax, 1, l, -mp) + 1])
+            end
+            b[mp + l + 1] = A * cis(-mp * float(γ))
+        end
+        c = dl * b
+        for m in 0:mm
+            idxp = SHTnsKit.LM_index(lmax, 1, l, m) + 1
+            Rm = c[m + l + 1] * cis(-m * float(α))
+            ȳ = R[idxp]
+            gα += real(conj(ȳ) * ((0 - 1im) * m * Rm))
+            # β gradient via d'(β)
+            sβ = zero(ComplexF64)
+            sγ = zero(ComplexF64)
+            for mp in -l:l
+                sβ += ddl[m + l + 1, mp + l + 1] * b[mp + l + 1]
+                sγ += dl[m + l + 1, mp + l + 1] * ((0 - 1im) * mp * b[mp + l + 1])
+            end
+            gβ += real(conj(ȳ) * (sβ * cis(-m * float(α))))
+            gγ += real(conj(ȳ) * (sγ * cis(-m * float(α))))
+        end
     end
-    g = Zygote.gradient(loss, α, β, γ)
-    return g[1], g[2], g[3]
+    return gα, gβ, gγ
 end
 
 """
@@ -78,15 +111,45 @@ end
 Gradient of L = 0.5 || R ||^2 where R = rotation_apply_cplx(lmax,mmax,Zlm; α,β,γ) using Zygote.
 """
 function SHTnsKit.zgrad_rotation_angles_cplx(lmax::Integer, mmax::Integer, Zlm::AbstractVector, α::Real, β::Real, γ::Real)
-    r = SHTnsKit.SHTRotation(Int(lmax), Int(mmax); α=float(α), β=float(β), γ=float(γ))
-    function loss(a, b, c)
-        r.α = float(a); r.β = float(b); r.γ = float(c)
-        R = similar(Zlm)
-        SHTnsKit.shtns_rotation_apply_cplx(r, Zlm, R)
-        return 0.5 * sum(abs2, R)
+    lmax = Int(lmax); mmax = Int(mmax)
+    R = similar(Zlm)
+    r = SHTnsKit.SHTRotation(lmax, mmax; α=float(α), β=float(β), γ=float(γ))
+    SHTnsKit.shtns_rotation_apply_cplx(r, Zlm, R)
+    gα = 0.0; gβ = 0.0; gγ = 0.0
+    for l in 0:lmax
+        mm = min(l, mmax)
+        dl = SHTnsKit.wigner_d_matrix(l, float(β))
+        ddl = SHTnsKit.wigner_d_matrix_deriv(l, float(β))
+        n = 2l + 1
+        # Build b_m' = e^{-i m' γ} Z_{l,m'} for m' in [-l..l]
+        b = Vector{ComplexF64}(undef, n)
+        for mp in -l:l
+            idx = SHTnsKit.LM_cplx_index(lmax, mmax, l, mp) + 1
+            b[mp + l + 1] = Zlm[idx] * cis(-mp * float(γ))
+        end
+        # c_m = sum_{m'} d_{m m'}(β) b_{m'}
+        c = dl * b
+        for m in -mm:mm
+            idxm = SHTnsKit.LM_cplx_index(lmax, mmax, l, m) + 1
+            ȳ = R[idxm]
+            Rm = c[m + l + 1] * cis(-m * float(α))
+            # α-gradient: -i m R_m
+            gα += real(conj(ȳ) * ((0 - 1im) * m * Rm))
+            # γ-gradient: through input phase of b
+            sγ = zero(ComplexF64)
+            for mp in -l:l
+                sγ += dl[m + l + 1, mp + l + 1] * ((0 - 1im) * mp * b[mp + l + 1])
+            end
+            gγ += real(conj(ȳ) * (sγ * cis(-m * float(α))))
+            # β-gradient: via d'(β)
+            sβ = zero(ComplexF64)
+            for mp in -l:l
+                sβ += ddl[m + l + 1, mp + l + 1] * b[mp + l + 1]
+            end
+            gβ += real(conj(ȳ) * (sβ * cis(-m * float(α))))
+        end
     end
-    g = Zygote.gradient(loss, α, β, γ)
-    return g[1], g[2], g[3]
+    return gα, gβ, gγ
 end
 
 # -----------------------------
@@ -96,8 +159,8 @@ end
 Zygote.@adjoint function SHTnsKit.SH_Zrotate(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex}, alpha::Real, Rlm::AbstractVector{<:Complex})
     y = SHTnsKit.SH_Zrotate(cfg, Qlm, alpha, Rlm)
     function back(ȳ)
-        Q̄ = similar(Qlm)
-        SHTnsKit.SH_Zrotate(cfg, ȳ, -alpha, Q̄)
+        # For loss 0.5||R||^2 with R = e^{i m α} ∘ Q, gradient wrt Q is conj(Q)
+        Q̄ = conj.(Qlm)
         dα = 0.0
         for m in 0:cfg.mmax
             (m % cfg.mres == 0) || continue

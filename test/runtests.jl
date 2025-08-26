@@ -393,10 +393,41 @@ end
         # Use provided helper to get angle gradients (more robust than tracing struct fields)
         gα, gβ, gγ = SHTnsKit.zgrad_rotation_angles_real(cfg, Q0, α, 0.1, -0.2)
 
-        # Finite-diff check for α
+        # Finite-diff checks for real rotation angles
         φa(ξ) = loss_angles(α + ξ, 0.1, -0.2)
         dfdξ_fd = (φa(ϵ) - φa(-ϵ)) / (2ϵ)
         @test isapprox(gα, dfdξ_fd; rtol=5e-4, atol=1e-7)
+        φb(ξ) = loss_angles(α, 0.1 + ξ, -0.2)
+        dfdξ_fd = (φb(ϵ) - φb(-ϵ)) / (2ϵ)
+        @test isapprox(gβ, dfdξ_fd; rtol=5e-4, atol=1e-7)
+        φg(ξ) = loss_angles(α, 0.1, -0.2 + ξ)
+        dfdξ_fd = (φg(ϵ) - φg(-ϵ)) / (2ϵ)
+        @test isapprox(gγ, dfdξ_fd; rtol=5e-4, atol=1e-7)
+
+        # Complex rotation angle gradients: helper vs finite-diff on α
+        let
+            Zlen = SHTnsKit.nlm_cplx_calc(cfg.lmax, cfg.mmax, 1)
+            Zlm = ComplexF64.(randn(rng, Zlen) .+ 1im * randn(rng, Zlen))
+            αc, βc, γc = 0.2, -0.15, 0.33
+            # Helper gradients (analytic)
+            gαc, gβc, gγc = SHTnsKit.zgrad_rotation_angles_cplx(cfg.lmax, cfg.mmax, Zlm, αc, βc, γc)
+            # Finite-diff on α
+            function loss_cplx(a, b, c)
+                r = SHTnsKit.SHTRotation(cfg.lmax, cfg.mmax; α=a, β=b, γ=c)
+                R = similar(Zlm)
+                R = SHTnsKit.shtns_rotation_apply_cplx(r, Zlm, R)
+                return 0.5 * sum(abs2, R)
+            end
+            φac(ξ) = loss_cplx(αc + ξ, βc, γc)
+            dfdξ_fd_c = (φac(ϵ) - φac(-ϵ)) / (2ϵ)
+            @test isapprox(gαc, dfdξ_fd_c; rtol=5e-4, atol=1e-7)
+            φbc(ξ) = loss_cplx(αc, βc + ξ, γc)
+            dfdξ_fd_c = (φbc(ϵ) - φbc(-ϵ)) / (2ϵ)
+            @test isapprox(gβc, dfdξ_fd_c; rtol=5e-4, atol=1e-7)
+            φgc(ξ) = loss_cplx(αc, βc, γc + ξ)
+            dfdξ_fd_c = (φgc(ϵ) - φgc(-ϵ)) / (2ϵ)
+            @test isapprox(gγc, dfdξ_fd_c; rtol=5e-4, atol=1e-7)
+        end
     catch e
         @info "Skipping Zygote rotation/operator gradient tests" exception=(e, catch_backtrace())
     end
