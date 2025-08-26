@@ -173,7 +173,14 @@ function SHsphtor_to_spat!(plan::SHTPlan, Vt_out::AbstractMatrix, Vp_out::Abstra
             end
         end
     end
-    FFTW.ifft!(plan.ifft_plan)
+    if plan.use_rfft && real_output
+        Vt_tmp = FFTW.irfft(plan.Fθk, nlon, 2)
+        @inbounds for i in 1:nlat, j in 1:nlon
+            plan.Fθk[i,j] = Vt_tmp[i,j]
+        end
+    else
+        FFTW.ifft!(plan.ifft_plan)
+    end
     if cfg.robert_form
         @inbounds for i in 1:nlat
             sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
@@ -217,7 +224,14 @@ function SHsphtor_to_spat!(plan::SHTPlan, Vt_out::AbstractMatrix, Vp_out::Abstra
             end
         end
     end
-    FFTW.ifft!(plan.ifft_plan)
+    if plan.use_rfft && real_output
+        Vt_tmp = FFTW.irfft(plan.Fθk, nlon, 2)
+        @inbounds for i in 1:nlat, j in 1:nlon
+            plan.Fθk[i,j] = Vt_tmp[i,j]
+        end
+    else
+        FFTW.ifft!(plan.ifft_plan)
+    end
     if cfg.robert_form
         @inbounds for i in 1:nlat
             sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
