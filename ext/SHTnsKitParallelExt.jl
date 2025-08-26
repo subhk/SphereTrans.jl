@@ -619,12 +619,16 @@ Minimal distributed plan to reuse allocated (θ,k) pencils and prototype metadat
 struct DistPlan
     cfg::SHTnsKit.SHTConfig
     prototype_θφ::PencilArrays.PencilArray
+    Gθm::PencilArrays.PencilArray
     Fθk::PencilArrays.PencilArray
+    ifft_plan::Any
 end
 
 function DistPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+    Gθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
-    return DistPlan(cfg, prototype_θφ, Fθk)
+    pifft = PencilFFTs.plan_fft(Fθk; dims=2)
+    return DistPlan(cfg, prototype_θφ, Gθm, Fθk, pifft)
 end
 
 """
@@ -634,9 +638,93 @@ In-place-like wrapper that runs prototype-based dist_synthesis and writes into f
 Current implementation delegates to dist_synthesis and copies; future versions will stream into plan.Fθk directly.
 """
 function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.PencilArray, Alm::PencilArrays.PencilArray; real_output::Bool=true)
-    ftmp = SHTnsKit.dist_synthesis(plan.cfg, Alm; prototype_θφ=plan.prototype_θφ, real_output=real_output)
-    @inbounds for I in eachindex(ftmp)
-        fθφ_out[I] = ftmp[I]
+    cfg = plan.cfg
+    fill!(plan.Gθm, 0)
+    θrange = axes(plan.Gθm, 1)
+    mrange = axes(plan.Gθm, 2)
+    lr = axes(Alm, 1)
+    Alm_loc = Array(Alm)
+    use_tbl = cfg.use_plm_tables && !isempty(cfg.plm_tables)
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    for (ii,iθ) in enumerate(θrange)
+        iglobθ = PencilArrays.globalindices(plan.Gθm, 1)[ii]
+        x = cfg.x[iglobθ]
+        for (jj,jm) in enumerate(mrange)
+            iglobm = PencilArrays.globalindices(plan.Gθm, 2)[jj]
+            mval = iglobm - 1
+            col = mval + 1
+            acc = 0.0 + 0.0im
+            if use_tbl
+                tbl = cfg.plm_tables[col]
+                for (kk, il) in enumerate(lr)
+                    igl = PencilArrays.globalindices(Alm, 1)[kk]
+                    lval = igl - 1
+                    if lval >= mval
+                        a = Alm_loc[il, iglobm]
+                        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                            k = SHTnsKit.norm_scale_from_orthonormal(lval, mval, cfg.norm)
+                            α = SHTnsKit.cs_phase_factor(mval, true, cfg.cs_phase)
+                            a *= (k * α)
+                        end
+                        acc += (cfg.Nlm[lval+1, col] * tbl[lval+1, iglobθ]) * a
+                    end
+                end
+            else
+                SHTnsKit.Plm_row!(P, x, cfg.lmax, mval)
+                for (kk, il) in enumerate(lr)
+                    igl = PencilArrays.globalindices(Alm, 1)[kk]
+                    lval = igl - 1
+                    if lval >= mval
+                        a = Alm_loc[il, iglobm]
+                        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                            k = SHTnsKit.norm_scale_from_orthonormal(lval, mval, cfg.norm)
+                            α = SHTnsKit.cs_phase_factor(mval, true, cfg.cs_phase)
+                            a *= (k * α)
+                        end
+                        acc += (cfg.Nlm[lval+1, col] * P[lval+1]) * a
+                    end
+                end
+            end
+            plan.Gθm[iθ, jm] = cfg.w[iglobθ] * cfg.cphi * acc
+        end
+    end
+    MPI.Allreduce!(plan.Gθm, +, PencilArrays.communicator(plan.Gθm))
+    fill!(plan.Fθk, 0)
+    θloc = axes(plan.Fθk, 1)
+    kloc = axes(plan.Fθk, 2)
+    mloc = axes(plan.Gθm, 2)
+    nlon = cfg.nlon
+    for (ii,iθ) in enumerate(θloc)
+        for (jj,jk) in enumerate(kloc)
+            kglob = PencilArrays.globalindices(plan.Fθk, 2)[jj] - 1
+            if kglob == 0
+                if first(mloc) <= 1 <= last(mloc)
+                    plan.Fθk[iθ, jk] = plan.Gθm[iθ, 1]
+                end
+            elseif kglob <= cfg.mmax
+                mpos = kglob + 1
+                if mpos in mloc
+                    plan.Fθk[iθ, jk] = plan.Gθm[iθ, mpos]
+                end
+            else
+                if real_output
+                    mneg = nlon - kglob
+                    if 1 <= mneg <= cfg.mmax && (mneg+1) in mloc
+                        plan.Fθk[iθ, jk] = conj(plan.Gθm[iθ, mneg+1])
+                    end
+                end
+            end
+        end
+    end
+    fθφ_tmp = PencilFFTs.ifft(plan.Fθk, plan.ifft_plan)
+    if real_output
+        for I in eachindex(fθφ_tmp)
+            fθφ_out[I] = real(fθφ_tmp[I])
+        end
+    else
+        for I in eachindex(fθφ_tmp)
+            fθφ_out[I] = fθφ_tmp[I]
+        end
     end
     return fθφ_out
 end
