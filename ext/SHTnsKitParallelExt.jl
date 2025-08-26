@@ -78,4 +78,82 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix)
     return SHTnsKit.synthesis(cfg, Alm)
 end
 
+"""
+    dist_spat_to_SHsphtor(cfg, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+
+Distributed vector analysis. Returns local dense Slm,Tlm matrices reduced across θ-pencil communicators.
+For single rank, falls back to serial.
+"""
+function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+    comm = PencilArrays.communicator(Vtθφ)
+    np = MPI.Comm_size(comm)
+    if np == 1
+        return SHTnsKit.spat_to_SHsphtor(cfg, Array(Vtθφ), Array(Vpθφ))
+    end
+    # FFT along φ
+    pfft_t = PencilFFTs.plan_fft(Vtθφ; dims=2)
+    pfft_p = PencilFFTs.plan_fft(Vpθφ; dims=2)
+    Fθk_t = PencilFFTs.fft(Vtθφ, pfft_t)
+    Fθk_p = PencilFFTs.fft(Vpθφ, pfft_p)
+    # Transpose to (θ,m)
+    Fθm_t = PencilArrays.transpose(Fθk_t, (; dims=(1,2), names=(:θ,:m)))
+    Fθm_p = PencilArrays.transpose(Fθk_p, (; dims=(1,2), names=(:θ,:m)))
+    # Per-m vector projections
+    lmax, mmax = cfg.lmax, cfg.mmax
+    Slm_local = zeros(ComplexF64, lmax+1, mmax+1)
+    Tlm_local = zeros(ComplexF64, lmax+1, mmax+1)
+    θrange = axes(Fθm_t, 1)
+    mrange = axes(Fθm_t, 2)
+    use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
+    P = Vector{Float64}(undef, lmax + 1)
+    dPdx = Vector{Float64}(undef, lmax + 1)
+    for m in mrange
+        mm = m - first(mrange)
+        mglob = PencilArrays.globalindices(Fθm_t, 2)[mm+1]
+        mval = mglob - 1
+        col = mval + 1
+        for (ii,i) in enumerate(θrange)
+            iglob = PencilArrays.globalindices(Fθm_t, 1)[ii]
+            x = cfg.x[iglob]
+            sθ = sqrt(max(0.0, 1 - x*x))
+            inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            Ft = Fθm_t[i, m]
+            Fp = Fθm_p[i, m]
+            wi = cfg.w[iglob]
+            if use_tbl
+                tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * tbld[l+1, iglob]
+                    Y = N * tblP[l+1, iglob]
+                    coeff = wi * cfg.cphi / (l*(l+1))
+                    Slm_local[l+1, col] += coeff * (Ft * dθY - (0 + 1im) * mval * inv_sθ * Y * Fp)
+                    Tlm_local[l+1, col] += coeff * ((0 + 1im) * mval * inv_sθ * Y * Ft + Fp * (+sθ * N * tbld[l+1, iglob]))
+                end
+            else
+                SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * dPdx[l+1]
+                    Y = N * P[l+1]
+                    coeff = wi * cfg.cphi / (l*(l+1))
+                    Slm_local[l+1, col] += coeff * (Ft * dθY - (0 + 1im) * mval * inv_sθ * Y * Fp)
+                    Tlm_local[l+1, col] += coeff * ((0 + 1im) * mval * inv_sθ * Y * Ft + Fp * (+sθ * N * dPdx[l+1]))
+                end
+            end
+        end
+    end
+    MPI.Allreduce!(Slm_local, +, comm)
+    MPI.Allreduce!(Tlm_local, +, comm)
+    # Convert to cfg norm/CS
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        S2 = similar(Slm_local); T2 = similar(Tlm_local)
+        SHTnsKit.convert_alm_norm!(S2, Slm_local, cfg; to_internal=false)
+        SHTnsKit.convert_alm_norm!(T2, Tlm_local, cfg; to_internal=false)
+        return S2, T2
+    end
+    return Slm_local, Tlm_local
+end
+
+
 end # module
