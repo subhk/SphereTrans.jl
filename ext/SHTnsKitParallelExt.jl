@@ -30,6 +30,147 @@ function _get_or_plan(kind::Symbol, A)
     return plan
 end
 
+##########
+# Pencil-aware diagnostics (MPI reductions)
+##########
+
+"""
+    energy_scalar(cfg, Alm::PencilArrays.PencilArray; real_field=true)
+"""
+function SHTnsKit.energy_scalar(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; real_field::Bool=true)
+    mloc = axes(Alm, 2)
+    gl_m = PencilArrays.globalindices(Alm, 2)
+    e_local = 0.0
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        w = (real_field && mval > 0) ? 2.0 : 1.0
+        for (ii, il) in enumerate(axes(Alm, 1))
+            # Only accumulate l ≥ m; outside entries assumed zero
+            e_local += w * abs2(Alm[il, jm])
+        end
+    end
+    e = MPI.Allreduce(e_local, +, PencilArrays.communicator(Alm))
+    return 0.5 * e
+end
+
+"""
+    energy_vector(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field=true)
+"""
+function SHTnsKit.energy_vector(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    mloc = axes(Slm, 2)
+    gl_m = PencilArrays.globalindices(Slm, 2)
+    e_local = 0.0
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        w = (real_field && mval > 0) ? 2.0 : 1.0
+        for (ii, il) in enumerate(axes(Slm, 1))
+            lval = PencilArrays.globalindices(Slm, 1)[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval * (lval + 1)
+                e_local += w * L2 * (abs2(Slm[il, jm]) + abs2(Tlm[il, jm]))
+            end
+        end
+    end
+    e = MPI.Allreduce(e_local, +, PencilArrays.communicator(Slm))
+    return 0.5 * e
+end
+
+"""
+    enstrophy(cfg, Tlm::PencilArrays.PencilArray; real_field=true)
+"""
+function SHTnsKit.enstrophy(cfg::SHTnsKit.SHTConfig, Tlm::PencilArrays.PencilArray; real_field::Bool=true)
+    mloc = axes(Tlm, 2)
+    gl_m = PencilArrays.globalindices(Tlm, 2)
+    z_local = 0.0
+    @inbounds for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        w = (real_field && mval > 0) ? 2.0 : 1.0
+        for (ii, il) in enumerate(axes(Tlm, 1))
+            lval = PencilArrays.globalindices(Tlm, 1)[ii] - 1
+            if lval >= max(1, mval)
+                L2 = lval * (lval + 1)
+                z_local += w * (L2^2) * abs2(Tlm[il, jm])
+            end
+        end
+    end
+    z = MPI.Allreduce(z_local, +, PencilArrays.communicator(Tlm))
+    return 0.5 * z
+end
+
+"""
+    grid_energy_scalar(cfg, fθφ::PencilArrays.PencilArray)
+"""
+function SHTnsKit.grid_energy_scalar(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
+    θloc = axes(fθφ, 1)
+    φscale = 2π / cfg.nlon
+    e_local = 0.0
+    @inbounds for (ii, iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(fθφ, 1)[ii]
+        wi = cfg.w[iglobθ]
+        for j in axes(fθφ, 2)
+            e_local += wi * abs2(fθφ[iθ, j])
+        end
+    end
+    e = MPI.Allreduce(e_local, +, PencilArrays.communicator(fθφ))
+    return 0.5 * (φscale * e)
+end
+
+"""
+    grid_energy_vector(cfg, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+"""
+function SHTnsKit.grid_energy_vector(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+    θloc = axes(Vtθφ, 1)
+    φscale = 2π / cfg.nlon
+    e_local = 0.0
+    @inbounds for (ii, iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(Vtθφ, 1)[ii]
+        wi = cfg.w[iglobθ]
+        for j in axes(Vtθφ, 2)
+            e_local += wi * (abs2(Vtθφ[iθ, j]) + abs2(Vpθφ[iθ, j]))
+        end
+    end
+    e = MPI.Allreduce(e_local, +, PencilArrays.communicator(Vtθφ))
+    return 0.5 * (φscale * e)
+end
+
+"""
+    grid_enstrophy(cfg, ζθφ::PencilArrays.PencilArray)
+"""
+function SHTnsKit.grid_enstrophy(cfg::SHTnsKit.SHTConfig, ζθφ::PencilArrays.PencilArray)
+    θloc = axes(ζθφ, 1)
+    φscale = 2π / cfg.nlon
+    z_local = 0.0
+    @inbounds for (ii, iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(ζθφ, 1)[ii]
+        wi = cfg.w[iglobθ]
+        for j in axes(ζθφ, 2)
+            z_local += wi * abs2(ζθφ[iθ, j])
+        end
+    end
+    z = MPI.Allreduce(z_local, +, PencilArrays.communicator(ζθφ))
+    return 0.5 * (φscale * z)
+end
+
+##########
+# Unified dispatch helpers for PencilArray inputs
+##########
+
+"""
+    analysis(cfg, fθφ::PencilArrays.PencilArray) -> Matrix
+
+Runs distributed analysis and returns Alm (l×m) matrix in cfg normalization.
+"""
+SHTnsKit.analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray) = SHTnsKit.dist_analysis(cfg, fθφ)
+
+"""
+    synthesis(cfg, Alm::PencilArrays.PencilArray; prototype_θφ, real_output=true) -> PencilArray
+
+Runs distributed synthesis using a PencilArray prototype (θ×φ layout).
+"""
+function SHTnsKit.synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+    return SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ, real_output)
+end
+
 """
     dist_SH_Yrotate_allgatherm!(cfg, Alm_pencil::PencilArrays.PencilArray, beta::Real, R_pencil::PencilArrays.PencilArray)
 
