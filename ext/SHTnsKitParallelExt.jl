@@ -120,7 +120,14 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
     @inbounds for m in 0:mmax, l in m:lmax
         Alm_local[l+1, m+1] *= cfg.Nlm[l+1, m+1] * scaleφ
     end
-    return Alm_local
+    # 6) Convert to cfg normalization/phase like serial analysis
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Alm_out = similar(Alm_local)
+        SHTnsKit.convert_alm_norm!(Alm_out, Alm_local, cfg; to_internal=false)
+        return Alm_out
+    else
+        return Alm_local
+    end
 end
 
 """
@@ -135,22 +142,31 @@ struct DistQstPlan
     Fθk::PencilArrays.PencilArray
     pfft::Any
     pifft::Any
+    prfft::Any
+    pirfft::Any
     P::Vector{Float64}
     dPdx::Vector{Float64}
     Fθφ_scratch::Union{Nothing,PencilArrays.PencilArray}
+    use_rfft::Bool
 end
 
-function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; with_spatial_scratch::Bool=false)
+function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; with_spatial_scratch::Bool=false, use_rfft::Bool=false)
     Vrθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
     pfft = PencilFFTs.plan_fft(Fθk; dims=2)
     pifft = PencilFFTs.plan_fft(Fθk; dims=2)
+    prfft = try
+        PencilFFTs.plan_rfft(Fθk; dims=2)
+    catch; nothing end
+    pirfft = try
+        PencilFFTs.plan_irfft(Fθk; dims=2)
+    catch; nothing end
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
     Fθφ_scratch = with_spatial_scratch ? PencilArrays.allocate(prototype_θφ; dims=(:θ, :φ), eltype=ComplexF64) : nothing
-    return DistQstPlan(cfg, Vrθm, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx, Fθφ_scratch)
+    return DistQstPlan(cfg, Vrθm, Vtθm, Vpθm, Fθk, pfft, pifft, prfft, pirfft, P, dPdx, Fθφ_scratch, use_rfft)
 end
 
 """
@@ -168,9 +184,15 @@ function SHTnsKit.dist_spat_to_SHqst!(plan::DistQstPlan, Qlm_out::AbstractMatrix
     size(Tlm_out,1)==lmax+1 && size(Tlm_out,2)==mmax+1 || throw(DimensionMismatch("Tlm_out dims"))
     fill!(Qlm_out, 0); fill!(Slm_out, 0); fill!(Tlm_out, 0)
     # FFT all three and transpose to (θ,m)
-    Fθm_r = PencilArrays.transpose(PencilFFTs.fft(Vrθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
-    Fθm_t = PencilArrays.transpose(PencilFFTs.fft(Vtθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
-    Fθm_p = PencilArrays.transpose(PencilFFTs.fft(Vpθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
+    if plan.use_rfft && plan.prfft !== nothing
+        _rfft_to!(plan.Fθk, Vrθφ, plan.prfft); Fθm_r = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+        _rfft_to!(plan.Fθk, Vtθφ, plan.prfft); Fθm_t = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+        _rfft_to!(plan.Fθk, Vpθφ, plan.prfft); Fθm_p = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+    else
+        _fft_to!(plan.Fθk, Vrθφ, plan.pfft); Fθm_r = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+        _fft_to!(plan.Fθk, Vtθφ, plan.pfft); Fθm_t = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+        _fft_to!(plan.Fθk, Vpθφ, plan.pfft); Fθm_p = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+    end
     θrange = axes(Fθm_r, 1)
     mrange = axes(Fθm_r, 2)
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
@@ -341,7 +363,7 @@ function SHTnsKit.dist_SHqst_to_spat!(plan::DistQstPlan, Vrθφ_out::PencilArray
                         Fθk[iθ, jk] = inv_scaleφ * Vθm[iθ, mpos]
                     end
                 else
-                    if real_output
+                    if real_output && !plan.use_rfft
                         mneg = nlon - kglob
                         if 1 <= mneg <= mmax && (mneg+1) in mloc
                             Fθk[iθ, jk] = conj(inv_scaleφ * Vθm[iθ, mneg+1])
@@ -350,19 +372,29 @@ function SHTnsKit.dist_SHqst_to_spat!(plan::DistQstPlan, Vrθφ_out::PencilArray
                 end
             end
         end
-        return PencilFFTs.ifft(Fθk, plan.pifft)
+        if real_output && plan.use_rfft && plan.pirfft !== nothing
+            return _irfft_to!(Fθk, Fθk, plan.pirfft)
+        else
+            return PencilFFTs.ifft(Fθk, plan.pifft)
+        end
     end
-    Vrθφ_tmp = if eltype(Vrθφ_out) <: Complex
+    Vrθφ_tmp = if real_output && plan.use_rfft && plan.pirfft !== nothing
+        place_ifft!(Vrθφ_out, plan.Vrθm)
+    elseif eltype(Vrθφ_out) <: Complex
         place_ifft!(Vrθφ_out, plan.Vrθm)
     else
         plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vrθm) : place_ifft!(plan.Fθφ_scratch, plan.Vrθm)
     end
-    Vtθφ_tmp = if eltype(Vtθφ_out) <: Complex
+    Vtθφ_tmp = if real_output && plan.use_rfft && plan.pirfft !== nothing
+        place_ifft!(Vtθφ_out, plan.Vtθm)
+    elseif eltype(Vtθφ_out) <: Complex
         place_ifft!(Vtθφ_out, plan.Vtθm)
     else
         plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vtθm) : place_ifft!(plan.Fθφ_scratch, plan.Vtθm)
     end
-    Vpθφ_tmp = if eltype(Vpθφ_out) <: Complex
+    Vpθφ_tmp = if real_output && plan.use_rfft && plan.pirfft !== nothing
+        place_ifft!(Vpθφ_out, plan.Vpθm)
+    elseif eltype(Vpθφ_out) <: Complex
         place_ifft!(Vpθφ_out, plan.Vpθm)
     else
         plan.Fθφ_scratch === nothing ? place_ifft!(plan.Fθk, plan.Vpθm) : place_ifft!(plan.Fθφ_scratch, plan.Vpθm)
@@ -1405,6 +1437,12 @@ function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix
     scaleφ = cfg.cphi
     @inbounds for m in 0:mmax, l in m:lmax
         Alm_out[l+1, m+1] *= cfg.Nlm[l+1, m+1] * scaleφ
+    end
+    # 6) Convert to cfg normalization/phase to match serial API
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        tmp = similar(Alm_out)
+        SHTnsKit.convert_alm_norm!(tmp, Alm_out, cfg; to_internal=false)
+        copyto!(Alm_out, tmp)
     end
     return Alm_out
 end

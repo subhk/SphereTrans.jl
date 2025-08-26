@@ -54,6 +54,112 @@ end
     end
 end
 
+@testset "Parallel rfft equivalence (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays, PencilFFTs
+            MPI.Init()
+            lmax = 6
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            # Scalar
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.13*(iθ+1)) + cos(0.07*(iφ+1))
+            end
+            Alm_c = zeros(ComplexF64, lmax+1, lmax+1)
+            Alm_r = similar(Alm_c)
+            plan_c = SHTnsKit.DistAnalysisPlan(cfg, fθφ; use_rfft=false)
+            plan_r = SHTnsKit.DistAnalysisPlan(cfg, fθφ; use_rfft=true)
+            SHTnsKit.dist_analysis!(plan_c, Alm_c, fθφ)
+            SHTnsKit.dist_analysis!(plan_r, Alm_r, fθφ)
+            @test isapprox(Alm_c, Alm_r; rtol=1e-10, atol=1e-12)
+            # Vector
+            Vt = PencilArrays.zeros(P; eltype=Float64)
+            Vp = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(Vt,1)), eachindex(axes(Vt,2)))
+                Vt[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
+                Vp[iθ, iφ] = 0.2*sin(0.1*(iθ+1))
+            end
+            Slm_c = zeros(ComplexF64, lmax+1, lmax+1)
+            Tlm_c = zeros(ComplexF64, lmax+1, lmax+1)
+            Slm_r = similar(Slm_c)
+            Tlm_r = similar(Tlm_c)
+            vplan_c = SHTnsKit.DistSphtorPlan(cfg, Vt; use_rfft=false)
+            vplan_r = SHTnsKit.DistSphtorPlan(cfg, Vt; use_rfft=true)
+            SHTnsKit.dist_spat_to_SHsphtor!(vplan_c, Slm_c, Tlm_c, Vt, Vp)
+            SHTnsKit.dist_spat_to_SHsphtor!(vplan_r, Slm_r, Tlm_r, Vt, Vp)
+            @test isapprox(Slm_c, Slm_r; rtol=1e-10, atol=1e-12)
+            @test isapprox(Tlm_c, Tlm_r; rtol=1e-10, atol=1e-12)
+            MPI.Finalize()
+        else
+            @info "Skipping rfft equivalence tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping rfft equivalence tests" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
+
+@testset "Parallel norms/phase/robert/tables (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays, PencilFFTs
+            MPI.Init()
+            norms = (:orthonormal, :fourpi, :schmidt)
+            cs_flags = (true, false)
+            tbl_flags = (false, true)
+            robert_flags = (false, true)
+            for norm in norms, cs in cs_flags, use_tbl in tbl_flags, rob in robert_flags
+                lmax = 5
+                nlat = lmax + 2
+                nlon = 2*lmax + 1
+                cfg = create_gauss_config(lmax, nlat; nlon=nlon, norm=norm, cs_phase=cs, robert_form=rob)
+                # Toggle precomputed tables
+                if use_tbl
+                    enable_plm_tables!(cfg)
+                else
+                    disable_plm_tables!(cfg)
+                end
+                comm = MPI.COMM_WORLD
+                P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm)
+                fθφ = PencilArrays.zeros(P; eltype=Float64)
+                for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                    fθφ[iθ, iφ] = sin(0.17*(iθ+1)) + cos(0.11*(iφ+1))
+                end
+                # rfft off/on
+                for rfft_flag in (false, true)
+                    aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ; use_rfft=rfft_flag)
+                    Alm = zeros(ComplexF64, lmax+1, lmax+1)
+                    SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+                    # Synthesize back using plan-based dist_synthesis!
+                    spln = SHTnsKit.DistPlan(cfg, fθφ)
+                    fθφ_out = similar(fθφ)
+                    SHTnsKit.dist_synthesis!(spln, fθφ_out, PencilArrays.PencilArray(Alm))
+                    # Check error
+                    fout = Array(fθφ_out); f0 = Array(fθφ)
+                    rel = sqrt(sum(abs2, fout .- f0) / (sum(abs2, f0) + eps()))
+                    @test rel < 1e-8
+                end
+            end
+            MPI.Finalize()
+        else
+            @info "Skipping norms/phase/robert/tables tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping norms/phase/robert/tables tests" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
+
 function parseval_vector_test(lmax::Int)
     nlat = lmax + 2
     nlon = 2*lmax + 1

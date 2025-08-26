@@ -320,6 +320,13 @@ scaling_results = benchmark_memory_scaling([16, 24, 32, 40, 48])
 vector_results = benchmark_vector_transforms(cfg, n_samples=50)
 ```
 
+### Performance Tips
+
+- use_rfft (distributed plans): Enable real-to-complex transforms in `DistAnalysisPlan` and `DistSphtorPlan` to cut (θ,k) memory and speed real-output paths. Falls back to complex FFTs if not available.
+- with_spatial_scratch (distributed vector/QST): Set to `true` to keep a single complex (θ,φ) buffer inside the plan and avoid per-call allocations for iFFT when outputs are real.
+- Plan reuse: Build plans once per problem size and reuse across calls to avoid planner churn and allocations.
+- Tables vs on-the-fly Plm: Precompute with `enable_plm_tables!(cfg)` to reduce CPU if your grid is fixed; results are identical to on-the-fly recurrence.
+
 ## Parallel Computing Guide
 
 ### Running Examples
@@ -337,6 +344,22 @@ mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --qst
 
 # Ensure required optional packages are available (first time)
 julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
+```
+
+Enable rfft in distributed plans (when supported):
+
+```julia
+using SHTnsKit, MPI, PencilArrays, PencilFFTs
+MPI.Init()
+cfg = create_gauss_config(16, 18; nlon=33)
+Pθφ = PencilArrays.Pencil((:θ,:φ), (cfg.nlat, cfg.nlon); comm=MPI.COMM_WORLD)
+
+# Scalar analysis with rfft
+aplan = DistAnalysisPlan(cfg, PencilArrays.zeros(Pθφ; eltype=Float64); use_rfft=true)
+
+# Vector transforms with rfft + optional spatial scratch to avoid iFFT allocs for real outputs
+vplan = DistSphtorPlan(cfg, PencilArrays.zeros(Pθφ; eltype=Float64); use_rfft=true, with_spatial_scratch=true)
+MPI.Finalize()
 ```
 
 ### Architecture Overview
