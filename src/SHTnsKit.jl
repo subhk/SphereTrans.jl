@@ -69,6 +69,9 @@ export DistPlan, dist_synthesis!
 export DistAnalysisPlan, dist_analysis!
 export DistSphtorPlan, dist_spat_to_SHsphtor!, dist_SHsphtor_to_spat!
 export DistQstPlan, dist_spat_to_SHqst!, dist_SHqst_to_spat!
+export dist_SH_to_lat, dist_SH_to_point, dist_SHqst_to_point
+export dist_spat_to_SH_packed, dist_SH_packed_to_spat
+export dist_spat_cplx_to_SH, dist_SH_to_spat_cplx
 
 # Default fallbacks if extensions are not loaded
 zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
@@ -82,6 +85,13 @@ dist_analysis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loa
 dist_synthesis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_scalar_roundtrip!(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_vector_roundtrip!(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel extension not loaded")
+dist_SH_to_lat(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel extension not loaded")
+dist_SH_to_point(::SHTConfig, ::Any, ::Any, ::Any) = error("Parallel extension not loaded")
+dist_SHqst_to_point(::SHTConfig, ::Any, ::Any, ::Any, ::Any, ::Any) = error("Parallel extension not loaded")
+dist_spat_to_SH_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
+dist_SH_packed_to_spat(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
+dist_spat_cplx_to_SH(::SHTConfig, ::Any) = error("Parallel extension not loaded")
+dist_SH_to_spat_cplx(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 
 # LoopVectorization extension fallbacks
 analysis_turbo(::SHTConfig, ::AbstractMatrix) = error("LoopVectorization extension not loaded")
