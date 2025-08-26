@@ -8,18 +8,18 @@ on your MPI communicator.
 using MPI, PencilArrays, PencilFFTs, SHTnsKit
 
 MPI.Init()
-comm = MPI.COMM_WORLD
+comm = COMM_WORLD
 
 # Build config and prototype (θ,φ) pencil
 cfg = create_gauss_config(32, 40; nlon=65)
 
 # Assume you created a prototype `(θ,φ)` pencil named proto_θφ.
 # For example (API depends on your PencilArrays version):
-# proto_θφ = PencilArrays.allocate(comm; dims=(:θ,:φ), sizes=(cfg.nlat, cfg.nlon), eltype=Float64)
+# proto_θφ = allocate(comm; dims=(:θ,:φ), sizes=(cfg.nlat, cfg.nlon), eltype=Float64)
 
 # Fill a test field
 fθφ = similar(proto_θφ)
-PencilArrays.foreachindex(fθφ) do I
+foreachindex(fθφ) do I
     fθφ[I] = rand()
 end
 
@@ -31,7 +31,7 @@ fθφ_out = dist_synthesis(cfg, Alm; prototype_θφ=fθφ)
 
 # Compute local/global relative errors
 rel_local, rel_global = dist_scalar_roundtrip!(cfg, fθφ)
-if MPI.Comm_rank(comm) == 0
+if Comm_rank(comm) == 0
     @info "Scalar round-trip rel error" rel_local rel_global
 end
 
