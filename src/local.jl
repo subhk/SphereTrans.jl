@@ -60,6 +60,62 @@ function SH_to_lat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, cost::Real; n
 end
 
 """
+    SH_to_lat_cplx(cfg::SHTConfig, alm_packed::AbstractVector{<:Complex}, cost::Real; nphi::Int=cfg.nlon, ltr::Int=cfg.lmax) -> Vector{ComplexF64}
+
+Evaluate a complex field along a latitude using packed LM_cplx coefficients.
+"""
+function SH_to_lat_cplx(cfg::SHTConfig, alm_packed::AbstractVector{<:Complex}, cost::Real; nphi::Int=cfg.nlon, ltr::Int=cfg.lmax)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    length(alm_packed) == nlm_cplx_calc(lmax, mmax, 1) || throw(DimensionMismatch("alm_packed length"))
+    x = float(cost)
+    P = Vector{Float64}(undef, lmax + 1)
+    vals = Vector{ComplexF64}(undef, nphi)
+    fill!(vals, 0.0 + 0.0im)
+    # m=0
+    Plm_row!(P, x, lmax, 0)
+    g0 = 0.0 + 0.0im
+    @inbounds for l in 0:min(ltr, lmax)
+        idx = LM_cplx_index(lmax, mmax, l, 0) + 1
+        a = alm_packed[idx]
+        if cfg.norm !== :orthonormal || cfg.cs_phase == false
+            k = norm_scale_from_orthonormal(l, 0, cfg.norm)
+            α = cs_phase_factor(0, true, cfg.cs_phase)
+            a *= (k * α)
+        end
+        g0 += cfg.Nlm[l+1, 1] * P[l+1] * a
+    end
+    @inbounds for j in 1:nphi
+        vals[j] += g0
+    end
+    # m ≠ 0
+    for m in 1:mmax
+        Plm_row!(P, x, lmax, m)
+        col = m + 1
+        gm = 0.0 + 0.0im; gn = 0.0 + 0.0im
+        @inbounds for l in m:min(ltr, lmax)
+            Ylm = cfg.Nlm[l+1, col] * P[l+1]
+            # positive m
+            ap = alm_packed[LM_cplx_index(lmax, mmax, l, m) + 1]
+            # negative m
+            an = alm_packed[LM_cplx_index(lmax, mmax, l, -m) + 1]
+            if cfg.norm !== :orthonormal || cfg.cs_phase == false
+                k = norm_scale_from_orthonormal(l, m, cfg.norm)
+                αp = cs_phase_factor(m, true, cfg.cs_phase)
+                αn = cs_phase_factor(-m, true, cfg.cs_phase)
+                ap *= (k * αp); an *= (k * αn)
+            end
+            gm += Ylm * ap
+            gn += Ylm * an
+        end
+        for j in 0:(nphi-1)
+            phase = cis(2π * m * j / nphi)
+            vals[j+1] += gm * phase + gn * conj(phase)
+        end
+    end
+    return vals
+end
+
+"""
     SHqst_to_point(cfg::SHTConfig, Qlm::AbstractVector{<:Complex}, Slm::AbstractVector{<:Complex}, Tlm::AbstractVector{<:Complex}, cost::Real, phi::Real)
         -> vr::Float64, vt::Float64, vp::Float64
 
