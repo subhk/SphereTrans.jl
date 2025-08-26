@@ -32,6 +32,9 @@ Base.@kwdef mutable struct SHTConfig
     cs_phase::Bool
     real_norm::Bool
     robert_form::Bool
+    # Optional precomputed Legendre tables for speed on regular grids
+    use_plm_tables::Bool = false
+    plm_tables::Vector{Matrix{Float64}} = Matrix{Float64}[]  # per m: (lmax+1)×nlat
 end
 
 """
@@ -58,6 +61,29 @@ function create_gauss_config(lmax::Int, nlat::Int; mmax::Int=lmax, mres::Int=1, 
     return SHTConfig(; lmax, mmax, mres, nlat, nlon, θ, φ, x, w, Nlm,
                      cphi = 2π / nlon, nlm, li, mi, nspat = nlat*nlon,
                      ct, st, norm, cs_phase, real_norm, robert_form)
+end
+
+"""
+    prepare_plm_tables!(cfg::SHTConfig)
+
+Precompute associated Legendre tables P_l^m(x_i) for all i and m, stored as
+`cfg.plm_tables[m+1][l+1, i]`. Enables faster scalar transforms on regular grids.
+"""
+function prepare_plm_tables!(cfg::SHTConfig)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    nlat = cfg.nlat
+    tables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]
+    P = Vector{Float64}(undef, lmax + 1)
+    for m in 0:mmax
+        tbl = tables[m+1]
+        for i in 1:nlat
+            Plm_row!(P, cfg.x[i], lmax, m)
+            @inbounds @views tbl[:, i] .= P
+        end
+    end
+    cfg.plm_tables = tables
+    cfg.use_plm_tables = true
+    return cfg
 end
 
 """

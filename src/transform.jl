@@ -18,18 +18,29 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
     alm = Matrix{CT}(undef, lmax + 1, mmax + 1)
     fill!(alm, 0.0 + 0.0im)
 
-    # Temporary buffer for P_l^m(x) at one θ
+    # Temporary buffer for P_l^m(x) at one θ or use precomputed tables
     P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi  # 2π / nlon
     @threads for m in 0:mmax
         col = m + 1
         # Accumulate over latitudes
-        for i in 1:nlat
-            Plm_row!(P, cfg.x[i], lmax, m)
-            Fi = Fφ[i, col]
-            wi = cfg.w[i]
-            @inbounds for l in m:lmax
-                alm[l+1, col] += (wi * P[l+1]) * Fi
+        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
+            tbl = cfg.plm_tables[m+1]
+            for i in 1:nlat
+                Fi = Fφ[i, col]
+                wi = cfg.w[i]
+                @inbounds for l in m:lmax
+                    alm[l+1, col] += (wi * tbl[l+1, i]) * Fi
+                end
+            end
+        else
+            for i in 1:nlat
+                Plm_row!(P, cfg.x[i], lmax, m)
+                Fi = Fφ[i, col]
+                wi = cfg.w[i]
+                @inbounds for l in m:lmax
+                    alm[l+1, col] += (wi * P[l+1]) * Fi
+                end
             end
         end
         # Apply normalization and φ scaling
@@ -80,13 +91,24 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     @threads for m in 0:mmax
         col = m + 1
         # G(θ_i) = sum_{l=m}^{lmax} Nlm * P_l^m(x_i) * alm_{l,m}
-        for i in 1:nlat
-            Plm_row!(P, cfg.x[i], lmax, m)
-            g = 0.0 + 0.0im
-            @inbounds for l in m:lmax
-                g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
+        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
+            tbl = cfg.plm_tables[m+1]
+            for i in 1:nlat
+                g = 0.0 + 0.0im
+                @inbounds for l in m:lmax
+                    g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
+                end
+                G[i] = g
             end
-            G[i] = g
+        else
+            for i in 1:nlat
+                Plm_row!(P, cfg.x[i], lmax, m)
+                g = 0.0 + 0.0im
+                @inbounds for l in m:lmax
+                    g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
+                end
+                G[i] = g
+            end
         end
         # Place positive m Fourier modes
         @inbounds for i in 1:nlat

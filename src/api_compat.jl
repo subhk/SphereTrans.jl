@@ -45,17 +45,59 @@ end
 
 """shtns_set_grid(cfg, flags, eps, nlat, nphi) -> Int"""
 function shtns_set_grid(cfg::SHTConfig, flags::Integer, eps::Real, nlat::Integer, nphi::Integer)
-    # Recreate cfg with new grid sizes; return 0 on success
-    new = create_gauss_config(cfg.lmax, Int(nlat); mmax=cfg.mmax, mres=cfg.mres, nlon=Int(nphi))
-    for f in fieldnames(SHTConfig)
-        setfield!(cfg, f, getfield(new, f))
+    # Parse flags: low byte = grid type, higher bytes carry options
+    f = Int(flags)
+    grid_type = f % 256
+    south_pole_first = (f & (256*32)) != 0
+    # Build grid
+    nlat = Int(nlat); nphi = Int(nphi)
+    θ = zeros(Float64, nlat); w = zeros(Float64, nlat)
+    x = zeros(Float64, nlat)
+    φ = (2π / nphi) .* collect(0:(nphi-1))
+    if grid_type == 0 || grid_type == 1 || grid_type == 6  # gauss, auto, gauss_fly
+        x, w = gausslegendre(nlat)
+        θ = acos.(x)
+    elseif grid_type == 2 || grid_type == 3 || grid_type == 4  # reg_fast, reg_dct, quick_init
+        # equiangular midpoints (no poles)
+        for i in 0:(nlat-1)
+            θ[i+1] = (i + 0.5) * (π / nlat)
+            w[i+1] = (π / nlat) * sin(θ[i+1])
+            x[i+1] = cos(θ[i+1])
+        end
+    elseif grid_type == 5  # reg_poles, include poles
+        for i in 0:(nlat-1)
+            θ[i+1] = i * (π / (nlat-1))
+            w[i+1] = (π / (nlat-1)) * sin(θ[i+1])
+            x[i+1] = cos(θ[i+1])
+        end
+    else
+        # default to gauss
+        x, w = gausslegendre(nlat)
+        θ = acos.(x)
     end
+    if south_pole_first
+        θ = reverse(θ); w = reverse(w); x = reverse(x)
+    end
+    # Update cfg in-place
+    cfg.nlat = nlat; cfg.nlon = nphi
+    cfg.θ = θ; cfg.φ = φ; cfg.x = x; cfg.w = w
+    cfg.ct = cos.(θ); cfg.st = sin.(θ)
+    cfg.nspat = nlat * nphi
+    cfg.cphi = 2π / nphi
     return 0
 end
 
 """shtns_set_grid_auto(cfg, flags, eps, nl_order, nlat_ref, nphi_ref) -> Int"""
 function shtns_set_grid_auto(cfg::SHTConfig, flags::Integer, eps::Real, nl_order::Integer, nlat_ref::Ref{Int}, nphi_ref::Ref{Int})
-    nlat_ref[] = cfg.lmax + 1
+    f = Int(flags)
+    grid_type = f % 256
+    if grid_type == 0 || grid_type == 1 || grid_type == 6
+        nlat_ref[] = cfg.lmax + 1
+    elseif grid_type == 5
+        nlat_ref[] = cfg.lmax + 1  # includes poles
+    else
+        nlat_ref[] = cfg.lmax + 2  # a touch more for regular grids
+    end
     nphi_ref[] = max(2*cfg.mmax+1, 4)
     return 0
 end
