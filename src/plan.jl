@@ -8,24 +8,34 @@ struct SHTPlan
     dPdx::Vector{Float64}
     G::Vector{ComplexF64}
     Fθk::Matrix{ComplexF64}
-    fft_plan::FFTW.cFFTWPlan
-    ifft_plan::FFTW.cFFTWPlan
+    fft_plan::Any
+    ifft_plan::Any
+    use_rfft::Bool
 end
 
 """
-    SHTPlan(cfg::SHTConfig)
+    SHTPlan(cfg::SHTConfig; use_rfft=false)
 
 Create a plan with reusable buffers and in-place FFTW plans along φ (dim=2).
+If `use_rfft=true`, allocate half-spectrum buffer for real-output synthesis and
+use `FFTW.irfft` instead of complex iFFT.
 """
-function SHTPlan(cfg::SHTConfig)
+function SHTPlan(cfg::SHTConfig; use_rfft::Bool=false)
     P = Vector{Float64}(undef, cfg.lmax + 1)
     dPdx = Vector{Float64}(undef, cfg.lmax + 1)
     G = Vector{ComplexF64}(undef, cfg.nlat)
-    Fθk = Matrix{ComplexF64}(undef, cfg.nlat, cfg.nlon)
-    fill!(Fθk, 0)
-    fft_plan = FFTW.plan_fft!(Fθk, 2)
-    ifft_plan = FFTW.plan_ifft!(Fθk, 2)
-    return SHTPlan(cfg, P, dPdx, G, Fθk, fft_plan, ifft_plan)
+    if use_rfft
+        nlon_half = fld(cfg.nlon, 2) + 1
+        Fθk = Matrix{ComplexF64}(undef, cfg.nlat, nlon_half)
+        fill!(Fθk, 0)
+        return SHTPlan(cfg, P, dPdx, G, Fθk, nothing, nothing, true)
+    else
+        Fθk = Matrix{ComplexF64}(undef, cfg.nlat, cfg.nlon)
+        fill!(Fθk, 0)
+        fft_plan = FFTW.plan_fft!(Fθk, 2)
+        ifft_plan = FFTW.plan_ifft!(Fθk, 2)
+        return SHTPlan(cfg, P, dPdx, G, Fθk, fft_plan, ifft_plan, false)
+    end
 end
 
 """
