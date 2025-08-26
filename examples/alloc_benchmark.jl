@@ -99,4 +99,4 @@ function main()
     bench_distributed(lmax)
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main()
+main()
