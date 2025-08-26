@@ -67,6 +67,7 @@ export dist_scalar_roundtrip!, dist_vector_roundtrip!
 export DistPlan, dist_synthesis!
 export DistAnalysisPlan, dist_analysis!
 export DistSphtorPlan, dist_spat_to_SHsphtor!, dist_SHsphtor_to_spat!
+export DistQstPlan, dist_spat_to_SHqst!, dist_SHqst_to_spat!
 
 # Default fallbacks if extensions are not loaded
 zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")

@@ -70,6 +70,270 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
 end
 
 """
+Plan for distributed 3D (q,s,t) transforms: radial scalar Qlm and tangential Slm/Tlm.
+Reuses (θ,m) accumulators for all three components and one (θ,k) buffer for ifft.
+"""
+struct DistQstPlan
+    cfg::SHTnsKit.SHTConfig
+    Vrθm::PencilArrays.PencilArray
+    Vtθm::PencilArrays.PencilArray
+    Vpθm::PencilArrays.PencilArray
+    Fθk::PencilArrays.PencilArray
+    pfft::Any
+    pifft::Any
+    P::Vector{Float64}
+    dPdx::Vector{Float64}
+end
+
+function DistQstPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray)
+    Vrθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Vtθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Vpθm = PencilArrays.allocate(prototype_θφ; dims=(:θ, :m), eltype=ComplexF64)
+    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ, :k), eltype=ComplexF64)
+    pfft = PencilFFTs.plan_fft(Fθk; dims=2)
+    pifft = PencilFFTs.plan_fft(Fθk; dims=2)
+    P = Vector{Float64}(undef, cfg.lmax + 1)
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
+    return DistQstPlan(cfg, Vrθm, Vtθm, Vpθm, Fθk, pfft, pifft, P, dPdx)
+end
+
+"""
+    dist_spat_to_SHqst!(plan::DistQstPlan, Qlm_out, Slm_out, Tlm_out, Vrθφ, Vtθφ, Vpθφ; use_tables=plan.cfg.use_plm_tables)
+
+In-place distributed QST analysis.
+"""
+function SHTnsKit.dist_spat_to_SHqst!(plan::DistQstPlan, Qlm_out::AbstractMatrix, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix,
+                                      Vrθφ::PencilArrays.PencilArray, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray;
+                                      use_tables=plan.cfg.use_plm_tables)
+    cfg = plan.cfg
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Qlm_out,1)==lmax+1 && size(Qlm_out,2)==mmax+1 || throw(DimensionMismatch("Qlm_out dims"))
+    size(Slm_out,1)==lmax+1 && size(Slm_out,2)==mmax+1 || throw(DimensionMismatch("Slm_out dims"))
+    size(Tlm_out,1)==lmax+1 && size(Tlm_out,2)==mmax+1 || throw(DimensionMismatch("Tlm_out dims"))
+    fill!(Qlm_out, 0); fill!(Slm_out, 0); fill!(Tlm_out, 0)
+    # FFT all three and transpose to (θ,m)
+    Fθm_r = PencilArrays.transpose(PencilFFTs.fft(Vrθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
+    Fθm_t = PencilArrays.transpose(PencilFFTs.fft(Vtθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
+    Fθm_p = PencilArrays.transpose(PencilFFTs.fft(Vpθφ, plan.pfft), (; dims=(1,2), names=(:θ,:m)))
+    θrange = axes(Fθm_r, 1)
+    mrange = axes(Fθm_r, 2)
+    use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
+    for m in mrange
+        mm = m - first(mrange)
+        mglob = PencilArrays.globalindices(Fθm_r, 2)[mm+1]
+        mval = mglob - 1
+        mval > mmax && continue
+        col = mval + 1
+        for (ii, iθ) in enumerate(θrange)
+            iglob = PencilArrays.globalindices(Fθm_r, 1)[ii]
+            x = cfg.x[iglob]
+            sθ = sqrt(max(0.0, 1 - x*x))
+            inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            Fr = Fθm_r[iθ, m]
+            Ft = Fθm_t[iθ, m]
+            Fp = Fθm_p[iθ, m]
+            if cfg.robert_form && sθ > 0
+                Ft /= sθ; Fp /= sθ
+            end
+            wi = cfg.w[iglob]
+            if use_tbl
+                tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                @inbounds for l in mval:lmax
+                    N = cfg.Nlm[l+1, col]
+                    Y = N * tblP[l+1, iglob]
+                    dθY = -sθ * N * tbld[l+1, iglob]
+                    coeffs = wi * cfg.cphi
+                    Qlm_out[l+1, col] += coeffs * (Y * Fr)
+                end
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    Y = N * tblP[l+1, iglob]
+                    dθY = -sθ * N * tbld[l+1, iglob]
+                    coeffv = wi * cfg.cphi / (l*(l+1))
+                    Slm_out[l+1, col] += coeffv * (Ft * dθY - (0 + 1im) * mval * inv_sθ * Y * Fp)
+                    Tlm_out[l+1, col] += coeffv * ((0 + 1im) * mval * inv_sθ * Y * Ft + Fp * (+sθ * N * tbld[l+1, iglob]))
+                end
+            else
+                SHTnsKit.Plm_and_dPdx_row!(plan.P, plan.dPdx, x, lmax, mval)
+                @inbounds for l in mval:lmax
+                    N = cfg.Nlm[l+1, col]
+                    Y = N * plan.P[l+1]
+                    Qlm_out[l+1, col] += wi * cfg.cphi * (Y * Fr)
+                end
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * plan.dPdx[l+1]
+                    Y = N * plan.P[l+1]
+                    coeffv = wi * cfg.cphi / (l*(l+1))
+                    Slm_out[l+1, col] += coeffv * (Ft * dθY - (0 + 1im) * mval * inv_sθ * Y * Fp)
+                    Tlm_out[l+1, col] += coeffv * ((0 + 1im) * mval * inv_sθ * Y * Ft + Fp * (+sθ * N * plan.dPdx[l+1]))
+                end
+            end
+        end
+    end
+    # Reduce across ranks
+    c = PencilArrays.communicator(Vrθφ)
+    MPI.Allreduce!(Qlm_out, +, c)
+    MPI.Allreduce!(Slm_out, +, c)
+    MPI.Allreduce!(Tlm_out, +, c)
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Q2 = similar(Qlm_out); S2 = similar(Slm_out); T2 = similar(Tlm_out)
+        SHTnsKit.convert_alm_norm!(Q2, Qlm_out, cfg; to_internal=false)
+        SHTnsKit.convert_alm_norm!(S2, Slm_out, cfg; to_internal=false)
+        SHTnsKit.convert_alm_norm!(T2, Tlm_out, cfg; to_internal=false)
+        copyto!(Qlm_out, Q2); copyto!(Slm_out, S2); copyto!(Tlm_out, T2)
+    end
+    return Qlm_out, Slm_out, Tlm_out
+end
+
+"""
+    dist_SHqst_to_spat!(plan::DistQstPlan, Vrθφ_out, Vtθφ_out, Vpθφ_out, Qlm, Slm, Tlm; real_output=true)
+
+In-place distributed QST synthesis.
+"""
+function SHTnsKit.dist_SHqst_to_spat!(plan::DistQstPlan, Vrθφ_out::PencilArrays.PencilArray, Vtθφ_out::PencilArrays.PencilArray, Vpθφ_out::PencilArrays.PencilArray,
+                                      Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
+    cfg = plan.cfg
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Qlm,1)==lmax+1 && size(Qlm,2)==mmax+1 || throw(DimensionMismatch("Qlm dims"))
+    size(Slm,1)==lmax+1 && size(Slm,2)==mmax+1 || throw(DimensionMismatch("Slm dims"))
+    size(Tlm,1)==lmax+1 && size(Tlm,2)==mmax+1 || throw(DimensionMismatch("Tlm dims"))
+    # Convert to internal norm if needed
+    Qlm_i, Slm_i, Tlm_i = Qlm, Slm, Tlm
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Q2 = similar(Qlm); S2 = similar(Slm); T2 = similar(Tlm)
+        SHTnsKit.convert_alm_norm!(Q2, Qlm, cfg; to_internal=true)
+        SHTnsKit.convert_alm_norm!(S2, Slm, cfg; to_internal=true)
+        SHTnsKit.convert_alm_norm!(T2, Tlm, cfg; to_internal=true)
+        Qlm_i, Slm_i, Tlm_i = Q2, S2, T2
+    end
+    # Build (θ,m) accumulators locally
+    fill!(plan.Vrθm, 0); fill!(plan.Vtθm, 0); fill!(plan.Vpθm, 0)
+    θloc = axes(plan.Vrθm, 1)
+    mloc = axes(plan.Vrθm, 2)
+    use_tbl = cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
+    for (ii,iθ) in enumerate(θloc)
+        iglobθ = PencilArrays.globalindices(plan.Vrθm, 1)[ii]
+        xθ = cfg.x[iglobθ]
+        sθ = sqrt(max(0.0, 1 - xθ*xθ))
+        inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+        for (jj,jm) in enumerate(mloc)
+            iglobm = PencilArrays.globalindices(plan.Vrθm, 2)[jj]
+            mval = iglobm - 1
+            mval > mmax && continue
+            col = mval + 1
+            acc_r = 0.0 + 0.0im
+            acc_t = 0.0 + 0.0im
+            acc_p = 0.0 + 0.0im
+            if use_tbl
+                tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                @inbounds for l in mval:lmax
+                    N = cfg.Nlm[l+1, col]
+                    Y = N * tblP[l+1, iglobθ]
+                    acc_r += Y * Qlm_i[l+1, col]
+                end
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * tbld[l+1, iglobθ]
+                    Y = N * tblP[l+1, iglobθ]
+                    acc_t += dθY * Slm_i[l+1, col] + (0 + 1im) * mval * inv_sθ * Y * Tlm_i[l+1, col]
+                    acc_p += (0 + 1im) * mval * inv_sθ * Y * Slm_i[l+1, col] + (sθ * N * tbld[l+1, iglobθ]) * Tlm_i[l+1, col]
+                end
+            else
+                SHTnsKit.Plm_and_dPdx_row!(plan.P, plan.dPdx, xθ, lmax, mval)
+                @inbounds for l in mval:lmax
+                    N = cfg.Nlm[l+1, col]
+                    Y = N * plan.P[l+1]
+                    acc_r += Y * Qlm_i[l+1, col]
+                end
+                @inbounds for l in max(1,mval):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * plan.dPdx[l+1]
+                    Y = N * plan.P[l+1]
+                    acc_t += dθY * Slm_i[l+1, col] + (0 + 1im) * mval * inv_sθ * Y * Tlm_i[l+1, col]
+                    acc_p += (0 + 1im) * mval * inv_sθ * Y * Slm_i[l+1, col] + (sθ * N * plan.dPdx[l+1]) * Tlm_i[l+1, col]
+                end
+            end
+            plan.Vrθm[iθ, jm] = acc_r
+            plan.Vtθm[iθ, jm] = acc_t
+            plan.Vpθm[iθ, jm] = acc_p
+        end
+    end
+    # Reduce across ranks
+    comm = PencilArrays.communicator(plan.Vrθm)
+    MPI.Allreduce!(plan.Vrθm, +, comm)
+    MPI.Allreduce!(plan.Vtθm, +, comm)
+    MPI.Allreduce!(plan.Vpθm, +, comm)
+    # Map to (θ,k), apply inv_scaleφ, iFFT for each component
+    inv_scaleφ = cfg.nlon / (2π)
+    θloc = axes(plan.Fθk, 1); kloc = axes(plan.Fθk, 2)
+    mloc = axes(plan.Vrθm, 2)
+    nlon = cfg.nlon
+    # Helper to place and transform one component
+    function place_ifft!(Fθk, Vθm)
+        fill!(Fθk, 0)
+        for (ii,iθ) in enumerate(θloc)
+            for (jj,jk) in enumerate(kloc)
+                kglob = PencilArrays.globalindices(Fθk, 2)[jj] - 1
+                if kglob == 0
+                    if first(mloc) <= 1 <= last(mloc)
+                        Fθk[iθ, jk] = inv_scaleφ * Vθm[iθ, 1]
+                    end
+                elseif kglob <= mmax
+                    mpos = kglob + 1
+                    if mpos in mloc
+                        Fθk[iθ, jk] = inv_scaleφ * Vθm[iθ, mpos]
+                    end
+                else
+                    if real_output
+                        mneg = nlon - kglob
+                        if 1 <= mneg <= mmax && (mneg+1) in mloc
+                            Fθk[iθ, jk] = conj(inv_scaleφ * Vθm[iθ, mneg+1])
+                        end
+                    end
+                end
+            end
+        end
+        return PencilFFTs.ifft(Fθk, plan.pifft)
+    end
+    Vrθφ_tmp = place_ifft!(plan.Fθk, plan.Vrθm)
+    Vtθφ_tmp = place_ifft!(plan.Fθk, plan.Vtθm)
+    Vpθφ_tmp = place_ifft!(plan.Fθk, plan.Vpθm)
+    # Apply robert form and write to outputs
+    if cfg.robert_form
+        θl = axes(Vtθφ_tmp, 1)
+        for (ii,iθ) in enumerate(θl)
+            iglobθ = PencilArrays.globalindices(Vtθφ_tmp, 1)[ii]
+            sθ = sqrt(max(0.0, 1 - cfg.x[iglobθ]^2))
+            Vtθφ_tmp[iθ, :] .*= sθ
+            Vpθφ_tmp[iθ, :] .*= sθ
+        end
+    end
+    if real_output
+        for I in eachindex(Vrθφ_out)
+            Vrθφ_out[I] = real(Vrθφ_tmp[I])
+        end
+        for I in eachindex(Vtθφ_out)
+            Vtθφ_out[I] = real(Vtθφ_tmp[I])
+        end
+        for I in eachindex(Vpθφ_out)
+            Vpθφ_out[I] = real(Vpθφ_tmp[I])
+        end
+    else
+        for I in eachindex(Vrθφ_out)
+            Vrθφ_out[I] = Vrθφ_tmp[I]
+        end
+        for I in eachindex(Vtθφ_out)
+            Vtθφ_out[I] = Vtθφ_tmp[I]
+        end
+        for I in eachindex(Vpθφ_out)
+            Vpθφ_out[I] = Vpθφ_tmp[I]
+        end
+    end
+    return Vrθφ_out, Vtθφ_out, Vpθφ_out
+end
+
+"""
     dist_scalar_roundtrip!(cfg, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output=true)
 
 Run distributed scalar round-trip (analysis → synthesis) and return (relerr_local, relerr_global).
