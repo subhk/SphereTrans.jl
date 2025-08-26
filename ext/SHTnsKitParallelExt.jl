@@ -66,6 +66,61 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
 end
 
 """
+    dist_scalar_roundtrip!(cfg, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output=true)
+
+Run distributed scalar round-trip (analysis → synthesis) and return (relerr_local, relerr_global).
+Relerr computed as sqrt( sum|f_out - f|^2 / sum|f|^2 ).
+"""
+function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output::Bool=true)
+    comm = PencilArrays.communicator(fθφ)
+    # Save local original
+    f0 = Array(fθφ)
+    # Round-trip
+    Alm = SHTnsKit.dist_analysis(cfg, fθφ; use_tables)
+    fθφ_out = SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ=fθφ, real_output=real_output)
+    fout = Array(fθφ_out)
+    # Errors
+    num = sum(abs2, fout .- f0)
+    den = sum(abs2, f0) + eps()
+    rel_local = sqrt(num / den)
+    # Global reductions
+    num_g = MPI.Allreduce(num, +, comm)
+    den_g = MPI.Allreduce(den, +, comm)
+    rel_global = sqrt(num_g / den_g)
+    return rel_local, rel_global
+end
+
+"""
+    dist_vector_roundtrip!(cfg, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray;
+                           use_tables=cfg.use_plm_tables, real_output=true)
+
+Run distributed vector round-trip and return ((rel_local_t, rel_global_t), (rel_local_p, rel_global_p)).
+"""
+function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output::Bool=true)
+    comm = PencilArrays.communicator(Vtθφ)
+    T0 = Array(Vtθφ); P0 = Array(Vpθφ)
+    Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vtθφ, Vpθφ; use_tables)
+    Vt_out, Vp_out = SHTnsKit.dist_SHsphtor_to_spat(cfg, PencilArrays.PencilArray(Slm), PencilArrays.PencilArray(Tlm); prototype_θφ=Vtθφ, real_output=real_output)
+    # Note: Slm/Tlm are dense; above converts to PencilArray by constructor. If not available, use local arrays:
+    T1 = Array(Vt_out); P1 = Array(Vp_out)
+    # Errors t component
+    num_t = sum(abs2, T1 .- T0)
+    den_t = sum(abs2, T0) + eps()
+    rel_local_t = sqrt(num_t / den_t)
+    num_tg = MPI.Allreduce(num_t, +, comm)
+    den_tg = MPI.Allreduce(den_t, +, comm)
+    rel_global_t = sqrt(num_tg / den_tg)
+    # Errors p component
+    num_p = sum(abs2, P1 .- P0)
+    den_p = sum(abs2, P0) + eps()
+    rel_local_p = sqrt(num_p / den_p)
+    num_pg = MPI.Allreduce(num_p, +, comm)
+    den_pg = MPI.Allreduce(den_p, +, comm)
+    rel_global_p = sqrt(num_pg / den_pg)
+    return (rel_local_t, rel_global_t), (rel_local_p, rel_global_p)
+end
+
+"""
     dist_synthesis(cfg, Alm::AbstractMatrix)
 
 Distributed scalar synthesis. Assumes `Alm` is globally consistent on all ranks,
