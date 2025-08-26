@@ -14,6 +14,7 @@ function main()
     nlat = lmax + 2
     nlon = 2*lmax + 1
     do_vector = any(x -> x == "--vector", ARGS)
+    do_qst = any(x -> x == "--qst", ARGS)
 
     cfg = SHTnsKit.create_gauss_config(lmax, nlat; nlon=nlon)
     Pθφ = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm)
@@ -62,6 +63,39 @@ function main()
         rg_p = sqrt(MPI.Allreduce(num_p, +, comm) / MPI.Allreduce(den_p, +, comm))
         if rank == 0
             println("[vector] Vt rel_local≈$rl_t rel_global≈$rg_t; Vp rel_local≈$rl_p rel_global≈$rg_p")
+        end
+    end
+
+    if do_qst
+        # Build simple synthetic 3D field
+        Vrθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
+        Vtθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
+        Vpθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
+        for (iθ, iφ) in zip(eachindex(axes(Vrθφ,1)), eachindex(axes(Vrθφ,2)))
+            Vrθφ[iθ, iφ] = 0.3*sin(0.1*(iθ+1)) + 0.2*cos(0.05*(iφ+1))
+            Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
+            Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
+        end
+        qplan = SHTnsKit.DistQstPlan(cfg, Vrθφ)
+        Qlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        SHTnsKit.dist_spat_to_SHqst!(qplan, Qlm, Slm, Tlm, Vrθφ, Vtθφ, Vpθφ)
+        Vr_out = similar(Vrθφ); Vt_out = similar(Vtθφ); Vp_out = similar(Vpθφ)
+        SHTnsKit.dist_SHqst_to_spat!(qplan, Vr_out, Vt_out, Vp_out, Qlm, Slm, Tlm)
+        # Errors
+        r0 = Array(Vrθφ); r1 = Array(Vr_out)
+        t0 = Array(Vtθφ); t1 = Array(Vt_out)
+        p0 = Array(Vpθφ); p1 = Array(Vp_out)
+        num_r = sum(abs2, r1 .- r0); den_r = sum(abs2, r0) + eps()
+        num_t = sum(abs2, t1 .- t0); den_t = sum(abs2, t0) + eps()
+        num_p = sum(abs2, p1 .- p0); den_p = sum(abs2, p0) + eps()
+        rl_r = sqrt(num_r / den_r); rl_t = sqrt(num_t / den_t); rl_p = sqrt(num_p / den_p)
+        rg_r = sqrt(MPI.Allreduce(num_r, +, comm) / MPI.Allreduce(den_r, +, comm))
+        rg_t = sqrt(MPI.Allreduce(num_t, +, comm) / MPI.Allreduce(den_t, +, comm))
+        rg_p = sqrt(MPI.Allreduce(num_p, +, comm) / MPI.Allreduce(den_p, +, comm))
+        if rank == 0
+            println("[qst] Vr rel_local≈$rl_r rel_global≈$rg_r; Vt rel_local≈$rl_t rel_global≈$rg_t; Vp rel_local≈$rl_p rel_global≈$rg_p")
         end
     end
 
