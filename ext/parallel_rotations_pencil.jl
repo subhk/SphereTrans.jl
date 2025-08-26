@@ -15,6 +15,19 @@ function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig,
     return Alm_pencil
 end
 
+function SHTnsKit.dist_SH_Zrotate(cfg::SHTnsKit.SHTConfig,
+                            Alm_pencil::PencilArrays.PencilArray, alpha::Real,
+                            R_pencil::PencilArrays.PencilArray)
+    mloc = axes(Alm_pencil, 2)
+    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        phase = cis(mval * alpha)
+        @inbounds R_pencil[:, jm] .= phase .* Alm_pencil[:, jm]
+    end
+    return R_pencil
+end
+
 function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig, 
                                             Alm_pencil::PencilArrays.PencilArray, 
                                             beta::Real, 
@@ -80,4 +93,11 @@ function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig,
     end
     
     return R_pencil
+end
+
+function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig,
+                                  Alm_pencil::PencilArrays.PencilArray,
+                                  beta::Real,
+                                  R_pencil::PencilArrays.PencilArray)
+    return SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg, Alm_pencil, beta, R_pencil)
 end

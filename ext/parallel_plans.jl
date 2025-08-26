@@ -13,9 +13,10 @@ DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArr
 struct DistPlan
     cfg::SHTnsKit.SHTConfig
     prototype_θφ::PencilArrays.PencilArray
+    use_rfft::Bool
 end
 
-DistPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray) = DistPlan(cfg, prototype_θφ)
+DistPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArrays.PencilArray; use_rfft::Bool=false) = DistPlan(cfg, prototype_θφ, use_rfft)
 
 struct DistSphtorPlan
     cfg::SHTnsKit.SHTConfig

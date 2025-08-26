@@ -60,7 +60,7 @@ function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix
     return Alm_out
 end
 
-function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     lmax, mmax = cfg.lmax, cfg.mmax
     Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
     fill!(Fθk, 0)
@@ -111,12 +111,12 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
     return real_output ? real.(fθφ) : fθφ
 end
 
-function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    return SHTnsKit.dist_synthesis(cfg, Array(Alm); prototype_θφ, real_output)
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+    return SHTnsKit.dist_synthesis(cfg, Array(Alm); prototype_θφ, real_output, use_rfft)
 end
 
 function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.PencilArray, Alm::PencilArrays.PencilArray; real_output::Bool=true)
-    f = SHTnsKit.dist_synthesis(plan.cfg, Alm; prototype_θφ=plan.prototype_θφ, real_output)
+    f = SHTnsKit.dist_synthesis(plan.cfg, Alm; prototype_θφ=plan.prototype_θφ, real_output, use_rfft=plan.use_rfft)
     copyto!(fθφ_out, f)
     return fθφ_out
 end
@@ -213,7 +213,7 @@ function SHTnsKit.dist_spat_to_SHsphtor!(plan::DistSphtorPlan, Slm_out::Abstract
 end
 
 # Distributed vector synthesis (spheroidal/toroidal) from dense spectra
-function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Slm,1) == lmax+1 && size(Slm,2) == mmax+1 || throw(DimensionMismatch("Slm dims"))
     size(Tlm,1) == lmax+1 && size(Tlm,2) == mmax+1 || throw(DimensionMismatch("Tlm dims"))
@@ -324,13 +324,13 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
 end
 
 # Convenience: spectral inputs as PencilArray (dense layout (:l,:m))
-function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    return SHTnsKit.dist_SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); prototype_θφ, real_output)
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+    return SHTnsKit.dist_SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); prototype_θφ, real_output, use_rfft)
 end
 
 function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::PencilArrays.PencilArray, Vpθφ_out::PencilArrays.PencilArray,
                                          Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
-    Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(plan.cfg, Slm, Tlm; prototype_θφ=plan.prototype_θφ, real_output)
+    Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(plan.cfg, Slm, Tlm; prototype_θφ=plan.prototype_θφ, real_output, use_rfft=plan.use_rfft)
     copyto!(Vtθφ_out, Vt); copyto!(Vpθφ_out, Vp)
     return Vtθφ_out, Vpθφ_out
 end
@@ -350,14 +350,14 @@ function SHTnsKit.dist_spat_to_SHqst!(plan::DistQstPlan, Qlm_out::AbstractMatrix
 end
 
 # Synthesis to distributed fields from dense spectra
-function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    Vr = SHTnsKit.dist_synthesis(cfg, Qlm; prototype_θφ, real_output)
-    Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ, real_output)
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+    Vr = SHTnsKit.dist_synthesis(cfg, Qlm; prototype_θφ, real_output, use_rfft)
+    Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ, real_output, use_rfft)
     return Vr, Vt, Vp
 end
 
-function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-    Vr, Vt, Vp = SHTnsKit.dist_SHqst_to_spat(cfg, Array(Qlm), Array(Slm), Array(Tlm); prototype_θφ, real_output)
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+    Vr, Vt, Vp = SHTnsKit.dist_SHqst_to_spat(cfg, Array(Qlm), Array(Slm), Array(Tlm); prototype_θφ, real_output, use_rfft)
     return Vr, Vt, Vp
 end
 
