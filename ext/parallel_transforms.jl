@@ -347,3 +347,44 @@ function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.
     Vr, Vt, Vp = SHTnsKit.dist_SHqst_to_spat(cfg, Array(Qlm), Array(Slm), Array(Tlm); prototype_θφ, real_output)
     return Vr, Vt, Vp
 end
+
+##########
+# Simple roundtrip diagnostics (optional helpers)
+##########
+
+function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
+    comm = PencilArrays.communicator(fθφ)
+    Alm = SHTnsKit.dist_analysis(cfg, fθφ)
+    fθφ_out = SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ=fθφ, real_output=true)
+    # Local and global relative errors
+    local_diff2 = 0.0; local_ref2 = 0.0
+    for i in axes(fθφ,1), j in axes(fθφ,2)
+        d = fθφ_out[i,j] - fθφ[i,j]
+        local_diff2 += abs2(d)
+        local_ref2 += abs2(fθφ[i,j])
+    end
+    global_diff2 = MPI.Allreduce(local_diff2, +, comm)
+    global_ref2 = MPI.Allreduce(local_ref2, +, comm)
+    rel_local = sqrt(local_diff2 / (local_ref2 + eps()))
+    rel_global = sqrt(global_diff2 / (global_ref2 + eps()))
+    return rel_local, rel_global
+end
+
+function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+    comm = PencilArrays.communicator(Vtθφ)
+    Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vtθφ, Vpθφ)
+    Vt2, Vp2 = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ=Vtθφ, real_output=true)
+    # θ component
+    lt_d2 = 0.0; lt_r2 = 0.0
+    lp_d2 = 0.0; lp_r2 = 0.0
+    for i in axes(Vtθφ,1), j in axes(Vtθφ,2)
+        dt = Vt2[i,j] - Vtθφ[i,j]; dp = Vp2[i,j] - Vpθφ[i,j]
+        lt_d2 += abs2(dt); lt_r2 += abs2(Vtθφ[i,j])
+        lp_d2 += abs2(dp); lp_r2 += abs2(Vpθφ[i,j])
+    end
+    gt_d2 = MPI.Allreduce(lt_d2, +, comm); gt_r2 = MPI.Allreduce(lt_r2, +, comm)
+    gp_d2 = MPI.Allreduce(lp_d2, +, comm); gp_r2 = MPI.Allreduce(lp_r2, +, comm)
+    rl_t = sqrt(lt_d2 / (lt_r2 + eps())); rg_t = sqrt(gt_d2 / (gt_r2 + eps()))
+    rl_p = sqrt(lp_d2 / (lp_r2 + eps())); rg_p = sqrt(gp_d2 / (gp_r2 + eps()))
+    return (rl_t, rg_t), (rl_p, rg_p)
+end
