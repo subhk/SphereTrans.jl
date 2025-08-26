@@ -341,18 +341,31 @@ function spat_to_SHsphtor_ml(cfg::SHTConfig, im::Int, Vt_m::AbstractVector{<:Com
         x = cfg.x[i]
         sθ = sqrt(max(0.0, 1 - x*x))
         inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
-        Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
         wi = cfg.w[i]
         Fθ_i = Vt_m[i]
         Fφ_i = Vp_m[i]
-        @inbounds for l in lstart:ltr
-            N = cfg.Nlm[l+1, m+1]
-            dθY = -sθ * N * dPdx[l+1]
-            Y = N * P[l+1]
-            coeff = wi / (l*(l+1))
-            Ict = one(CT) * (0 + 1im)
-            Sl[l - lstart + 1] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
-            Tl[l - lstart + 1] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
+        if cfg.use_plm_tables && length(cfg.plm_tables) > im && length(cfg.dplm_tables) > im
+            tblP = cfg.plm_tables[im+1]; tbld = cfg.dplm_tables[im+1]
+            @inbounds for l in lstart:ltr
+                N = cfg.Nlm[l+1, m+1]
+                dθY = -sθ * N * tbld[l+1, i]
+                Y = N * tblP[l+1, i]
+                coeff = wi / (l*(l+1))
+                Ict = one(CT) * (0 + 1im)
+                Sl[l - lstart + 1] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+                Tl[l - lstart + 1] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * tbld[l+1, i]))
+            end
+        else
+            Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
+            @inbounds for l in lstart:ltr
+                N = cfg.Nlm[l+1, m+1]
+                dθY = -sθ * N * dPdx[l+1]
+                Y = N * P[l+1]
+                coeff = wi / (l*(l+1))
+                Ict = one(CT) * (0 + 1im)
+                Sl[l - lstart + 1] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+                Tl[l - lstart + 1] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
+            end
         end
     end
     return Sl, Tl
@@ -378,18 +391,32 @@ function SHsphtor_to_spat_ml(cfg::SHTConfig, im::Int, Sl::AbstractVector{<:Compl
         x = cfg.x[i]
         sθ = sqrt(max(0.0, 1 - x*x))
         inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
-        Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
         gθ = 0.0 + 0.0im
         gφ = 0.0 + 0.0im
-        @inbounds for l in lstart:ltr
-            N = cfg.Nlm[l+1, m+1]
-            dθY = -sθ * N * dPdx[l+1]
-            Y = N * P[l+1]
-            Slv = Sl[l - lstart + 1]
-            Tlv = Tl[l - lstart + 1]
-            Ict = one(CT) * (0 + 1im)
-            gθ += dθY * Slv + Ict * m * inv_sθ * Y * Tlv
-            gφ += Ict * m * inv_sθ * Y * Slv + (sθ * N * dPdx[l+1]) * Tlv
+        if cfg.use_plm_tables && length(cfg.plm_tables) > im && length(cfg.dplm_tables) > im
+            tblP = cfg.plm_tables[im+1]; tbld = cfg.dplm_tables[im+1]
+            @inbounds for l in lstart:ltr
+                N = cfg.Nlm[l+1, m+1]
+                dθY = -sθ * N * tbld[l+1, i]
+                Y = N * tblP[l+1, i]
+                Slv = Sl[l - lstart + 1]
+                Tlv = Tl[l - lstart + 1]
+                Ict = one(CT) * (0 + 1im)
+                gθ += dθY * Slv + Ict * m * inv_sθ * Y * Tlv
+                gφ += Ict * m * inv_sθ * Y * Slv + (sθ * N * tbld[l+1, i]) * Tlv
+            end
+        else
+            Plm_and_dPdx_row!(P, dPdx, x, cfg.lmax, m)
+            @inbounds for l in lstart:ltr
+                N = cfg.Nlm[l+1, m+1]
+                dθY = -sθ * N * dPdx[l+1]
+                Y = N * P[l+1]
+                Slv = Sl[l - lstart + 1]
+                Tlv = Tl[l - lstart + 1]
+                Ict = one(CT) * (0 + 1im)
+                gθ += dθY * Slv + Ict * m * inv_sθ * Y * Tlv
+                gφ += Ict * m * inv_sθ * Y * Slv + (sθ * N * dPdx[l+1]) * Tlv
+            end
         end
         Vt_m[i] = gθ
         Vp_m[i] = gφ
