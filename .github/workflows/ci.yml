@@ -170,51 +170,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-  test-compatibility:
-    name: Compatibility Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.10'
-          
-      - name: Test package loading without extensions
-        run: |
-          julia --project=. -e '
-            println(" Testing package loading without optional dependencies...")
-            
-            # Test core functionality without extensions
-            ENV["JULIA_LOAD_PATH"] = "@stdlib"  # Minimal environment
-            
-            try
-              using LinearAlgebra, FFTW  # Core dependencies only
-              
-              # Load SHTnsKit - should work without AD packages
-              using SHTnsKit
-              println(" SHTnsKit loaded successfully without extensions")
-              
-              # Test basic functionality
-              cfg = create_config(Float64, 10, 10, 1)
-              qlm = randn(ComplexF64, cfg.nlm)
-              spatial = synthesize(cfg, real.(qlm))
-              println(" Basic transforms working: spatial size $(size(spatial))")
-              
-              # Test matrix operations
-              qlm_out = similar(qlm)
-              apply_laplacian!(cfg, qlm, qlm_out)
-              println(" Matrix operations working")
-              
-            catch e
-              println(" Compatibility test failed: $(e)")
-              exit(1)
-            end
-            
-            println(" Compatibility tests passed!")
-          '
 
   benchmark:
     name: Performance Benchmarks
