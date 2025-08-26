@@ -113,6 +113,17 @@ dist_SH_Yrotate_packed(::SHTConfig, ::Any, ::Any; kwargs...) = error("Parallel e
 dist_SH_Yrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 dist_SH_Xrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 
+
+# Parallel rotations fallbacks (PencilArray-based)
+Dist = SHTnsKit
+# Non-bang / out-of-place and in-place variants
+function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
+function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
+function dist_SH_Yrotate_allgatherm!(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
+function dist_SH_Yrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
+function dist_SH_Yrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
+function dist_SH_Xrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
+
 # LoopVectorization extension fallbacks (broad signatures to avoid overwriting)
 analysis_turbo(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
 synthesis_turbo(::SHTConfig, ::Any; real_output::Bool=true) = error("LoopVectorization extension not loaded")
