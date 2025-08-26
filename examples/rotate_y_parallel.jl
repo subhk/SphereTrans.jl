@@ -16,7 +16,7 @@ function main()
     β = 0.35
 
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    Pθφ = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm)
+    Pθφ = Pencil((:θ, :φ), (nlat, nlon); comm)
 
     # Build a test real field f(θ,φ)
     fθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
@@ -30,8 +30,8 @@ function main()
     dist_analysis!(aplan, Alm, fθφ)
 
     # Allgatherm distributed Y-rotation
-    Alm_p = PencilArrays.PencilArray(Alm)
-    R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+    Alm_p = PencilArray(Alm)
+    R_p = allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
     dist_SH_Yrotate_allgatherm!(cfg, Alm_p, β, R_p)
 
     # Dense gather/apply/scatter rotation for reference
@@ -40,8 +40,8 @@ function main()
 
     # Compare pencil vs dense
     lloc = axes(R_p, 1); mloc = axes(R_p, 2)
-    gl_l = PencilArrays.globalindices(R_p, 1)
-    gl_m = PencilArrays.globalindices(R_p, 2)
+    gl_l = globalindices(R_p, 1)
+    gl_m = globalindices(R_p, 2)
     num = 0.0; den = 0.0
     for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
         x = R_p[il, jm] - R_dense[gl_l[ii], gl_m[jj]]
@@ -62,4 +62,3 @@ function main()
 end
 
 abspath(PROGRAM_FILE) == @__FILE__ && main()
-

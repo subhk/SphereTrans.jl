@@ -14,7 +14,7 @@ function main()
     nlat = lmax + 2
     nlon = 2*lmax + 1
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    Pθφ = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm)
+    Pθφ = Pencil((:θ, :φ), (nlat, nlon); comm)
 
     # Build a test field f(θ,φ)
     fθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
@@ -33,10 +33,10 @@ function main()
     use_halo = any(x -> x == "--halo", ARGS)
     if use_halo
         # Halo-exchange operator on distributed Alm
-        Alm_p = PencilArrays.PencilArray(Alm)
-        R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+        Alm_p = PencilArray(Alm)
+        R_p = allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
         # Detect path: neighbor-only when full m is local
-        gl_m = PencilArrays.globalindices(Alm_p, 2)
+        gl_m = globalindices(Alm_p, 2)
         full_m = (first(gl_m) == 1 && last(gl_m) == cfg.mmax+1 && length(axes(Alm_p,2)) == cfg.mmax+1)
         if rank == 0
             println(full_m ? "[halo] using neighbor Sendrecv halos along l" : "[halo] using per-m Allgatherv")
@@ -52,14 +52,14 @@ function main()
         dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
         spln = DistPlan(cfg, fθφ)
         fθφ_op = similar(fθφ)
-        dist_synthesis!(spln, fθφ_op, PencilArrays.PencilArray(Rlm))
+        dist_synthesis!(spln, fθφ_op, PencilArray(Rlm))
     end
 
     # Reference: multiply in grid-space by cosθ and compare
     gθφ = similar(fθφ)
     θloc = axes(fθφ, 1)
     for (ii,iθ) in enumerate(θloc)
-        iglobθ = PencilArrays.globalindices(fθφ, 1)[ii]
+        iglobθ = globalindices(fθφ, 1)[ii]
         ct = cos(cfg.θ[iglobθ])
         gθφ[iθ, :] .= ct .* fθφ[iθ, :]
     end
