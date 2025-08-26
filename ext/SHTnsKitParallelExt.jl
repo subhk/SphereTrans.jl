@@ -71,7 +71,8 @@ end
 Run distributed scalar round-trip (analysis → synthesis) and return (relerr_local, relerr_global).
 Relerr computed as sqrt( sum|f_out - f|^2 / sum|f|^2 ).
 """
-function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output::Bool=true)
+function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; 
+                                    use_tables=cfg.use_plm_tables, real_output::Bool=true)
     comm = PencilArrays.communicator(fθφ)
     # Save local original
     f0 = Array(fθφ)
@@ -96,11 +97,15 @@ end
 
 Run distributed vector round-trip and return ((rel_local_t, rel_global_t), (rel_local_p, rel_global_p)).
 """
-function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output::Bool=true)
+function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, 
+                                Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, real_output::Bool=true)
+
     comm = PencilArrays.communicator(Vtθφ)
     T0 = Array(Vtθφ); P0 = Array(Vpθφ)
     Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vtθφ, Vpθφ; use_tables)
-    Vt_out, Vp_out = SHTnsKit.dist_SHsphtor_to_spat(cfg, PencilArrays.PencilArray(Slm), PencilArrays.PencilArray(Tlm); prototype_θφ=Vtθφ, real_output=real_output)
+    Vt_out, Vp_out = SHTnsKit.dist_SHsphtor_to_spat(cfg, PencilArrays.PencilArray(Slm), PencilArrays.PencilArray(Tlm); 
+                                                prototype_θφ=Vtθφ, real_output=real_output)
+                                                
     # Note: Slm/Tlm are dense; above converts to PencilArray by constructor. If not available, use local arrays:
     T1 = Array(Vt_out); P1 = Array(Vp_out)
     # Errors t component
@@ -159,7 +164,7 @@ maps to (θ,k) with Hermitian, and inverse FFTs along φ to return a (θ,φ) Pen
 """
 function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; 
                             prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
-                            
+
     # Convert Alm to internal normalization if needed
     Alm_mat = Array(Alm)
     if cfg.norm !== :orthonormal || cfg.cs_phase == false

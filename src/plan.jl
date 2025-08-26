@@ -29,6 +29,206 @@ function SHTPlan(cfg::SHTConfig)
 end
 
 """
+    spat_to_SHsphtor!(plan::SHTPlan, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix, Vt::AbstractMatrix, Vp::AbstractMatrix)
+
+In-place vector analysis. Accumulates Slm/Tlm into preallocated outputs.
+Uses a two-pass strategy over φ FFTs to avoid extra buffers.
+"""
+function spat_to_SHsphtor!(plan::SHTPlan, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix, Vt::AbstractMatrix, Vp::AbstractMatrix)
+    cfg = plan.cfg
+    nlat, nlon = cfg.nlat, cfg.nlon
+    size(Vt,1)==nlat && size(Vt,2)==nlon || throw(DimensionMismatch("Vt dims"))
+    size(Vp,1)==nlat && size(Vp,2)==nlon || throw(DimensionMismatch("Vp dims"))
+    size(Slm_out,1)==cfg.lmax+1 && size(Slm_out,2)==cfg.mmax+1 || throw(DimensionMismatch("Slm_out dims"))
+    size(Tlm_out,1)==cfg.lmax+1 && size(Tlm_out,2)==cfg.mmax+1 || throw(DimensionMismatch("Tlm_out dims"))
+    lmax, mmax = cfg.lmax, cfg.mmax
+    scaleφ = cfg.cphi
+    fill!(Slm_out, 0); fill!(Tlm_out, 0)
+    # First pass: FFT(Vt) -> partial contributions using Fθ only
+    @inbounds for i in 1:nlat, j in 1:nlon
+        plan.Fθk[i,j] = Vt[i,j]
+    end
+    # Robert form: divide by sinθ before analysis
+    if cfg.robert_form
+        @inbounds for i in 1:nlat
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
+            if sθ > 0
+                plan.Fθk[i, :] ./= sθ
+            end
+        end
+    end
+    FFTW.fft!(plan.fft_plan)
+    for m in 0:mmax
+        col = m + 1
+        for i in 1:nlat
+            Plm_and_dPdx_row!(plan.P, plan.dPdx, cfg.x[i], lmax, m)
+            Fθ_i = plan.Fθk[i, col]
+            wi = cfg.w[i]
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            @inbounds for l in max(1,m):lmax
+                N = cfg.Nlm[l+1, col]
+                dθY = -sθ * N * plan.dPdx[l+1]
+                Y = N * plan.P[l+1]
+                coeff = wi * scaleφ / (l*(l+1))
+                Tlm_out[l+1, col] += coeff * ((0 + 1im) * m * inv_sθ * Y * Fθ_i)
+                Slm_out[l+1, col] += coeff * (Fθ_i * dθY)
+            end
+        end
+    end
+    # Second pass: FFT(Vp) -> add remaining contributions using Fφ
+    @inbounds for i in 1:nlat, j in 1:nlon
+        plan.Fθk[i,j] = Vp[i,j]
+    end
+    if cfg.robert_form
+        @inbounds for i in 1:nlat
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
+            if sθ > 0
+                plan.Fθk[i, :] ./= sθ
+            end
+        end
+    end
+    FFTW.fft!(plan.fft_plan)
+    for m in 0:mmax
+        col = m + 1
+        for i in 1:nlat
+            Plm_and_dPdx_row!(plan.P, plan.dPdx, cfg.x[i], lmax, m)
+            Fφ_i = plan.Fθk[i, col]
+            wi = cfg.w[i]
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            @inbounds for l in max(1,m):lmax
+                N = cfg.Nlm[l+1, col]
+                dθY = -sθ * N * plan.dPdx[l+1]
+                Y = N * plan.P[l+1]
+                coeff = wi * scaleφ / (l*(l+1))
+                Slm_out[l+1, col] += -coeff * ((0 + 1im) * m * inv_sθ * Y * Fφ_i)
+                Tlm_out[l+1, col] += coeff * (Fφ_i * (+sθ * N * plan.dPdx[l+1]))
+            end
+        end
+    end
+    # Convert to cfg normalization if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        tmpS = similar(Slm_out); tmpT = similar(Tlm_out)
+        convert_alm_norm!(tmpS, Slm_out, cfg; to_internal=false)
+        convert_alm_norm!(tmpT, Tlm_out, cfg; to_internal=false)
+        copyto!(Slm_out, tmpS); copyto!(Tlm_out, tmpT)
+    end
+    return Slm_out, Tlm_out
+end
+
+"""
+    SHsphtor_to_spat!(plan::SHTPlan, Vt_out::AbstractMatrix, Vp_out::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output=true)
+
+In-place vector synthesis. Streams m→k without forming (θ×m) intermediates; inverse FFT Vt then Vp.
+"""
+function SHsphtor_to_spat!(plan::SHTPlan, Vt_out::AbstractMatrix, Vp_out::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
+    cfg = plan.cfg
+    nlat, nlon = cfg.nlat, cfg.nlon
+    size(Vt_out,1)==nlat && size(Vt_out,2)==nlon || throw(DimensionMismatch("Vt_out dims"))
+    size(Vp_out,1)==nlat && size(Vp_out,2)==nlon || throw(DimensionMismatch("Vp_out dims"))
+    size(Slm,1)==cfg.lmax+1 && size(Slm,2)==cfg.mmax+1 || throw(DimensionMismatch("Slm dims"))
+    size(Tlm,1)==cfg.lmax+1 && size(Tlm,2)==cfg.mmax+1 || throw(DimensionMismatch("Tlm dims"))
+    lmax, mmax = cfg.lmax, cfg.mmax
+    inv_scaleφ = cfg.nlon / (2π)
+    # Convert to internal normalization if needed
+    Slm_int = Slm; Tlm_int = Tlm
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        tmpS = similar(Slm); tmpT = similar(Tlm)
+        convert_alm_norm!(tmpS, Slm, cfg; to_internal=true)
+        convert_alm_norm!(tmpT, Tlm, cfg; to_internal=true)
+        Slm_int = tmpS; Tlm_int = tmpT
+    end
+    # Synthesize Vt: stream m→k then inverse FFT
+    fill!(plan.Fθk, 0)
+    for m in 0:mmax
+        col = m + 1
+        for i in 1:nlat
+            Plm_and_dPdx_row!(plan.P, plan.dPdx, cfg.x[i], lmax, m)
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            g = 0.0 + 0.0im
+            @inbounds for l in max(1,m):lmax
+                N = cfg.Nlm[l+1, col]
+                dθY = -sθ * N * plan.dPdx[l+1]
+                Y = N * plan.P[l+1]
+                g += dθY * Slm_int[l+1, col] + (0 + 1im) * m * inv_sθ * Y * Tlm_int[l+1, col]
+            end
+            plan.G[i] = g
+        end
+        @inbounds for i in 1:nlat
+            plan.Fθk[i, col] = inv_scaleφ * plan.G[i]
+        end
+        if real_output && m > 0
+            conj_index = nlon - m + 1
+            @inbounds for i in 1:nlat
+                plan.Fθk[i, conj_index] = conj(plan.Fθk[i, col])
+            end
+        end
+    end
+    FFTW.ifft!(plan.ifft_plan)
+    if cfg.robert_form
+        @inbounds for i in 1:nlat
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
+            for j in 1:nlon
+                plan.Fθk[i,j] *= sθ
+            end
+        end
+    end
+    if real_output
+        @inbounds for i in 1:nlat, j in 1:nlon
+            Vt_out[i,j] = real(plan.Fθk[i,j])
+        end
+    else
+        @inbounds for i in 1:nlat, j in 1:nlon
+            Vt_out[i,j] = plan.Fθk[i,j]
+        end
+    end
+    # Synthesize Vp similarly
+    fill!(plan.Fθk, 0)
+    for m in 0:mmax
+        col = m + 1
+        for i in 1:nlat
+            Plm_and_dPdx_row!(plan.P, plan.dPdx, cfg.x[i], lmax, m)
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+            g = 0.0 + 0.0im
+            @inbounds for l in max(1,m):lmax
+                N = cfg.Nlm[l+1, col]
+                dθY = -sθ * N * plan.dPdx[l+1]
+                Y = N * plan.P[l+1]
+                g += (0 + 1im) * m * inv_sθ * Y * Slm_int[l+1, col] + (sθ * N * plan.dPdx[l+1]) * Tlm_int[l+1, col]
+            end
+            plan.G[i] = g
+        end
+        @inbounds for i in 1:nlat
+            plan.Fθk[i, col] = inv_scaleφ * plan.G[i]
+        end
+        if real_output && m > 0
+            conj_index = nlon - m + 1
+            @inbounds for i in 1:nlat
+                plan.Fθk[i, conj_index] = conj(plan.Fθk[i, col])
+            end
+        end
+    end
+    FFTW.ifft!(plan.ifft_plan)
+    if cfg.robert_form
+        @inbounds for i in 1:nlat
+            sθ = sqrt(max(0.0, 1 - cfg.x[i]^2))
+            for j in 1:nlon
+                plan.Fθk[i,j] *= sθ
+            end
+        end
+    end
+    if real_output
+        @inbounds for i in 1:nlat, j in 1:nlon
+            Vp_out[i,j] = real(plan.Fθk[i,j])
+        end
+    else
+        @inbounds for i in 1:nlat, j in 1:nlon
+            Vp_out[i,j] = plan.Fθk[i,j]
+        end
+    end
+    return Vt_out, Vp_out
+end
+
+"""
     analysis!(plan::SHTPlan, alm_out::AbstractMatrix, f::AbstractMatrix)
 
 In-place forward scalar SHT writing coefficients into `alm_out`.
@@ -134,4 +334,3 @@ function synthesis!(plan::SHTPlan, f_out::AbstractMatrix, alm::AbstractMatrix; r
     end
     return f_out
 end
-
