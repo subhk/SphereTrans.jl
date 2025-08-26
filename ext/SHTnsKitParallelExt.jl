@@ -76,6 +76,60 @@ function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:
     return R_p
 end
 
+"""
+    dist_SH_mul_mx!(cfg, mx, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+
+True distributed operator using per-m Allgatherv of l-columns (cheaper than full gather/scatter).
+Writes results into `R_pencil` which must match `Alm_pencil` layout (dims (:l,:m)).
+"""
+function SHTnsKit.dist_SH_mul_mx!(cfg::SHTnsKit.SHTConfig, mx::AbstractVector{<:Real},
+                                  Alm_pencil::PencilArrays.PencilArray,
+                                  R_pencil::PencilArrays.PencilArray)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    # Validate dims
+    axes(Alm_pencil, 1); axes(Alm_pencil, 2)  # ensure 2D
+    axes(R_pencil, 1); axes(R_pencil, 2)
+    size(Alm_pencil, 2) == size(R_pencil, 2) || throw(DimensionMismatch("m dimension mismatch"))
+    length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
+    comm = PencilArrays.communicator(Alm_pencil)
+    # Precompute local l global indices
+    lloc = axes(Alm_pencil, 1)
+    mloc = axes(Alm_pencil, 2)
+    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
+    # Prepare Allgatherv metadata
+    nl_local = length(lloc)
+    counts = MPI.Allgather(nl_local, comm)
+    displs = cumsum([0; counts[1:end-1]])
+    # Buffers
+    col_full = Vector{ComplexF64}(undef, lmax + 1)
+    for (jj, jm) in enumerate(mloc)
+        # Global m index (1-based)
+        mglob = PencilArrays.globalindices(Alm_pencil, 2)[jj]
+        mval = mglob - 1
+        mval > mmax && continue
+        # Local column to gather
+        col_local = Array(view(Alm_pencil, :, jm))
+        MPI.Allgatherv!(col_local, col_full, counts, displs, comm)
+        # Apply 3-diagonal per local l
+        for (ii, il) in enumerate(lloc)
+            lglob = gl_l[ii]  # 1-based
+            lval = lglob - 1
+            idx = SHTnsKit.LM_index(lmax, cfg.mres, lval, mval)
+            c_minus = mx[2*idx + 1]
+            c_plus  = mx[2*idx + 2]
+            acc = 0.0 + 0.0im
+            if lval > mval && lval > 0
+                acc += c_minus * col_full[lval]           # (l-1)
+            end
+            if lval < lmax
+                acc += c_plus  * col_full[lval + 2]       # (l+1)
+            end
+            R_pencil[il, jm] = acc
+        end
+    end
+    return R_pencil
+end
+
 function _rfft_to!(dest, src, plan)
     try
         PencilFFTs.rfft!(src, plan; dest=dest)
