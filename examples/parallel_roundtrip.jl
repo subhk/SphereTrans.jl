@@ -18,13 +18,23 @@ function main()
     cfg = SHTnsKit.create_gauss_config(lmax, nlat; nlon=nlon)
     Pθφ = PencilArrays.Pencil((:θ, :φ), (nlat, nlon); comm)
 
-    # Scalar roundtrip
+    # Scalar roundtrip (plan-based)
     fθφ = PencilArrays.zeros(Pθφ; eltype=Float64)
     # Deterministic-ish local fill
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3 * (iθ + rank + 1)) + cos(0.2 * (iφ + 2))
     end
-    rel_local, rel_global = SHTnsKit.dist_scalar_roundtrip!(cfg, fθφ)
+    # Plan-based distributed analysis + synthesis!
+    aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ)
+    Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+    SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+    spln = SHTnsKit.DistPlan(cfg, fθφ)
+    fθφ_out = similar(fθφ)
+    SHTnsKit.dist_synthesis!(spln, fθφ_out, PencilArrays.PencilArray(Alm))
+    fout = Array(fθφ_out); f0 = Array(fθφ)
+    num = sum(abs2, fout .- f0); den = sum(abs2, f0) + eps()
+    rel_local = sqrt(num / den)
+    rel_global = sqrt(MPI.Allreduce(num, +, comm) / MPI.Allreduce(den, +, comm))
     if rank == 0
         println("[scalar] rel_local≈$rel_local rel_global≈$rel_global")
     end
@@ -36,7 +46,20 @@ function main()
             Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
             Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
         end
-        (rl_t, rg_t), (rl_p, rg_p) = SHTnsKit.dist_vector_roundtrip!(cfg, Vtθφ, Vpθφ)
+        # Plan-based distributed vector analysis + synthesis!
+        vplan = SHTnsKit.DistSphtorPlan(cfg, Vtθφ)
+        Slm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        Tlm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+        SHTnsKit.dist_spat_to_SHsphtor!(vplan, Slm, Tlm, Vtθφ, Vpθφ)
+        Vt_out = similar(Vtθφ); Vp_out = similar(Vpθφ)
+        SHTnsKit.dist_SHsphtor_to_spat!(vplan, Vt_out, Vp_out, Slm, Tlm)
+        T1 = Array(Vt_out); P1 = Array(Vp_out)
+        T0 = Array(Vtθφ); P0 = Array(Vpθφ)
+        num_t = sum(abs2, T1 .- T0); den_t = sum(abs2, T0) + eps()
+        num_p = sum(abs2, P1 .- P0); den_p = sum(abs2, P0) + eps()
+        rl_t = sqrt(num_t / den_t); rl_p = sqrt(num_p / den_p)
+        rg_t = sqrt(MPI.Allreduce(num_t, +, comm) / MPI.Allreduce(den_t, +, comm))
+        rg_p = sqrt(MPI.Allreduce(num_p, +, comm) / MPI.Allreduce(den_p, +, comm))
         if rank == 0
             println("[vector] Vt rel_local≈$rl_t rel_global≈$rg_t; Vp rel_local≈$rl_p rel_global≈$rg_p")
         end
@@ -47,4 +70,3 @@ function main()
 end
 
 abspath(PROGRAM_FILE) == @__FILE__ && main()
-
