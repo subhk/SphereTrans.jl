@@ -62,8 +62,18 @@ end
 
 function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     lmax, mmax = cfg.lmax, cfg.mmax
-    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
-    fill!(Fθk, 0)
+    # Allocate Fourier pencil: complex full or rFFT half-spectrum using a zero rFFT to get correct shape
+    use_r = use_rfft && real_output && (eltype(prototype_θφ) <: Real)
+    if use_r
+        Zθφ = similar(prototype_θφ)
+        fill!(Zθφ, zero(eltype(Zθφ)))
+        pr = SHTnsKitParallelExt._get_or_plan(:rfft, Zθφ)
+        Fθk = PencilFFTs.rfft(Zθφ, pr)
+        fill!(Fθk, 0)
+    else
+        Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        fill!(Fθk, 0)
+    end
     θloc = axes(Fθk, 1); kloc = axes(Fθk, 2)
     mloc = axes(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
     nlon = cfg.nlon
@@ -99,15 +109,20 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
         for (ii,iθ) in enumerate(θloc)
             Fθk[iθ, col] = inv_scaleφ * G[ii]
         end
-        if real_output && mval > 0
+        if !use_r && real_output && mval > 0
             conj_index = nlon - mval + 1
             for (ii,iθ) in enumerate(θloc)
                 Fθk[iθ, conj_index] = conj(Fθk[iθ, col])
             end
         end
     end
-    pifft = PencilFFTs.plan_fft(Fθk; dims=2)
-    fθφ = PencilFFTs.ifft(Fθk, pifft)
+    if use_r
+        pir = SHTnsKitParallelExt._get_or_plan(:irfft, Fθk)
+        fθφ = PencilFFTs.irfft(Fθk, pir)
+    else
+        pifft = PencilFFTs.plan_fft(Fθk; dims=2)
+        fθφ = PencilFFTs.ifft(Fθk, pifft)
+    end
     return real_output ? real.(fθφ) : fθφ
 end
 
@@ -226,9 +241,19 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
         Slm = S2; Tlm = T2
     end
 
-    Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
-    Fφk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
-    fill!(Fθk, 0); fill!(Fφk, 0)
+    use_r = use_rfft && real_output && (eltype(prototype_θφ) <: Real)
+    if use_r
+        Zθφ = similar(prototype_θφ)
+        fill!(Zθφ, zero(eltype(Zθφ)))
+        pr = SHTnsKitParallelExt._get_or_plan(:rfft, Zθφ)
+        Fθk = PencilFFTs.rfft(Zθφ, pr)
+        Fφk = PencilFFTs.rfft(Zθφ, pr)
+        fill!(Fθk, 0); fill!(Fφk, 0)
+    else
+        Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        Fφk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        fill!(Fθk, 0); fill!(Fφk, 0)
+    end
 
     θloc = axes(Fθk, 1)
     mloc = axes(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
@@ -294,7 +319,7 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
             Fφk[iθ, col] = inv_scaleφ * Gφ[ii]
         end
         # Hermitian conjugate for negative m to ensure real output
-        if real_output && mval > 0
+        if !use_r && real_output && mval > 0
             conj_index = nlon - mval + 1
             for (ii, iθ) in enumerate(θloc)
                 Fθk[iθ, conj_index] = conj(Fθk[iθ, col])
@@ -303,9 +328,15 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
         end
     end
 
-    pifft = SHTnsKitParallelExt._get_or_plan(:ifft, Fθk)
-    Vtθφ = PencilFFTs.ifft(Fθk, pifft)
-    Vpθφ = PencilFFTs.ifft(Fφk, pifft)
+    if use_r
+        pir = SHTnsKitParallelExt._get_or_plan(:irfft, Fθk)
+        Vtθφ = PencilFFTs.irfft(Fθk, pir)
+        Vpθφ = PencilFFTs.irfft(Fφk, pir)
+    else
+        pifft = SHTnsKitParallelExt._get_or_plan(:ifft, Fθk)
+        Vtθφ = PencilFFTs.ifft(Fθk, pifft)
+        Vpθφ = PencilFFTs.ifft(Fφk, pifft)
+    end
     if real_output
         Vtθφ = real.(Vtθφ)
         Vpθφ = real.(Vpθφ)

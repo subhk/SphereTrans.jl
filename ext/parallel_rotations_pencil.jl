@@ -95,9 +95,29 @@ function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig,
     return R_pencil
 end
 
-function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig,
-                                  Alm_pencil::PencilArrays.PencilArray,
-                                  beta::Real,
+function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig, 
+                                  Alm_pencil::PencilArrays.PencilArray, 
+                                  beta::Real, 
                                   R_pencil::PencilArrays.PencilArray)
     return SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg, Alm_pencil, beta, R_pencil)
+end
+
+##########
+# Composite Euler rotation on PencilArrays: Z(α) then Y(β) then Z(γ)
+##########
+
+function SHTnsKit.dist_SH_rotate_euler(cfg::SHTnsKit.SHTConfig,
+                                       Alm_pencil::PencilArrays.PencilArray,
+                                       α::Real, β::Real, γ::Real,
+                                       R_pencil::PencilArrays.PencilArray)
+    # Temp buffer with same layout
+    tmp1 = similar(Alm_pencil)
+    tmp2 = similar(Alm_pencil)
+    # Z(α)
+    SHTnsKit.dist_SH_Zrotate(cfg, Alm_pencil, α, tmp1)
+    # Y(β): requires allgather over m
+    SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg, tmp1, β, tmp2)
+    # Z(γ)
+    SHTnsKit.dist_SH_Zrotate(cfg, tmp2, γ, R_pencil)
+    return R_pencil
 end
