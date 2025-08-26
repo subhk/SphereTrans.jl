@@ -95,11 +95,96 @@ function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig,
     return R_pencil
 end
 
-function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig, 
-                                  Alm_pencil::PencilArrays.PencilArray, 
-                                  beta::Real, 
+"""
+    dist_SH_Yrotate_truncgatherm!(cfg, Alm_pencil, beta, R_pencil)
+
+Allgather only m-columns with m ≤ l for each l-row, reducing communication for small l.
+"""
+function SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg::SHTnsKit.SHTConfig,
+                                               Alm_pencil::PencilArrays.PencilArray,
+                                               beta::Real,
+                                               R_pencil::PencilArrays.PencilArray)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    comm = PencilArrays.communicator(Alm_pencil)
+    lloc = axes(Alm_pencil, 1)
+    mloc = axes(Alm_pencil, 2)
+    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
+    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+
+    for (ii, il) in enumerate(lloc)
+        lval = gl_l[ii] - 1
+        mm = min(lval, mmax)
+        # Build local subset for m ≤ lval
+        msel_val = Int[]
+        a_loc = ComplexF64[]
+        for (jj, jm) in enumerate(mloc)
+            mval = gl_m[jj] - 1
+            (0 <= mval <= mm) || continue
+            push!(msel_val, mval)
+            push!(a_loc, Alm_pencil[il, jm])
+        end
+        # Gather sizes
+        count_local = length(msel_val)
+        counts = MPI.Allgather(count_local, comm)
+        displs = cumsum([0; counts[1:end-1]])
+        total = sum(counts)
+        m_all = Vector{Int}(undef, total)
+        a_all = Vector{ComplexF64}(undef, total)
+        MPI.Allgatherv!(msel_val, m_all, counts, displs, comm)
+        MPI.Allgatherv!(a_loc, a_all, counts, displs, comm)
+        # Reconstruct a_full[0:mm]
+        a_full = zeros(ComplexF64, mm + 1)
+        for k in 1:total
+            mval = m_all[k]
+            (0 <= mval <= mm) || continue
+            a_full[mval + 1] = a_all[k]
+        end
+        # Build symmetric b of size 2l+1 from positive m part
+        n2 = 2*lval + 1
+        b = Vector{ComplexF64}(undef, n2); fill!(b, 0.0 + 0.0im)
+        if lval >= 0
+            k0 = SHTnsKit.norm_scale_from_orthonormal(lval, 0, cfg.norm)
+            α0 = SHTnsKit.cs_phase_factor(0, true, cfg.cs_phase)
+            b[0 + lval + 1] = (k0 * α0) * (mm >= 0 ? a_full[1] : 0.0 + 0.0im)
+        end
+        for m in 1:mm
+            km = SHTnsKit.norm_scale_from_orthonormal(lval, m, cfg.norm)
+            αm = SHTnsKit.cs_phase_factor(m, true, cfg.cs_phase)
+            a_int = (km * αm) * a_full[m+1]
+            b[m + lval + 1] = a_int
+            b[-m + lval + 1] = (-1.0)^m * conj(a_int)
+        end
+        # d-matrix multiply
+        dl = SHTnsKit.wigner_d_matrix(lval, float(beta))
+        c = Vector{ComplexF64}(undef, n2)
+        @inbounds for mi in -lval:lval
+            acc = 0.0 + 0.0im
+            for mp in -lval:lval
+                acc += dl[mi + lval + 1, mp + lval + 1] * b[mp + lval + 1]
+            end
+            c[mi + lval + 1] = acc
+        end
+        # Write back local columns
+        for (jj, jm) in enumerate(mloc)
+            mval = gl_m[jj] - 1
+            if mval <= lval
+                cm = c[mval + lval + 1]
+                km = SHTnsKit.norm_scale_from_orthonormal(lval, mval, cfg.norm)
+                αm = SHTnsKit.cs_phase_factor(mval, true, cfg.cs_phase)
+                R_pencil[il, jm] = cm / (km * αm)
+            else
+                R_pencil[il, jm] = 0.0 + 0.0im
+            end
+        end
+    end
+    return R_pencil
+end
+function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig,
+                                  Alm_pencil::PencilArrays.PencilArray,
+                                  beta::Real,
                                   R_pencil::PencilArrays.PencilArray)
-    return SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg, Alm_pencil, beta, R_pencil)
+    # Truncated gather reduces bandwidth for small l
+    return SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg, Alm_pencil, beta, R_pencil)
 end
 
 ##########
