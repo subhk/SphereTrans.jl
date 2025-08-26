@@ -55,6 +55,7 @@ export prepare_plm_tables!, enable_plm_tables!, disable_plm_tables!
 export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm
 export fdgrad_scalar_energy, fdgrad_vector_energy
 export zgrad_rotation_angles_real, zgrad_rotation_angles_cplx
+export dist_analysis, dist_synthesis
 
 # Default fallbacks if extensions are not loaded
 zgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("Zygote extension not loaded")
@@ -64,6 +65,8 @@ fdgrad_scalar_energy(::SHTConfig, ::AbstractMatrix) = error("ForwardDiff extensi
 fdgrad_vector_energy(::SHTConfig, ::AbstractMatrix, ::AbstractMatrix) = error("ForwardDiff extension not loaded")
 zgrad_rotation_angles_real(::SHTConfig, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
 zgrad_rotation_angles_cplx(::Integer, ::Integer, ::AbstractVector, ::Real, ::Real, ::Real) = error("Zygote extension not loaded")
+dist_analysis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
+dist_synthesis(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 export shtns_verbose, shtns_print_version, shtns_get_build_info
 export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
 export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form
