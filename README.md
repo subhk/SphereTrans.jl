@@ -346,6 +346,12 @@ mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --qst
 julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
 ```
 
+Spectral operator demo (cosθ application in spectral space):
+
+```bash
+mpiexec -n 2 julia --project=. examples/operator_parallel.jl
+```
+
 Enable rfft in distributed plans (when supported):
 
 ```julia

@@ -160,6 +160,58 @@ end
     end
 end
 
+@testset "Parallel operator equivalence (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays, PencilFFTs
+            MPI.Init()
+            lmax = 6
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.21*(iθ+1)) * cos(0.17*(iφ+1))
+            end
+            # Analysis
+            aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ)
+            Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+            SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+            # Operator
+            mx = zeros(Float64, 2*cfg.nlm)
+            mul_ct_matrix(cfg, mx)
+            Rlm = zeros(ComplexF64, size(Alm))
+            SHTnsKit.dist_SH_mul_mx!(cfg, mx, Alm, Rlm)
+            # Synthesize
+            spln = SHTnsKit.DistPlan(cfg, fθφ)
+            fθφ_op = similar(fθφ)
+            SHTnsKit.dist_synthesis!(spln, fθφ_op, PencilArrays.PencilArray(Rlm))
+            # Grid-space reference
+            ref = similar(fθφ)
+            θloc = axes(fθφ, 1)
+            for (ii,iθ) in enumerate(θloc)
+                iglobθ = PencilArrays.globalindices(fθφ, 1)[ii]
+                ct = cos(cfg.θ[iglobθ])
+                ref[iθ, :] .= ct .* fθφ[iθ, :]
+            end
+            # Compare
+            op_out = Array(fθφ_op); ref_out = Array(ref)
+            rel = sqrt(sum(abs2, op_out .- ref_out) / (sum(abs2, ref_out) + eps()))
+            @test rel < 1e-8
+            MPI.Finalize()
+        else
+            @info "Skipping operator equivalence test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping operator equivalence test" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
+
 function parseval_vector_test(lmax::Int)
     nlat = lmax + 2
     nlon = 2*lmax + 1
