@@ -32,8 +32,8 @@ jobs:
         run: |
           julia --project=. -e '
             using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
             Pkg.add(["MPI","PencilArrays","PencilFFTs"])
+            Pkg.resolve()
             Pkg.instantiate()
           '
 
@@ -44,4 +44,3 @@ jobs:
       - name: Run parallel example (vector)
         run: |
           mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
-
