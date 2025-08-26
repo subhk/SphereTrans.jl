@@ -84,6 +84,14 @@ function shtns_set_grid(cfg::SHTConfig, flags::Integer, eps::Real, nlat::Integer
     cfg.ct = cos.(θ); cfg.st = sin.(θ)
     cfg.nspat = nlat * nphi
     cfg.cphi = 2π / nphi
+    # Precompute Plm tables for regular grids
+    if grid_type == 2 || grid_type == 3 || grid_type == 4 || grid_type == 5
+        prepare_plm_tables!(cfg)
+    else
+        cfg.use_plm_tables = false
+        cfg.plm_tables = Matrix{Float64}[]
+        cfg.dplm_tables = Matrix{Float64}[]
+    end
     return 0
 end
 

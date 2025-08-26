@@ -42,20 +42,32 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
         for i in 1:nlat
             x = cfg.x[i]
             sθ = sqrt(max(0.0, 1 - x*x))
-            Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
             gθ = 0.0 + 0.0im
             gφ = 0.0 + 0.0im
             inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
             Ict = one(CT) * (0 + 1im)
-            @inbounds for l in m:lmax
-                N = cfg.Nlm[l+1, col]
-                # ∂θ term: ∂θ Y = -sinθ * N * dPdx
-                dθY = -sθ * N * dPdx[l+1]
-                Y = N * P[l+1]
-                Sl = Slm[l+1, col]
-                Tl = Tlm[l+1, col]
-                gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
-                gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1 && length(cfg.dplm_tables) == mmax+1
+                tblP = cfg.plm_tables[m+1]; tbld = cfg.dplm_tables[m+1]
+                @inbounds for l in m:lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * tbld[l+1, i]
+                    Y = N * tblP[l+1, i]
+                    Sl = Slm[l+1, col]
+                    Tl = Tlm[l+1, col]
+                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
+                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * tbld[l+1, i]) * Tl
+                end
+            else
+                Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
+                @inbounds for l in m:lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * dPdx[l+1]
+                    Y = N * P[l+1]
+                    Sl = Slm[l+1, col]
+                    Tl = Tlm[l+1, col]
+                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
+                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl
+                end
             end
             Fθ[i, col] = inv_scaleφ * gθ
             Fφ[i, col] = inv_scaleφ * gφ
@@ -162,7 +174,6 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
             x = cfg.x[i]
             sθ = sqrt(max(0.0, 1 - x*x))
             inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
-            Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
             Fθ_i = Fθ[i, col]
             Fφ_i = Fφ[i, col]
             if cfg.robert_form
@@ -173,14 +184,26 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
             end
             wi = cfg.w[i]
             Ict = one(CT) * (0 + 1im)
-            @inbounds for l in max(1,m):lmax
-                N = cfg.Nlm[l+1, col]
-                dθY = -sθ * N * dPdx[l+1]
-                Y = N * P[l+1]
-                # Projections using vector spherical harmonics orthogonality: divide by l(l+1)
-                coeff = wi * scaleφ / (l*(l+1))
-                Slm[l+1, col] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
-                Tlm[l+1, col] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1 && length(cfg.dplm_tables) == mmax+1
+                tblP = cfg.plm_tables[m+1]; tbld = cfg.dplm_tables[m+1]
+                @inbounds for l in max(1,m):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * tbld[l+1, i]
+                    Y = N * tblP[l+1, i]
+                    coeff = wi * scaleφ / (l*(l+1))
+                    Slm[l+1, col] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+                    Tlm[l+1, col] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * tbld[l+1, i]))
+                end
+            else
+                Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
+                @inbounds for l in max(1,m):lmax
+                    N = cfg.Nlm[l+1, col]
+                    dθY = -sθ * N * dPdx[l+1]
+                    Y = N * P[l+1]
+                    coeff = wi * scaleφ / (l*(l+1))
+                    Slm[l+1, col] += coeff * (Fθ_i * dθY - Ict * m * inv_sθ * Y * Fφ_i)
+                    Tlm[l+1, col] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * dPdx[l+1]))
+                end
             end
         end
     end

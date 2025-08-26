@@ -35,6 +35,7 @@ Base.@kwdef mutable struct SHTConfig
     # Optional precomputed Legendre tables for speed on regular grids
     use_plm_tables::Bool = false
     plm_tables::Vector{Matrix{Float64}} = Matrix{Float64}[]  # per m: (lmax+1)×nlat
+    dplm_tables::Vector{Matrix{Float64}} = Matrix{Float64}[] # per m: (lmax+1)×nlat of d/dx P_l^m
 end
 
 """
@@ -73,15 +74,20 @@ function prepare_plm_tables!(cfg::SHTConfig)
     lmax, mmax = cfg.lmax, cfg.mmax
     nlat = cfg.nlat
     tables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]
+    dtables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]
     P = Vector{Float64}(undef, lmax + 1)
+    dPdx = Vector{Float64}(undef, lmax + 1)
     for m in 0:mmax
         tbl = tables[m+1]
+        dtbl = dtables[m+1]
         for i in 1:nlat
-            Plm_row!(P, cfg.x[i], lmax, m)
+            Plm_and_dPdx_row!(P, dPdx, cfg.x[i], lmax, m)
             @inbounds @views tbl[:, i] .= P
+            @inbounds @views dtbl[:, i] .= dPdx
         end
     end
     cfg.plm_tables = tables
+    cfg.dplm_tables = dtables
     cfg.use_plm_tables = true
     return cfg
 end
