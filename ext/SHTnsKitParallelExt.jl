@@ -31,6 +31,83 @@ function _get_or_plan(kind::Symbol, A)
 end
 
 """
+    dist_SH_Yrotate_allgatherm!(cfg, Alm_pencil::PencilArrays.PencilArray, beta::Real, R_pencil::PencilArrays.PencilArray)
+
+Intermediate distributed Y-rotation using per-l Allgatherv over m. Works on (:l,:m) pencils.
+Steps per local l:
+ 1) Allgatherv Alm[l,:] across m-slab to form full a_m (m ≥ 0)
+ 2) Convert to internal normalization/CS per (l,m)
+ 3) Reconstruct full [-l..l] vector using real-field symmetry A_{l,-m} = (-1)^m conj(A_{l,m})
+ 4) Apply Wigner-d mixing: c = d^l(β) * b
+ 5) Pack m ≥ 0 and convert back to cfg normalization; write into local R_pencil[l, :]
+"""
+function SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg::SHTnsKit.SHTConfig,
+                                              Alm_pencil::PencilArrays.PencilArray,
+                                              beta::Real,
+                                              R_pencil::PencilArrays.PencilArray)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(Alm_pencil,1) == size(R_pencil,1) || throw(DimensionMismatch("l dims"))
+    size(Alm_pencil,2) == size(R_pencil,2) || throw(DimensionMismatch("m dims"))
+    comm = PencilArrays.communicator(Alm_pencil)
+    lloc = axes(Alm_pencil, 1); mloc = axes(Alm_pencil, 2)
+    gl_l = PencilArrays.globalindices(Alm_pencil, 1)
+    gl_m = PencilArrays.globalindices(Alm_pencil, 2)
+    # Prepare Allgatherv metadata for m-slab
+    nm_local = length(mloc)
+    counts_m = MPI.Allgather(nm_local, comm)
+    displs_m = cumsum([0; counts_m[1:end-1]])
+    a_full = Vector{ComplexF64}(undef, mmax + 1)
+    # Buffers for per-l mixing
+    for (ii, il) in enumerate(lloc)
+        lglob = gl_l[ii]; lval = lglob - 1
+        # Gather Alm[l,:] across m-slab
+        a_local = Array(view(Alm_pencil, il, :))
+        MPI.Allgatherv!(a_local, a_full, counts_m, displs_m, comm)
+        mm = min(lval, mmax)
+        # Build internal b over [-l..l]
+        n2 = 2*lval + 1
+        b = Vector{ComplexF64}(undef, n2); fill!(b, 0.0 + 0.0im)
+        # m = 0
+        if lval >= 0
+            k0 = SHTnsKit.norm_scale_from_orthonormal(lval, 0, cfg.norm)
+            α0 = SHTnsKit.cs_phase_factor(0, true, cfg.cs_phase)
+            b[0 + lval + 1] = (k0 * α0) * a_full[1]
+        end
+        for m in 1:mm
+            km = SHTnsKit.norm_scale_from_orthonormal(lval, m, cfg.norm)
+            αm = SHTnsKit.cs_phase_factor(m, true, cfg.cs_phase)
+            a_int = (km * αm) * a_full[m+1]
+            # +m
+            b[m + lval + 1] = a_int
+            # -m via real-field symmetry
+            b[-m + lval + 1] = (-1.0)^m * conj(a_int)
+        end
+        # Apply Wigner-d mixing for this l
+        dl = SHTnsKit.wigner_d_matrix(lval, float(beta))
+        c = Vector{ComplexF64}(undef, n2)
+        @inbounds for mi in -lval:lval
+            acc = 0.0 + 0.0im
+            for mp in -lval:lval
+                acc += dl[mi + lval + 1, mp + lval + 1] * b[mp + lval + 1]
+            end
+            c[mi + lval + 1] = acc
+        end
+        # Pack back to m ≥ 0 and convert back to cfg norm/CS
+        for (jj, jm) in enumerate(mloc)
+            mglob = gl_m[jj]; mval = mglob - 1
+            if mval <= lval
+                cm = c[mval + lval + 1]
+                km = SHTnsKit.norm_scale_from_orthonormal(lval, mval, cfg.norm)
+                αm = SHTnsKit.cs_phase_factor(mval, true, cfg.cs_phase)
+                R_pencil[il, jm] = cm / (km * αm)
+            else
+                R_pencil[il, jm] = 0.0 + 0.0im
+            end
+        end
+    end
+    return R_pencil
+end
+"""
 Internal helpers: try true in-place PencilFFTs, else copy from returned array.
 Also provide rfft/irfft variants with graceful fallback.
 """
