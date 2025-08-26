@@ -97,6 +97,40 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArra
 end
 
 """
+    dist_synthesis(cfg, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
+
+Prototype-based distributed synthesis. Uses `prototype_θφ` (dims (:θ,:φ)) to infer the target
+shape/layout. Current implementation computes the local Array via serial synthesis and returns it.
+This will be upgraded to a full inverse pipeline that returns a PencilArray matching `prototype_θφ`.
+"""
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+    # Placeholder: compute local result as dense Array and return it.
+    # TODO: implement full inverse pipeline using prototype_θφ decomposition to produce a PencilArray.
+    return SHTnsKit.synthesis(cfg, Array(Alm); real_output=real_output)
+end
+
+"""
+    dist_SHsphtor_to_spat(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
+
+Prototype-based distributed vector synthesis (placeholder). Computes local dense result for now.
+"""
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+    Vt, Vp = SHTnsKit.SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); real_output=real_output)
+    return Vt, Vp
+end
+
+"""
+    dist_SHqst_to_spat(cfg, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
+
+Prototype-based distributed qst synthesis (placeholder). Computes local dense result for now.
+"""
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+    Vr = SHTnsKit.synthesis(cfg, Array(Qlm); real_output=real_output)
+    Vt, Vp = SHTnsKit.SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); real_output=real_output)
+    return Vr, Vt, Vp
+end
+
+"""
     dist_spat_to_SHsphtor(cfg, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
 
 Distributed vector analysis. Returns local dense Slm,Tlm matrices reduced across θ-pencil communicators.
