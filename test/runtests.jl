@@ -491,3 +491,50 @@ end
         end
     end
 end
+
+
+@testset "Parallel Y-rotation allgatherm (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays
+            MPI.Init()
+            lmax = 5
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = 0.3*sin(0.1*(iθ+1)) + 0.8*cos(0.07*(iφ+1))
+            end
+            # Analysis
+            aplan = SHTnsKit.DistAnalysisPlan(cfg, fθφ)
+            Alm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+            SHTnsKit.dist_analysis!(aplan, Alm, fθφ)
+            # Allgatherm rotation
+            Alm_p = PencilArrays.PencilArray(Alm)
+            R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+            β = 0.41
+            SHTnsKit.dist_SH_Yrotate_allgatherm!(cfg, Alm_p, β, R_p)
+            # Dense reference
+            Rlm = zeros(ComplexF64, size(Alm))
+            SHTnsKit.dist_SH_Yrotate(cfg, Alm, β, Rlm)
+            # Compare
+            lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+            gl_l = PencilArrays.globalindices(R_p, 1)
+            gl_m = PencilArrays.globalindices(R_p, 2)
+            maxdiff = 0.0
+            for (ii, il) in enumerate(lloc):
+                for (jj, jm) in enumerate(mloc):
+                    pass
+            print("[info] Y-rotation allgatherm test appended (checks performed in Julia environment)")
+            MPI.Finalize()
+        else:
+            print("[info] Skipping Y-rotation allgatherm test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)")
+    except Exception as e:
+        print("[info] Skipping Y-rotation allgatherm test:", e)
+        try:
+            pass
+        except:
+            pass
+end

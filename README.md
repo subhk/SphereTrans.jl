@@ -351,6 +351,13 @@ Spectral operator demo (cosθ application in spectral space):
 ```bash
 mpiexec -n 2 julia --project=. examples/operator_parallel.jl           # dense
 mpiexec -n 2 julia --project=. examples/operator_parallel.jl --halo    # per-m Allgatherv halo
+
+Y-rotation demo (per-l Allgatherv over m):
+
+```bash
+mpiexec -n 2 julia --project=. examples/rotate_y_parallel.jl
+```
+
 ```
 
 Enable rfft in distributed plans (when supported):
