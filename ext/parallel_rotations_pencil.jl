@@ -187,6 +187,28 @@ function SHTnsKit.dist_SH_Yrotate(cfg::SHTnsKit.SHTConfig,
     return SHTnsKit.dist_SH_Yrotate_truncgatherm!(cfg, Alm_pencil, beta, R_pencil)
 end
 
+"""
+    dist_SH_Yrotate90(cfg, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+
+Rotate distributed Alm by +90° around Y in Pencil layout.
+"""
+function SHTnsKit.dist_SH_Yrotate90(cfg::SHTnsKit.SHTConfig,
+                                    Alm_pencil::PencilArrays.PencilArray,
+                                    R_pencil::PencilArrays.PencilArray)
+    return SHTnsKit.dist_SH_Yrotate(cfg, Alm_pencil, π/2, R_pencil)
+end
+
+"""
+    dist_SH_Xrotate90(cfg, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+
+Rotate distributed Alm by +90° around X using Z(π/2) → Y(π/2) → Z(-π/2).
+"""
+function SHTnsKit.dist_SH_Xrotate90(cfg::SHTnsKit.SHTConfig,
+                                    Alm_pencil::PencilArrays.PencilArray,
+                                    R_pencil::PencilArrays.PencilArray)
+    return SHTnsKit.dist_SH_rotate_euler(cfg, Alm_pencil, π/2, π/2, -π/2, R_pencil)
+end
+
 ##########
 # Composite Euler rotation on PencilArrays: Z(α) then Y(β) then Z(γ)
 ##########
@@ -205,4 +227,113 @@ function SHTnsKit.dist_SH_rotate_euler(cfg::SHTnsKit.SHTConfig,
     # Z(γ)
     SHTnsKit.dist_SH_Zrotate(cfg, tmp2, γ, R_pencil)
     return R_pencil
+end
+
+##########
+# Convenience wrappers: packed Qlm vectors rotated via distributed Pencil operations
+##########
+
+"""
+    dist_SH_Zrotate_packed(cfg, Qlm::AbstractVector{<:Complex}, α; prototype_lm::PencilArrays.PencilArray) -> Rlm::Vector
+
+Rotate packed real-field Qlm around Z by α using distributed Pencil operations.
+"""
+function SHTnsKit.dist_SH_Zrotate_packed(cfg::SHTnsKit.SHTConfig,
+                                         Qlm::AbstractVector{<:Complex}, α::Real;
+                                         prototype_lm::PencilArrays.PencilArray)
+    length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be $(cfg.nlm)"))
+    lmax, mmax = cfg.lmax, cfg.mmax
+    # Unpack to dense Alm
+    Alm = zeros(ComplexF64, lmax+1, mmax+1)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Alm[l+1, m+1] = Qlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1]
+    end
+    # Distribute and rotate
+    Alm_p = PencilArrays.PencilArray(Alm)
+    R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+    SHTnsKit.dist_SH_Zrotate(cfg, Alm_p, α, R_p)
+    # Gather to dense
+    Rlm_mat = zeros(ComplexF64, lmax+1, mmax+1)
+    lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+    gl_l = PencilArrays.globalindices(R_p, 1)
+    gl_m = PencilArrays.globalindices(R_p, 2)
+    for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
+        Rlm_mat[gl_l[ii], gl_m[jj]] = R_p[il, jm]
+    end
+    MPI.Allreduce!(Rlm_mat, +, PencilArrays.communicator(R_p))
+    # Pack back
+    Rlm = similar(Qlm)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Rlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1] = Rlm_mat[l+1, m+1]
+    end
+    return Rlm
+end
+
+"""
+    dist_SH_Yrotate_packed(cfg, Qlm, β; prototype_lm) -> Rlm
+"""
+function SHTnsKit.dist_SH_Yrotate_packed(cfg::SHTnsKit.SHTConfig,
+                                         Qlm::AbstractVector{<:Complex}, β::Real;
+                                         prototype_lm::PencilArrays.PencilArray)
+    length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be $(cfg.nlm)"))
+    lmax, mmax = cfg.lmax, cfg.mmax
+    Alm = zeros(ComplexF64, lmax+1, mmax+1)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Alm[l+1, m+1] = Qlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1]
+    end
+    Alm_p = PencilArrays.PencilArray(Alm)
+    R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+    SHTnsKit.dist_SH_Yrotate(cfg, Alm_p, β, R_p)
+    Rlm_mat = zeros(ComplexF64, lmax+1, mmax+1)
+    lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+    gl_l = PencilArrays.globalindices(R_p, 1)
+    gl_m = PencilArrays.globalindices(R_p, 2)
+    for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
+        Rlm_mat[gl_l[ii], gl_m[jj]] = R_p[il, jm]
+    end
+    MPI.Allreduce!(Rlm_mat, +, PencilArrays.communicator(R_p))
+    Rlm = similar(Qlm)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Rlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1] = Rlm_mat[l+1, m+1]
+    end
+    return Rlm
+end
+
+"""
+    dist_SH_Yrotate90_packed(cfg, Qlm; prototype_lm) -> Rlm
+"""
+function SHTnsKit.dist_SH_Yrotate90_packed(cfg::SHTnsKit.SHTConfig,
+                                           Qlm::AbstractVector{<:Complex};
+                                           prototype_lm::PencilArrays.PencilArray)
+    return SHTnsKit.dist_SH_Yrotate_packed(cfg, Qlm, π/2; prototype_lm)
+end
+
+"""
+    dist_SH_Xrotate90_packed(cfg, Qlm; prototype_lm) -> Rlm
+"""
+function SHTnsKit.dist_SH_Xrotate90_packed(cfg::SHTnsKit.SHTConfig,
+                                           Qlm::AbstractVector{<:Complex};
+                                           prototype_lm::PencilArrays.PencilArray)
+    length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be $(cfg.nlm)"))
+    lmax, mmax = cfg.lmax, cfg.mmax
+    Alm = zeros(ComplexF64, lmax+1, mmax+1)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Alm[l+1, m+1] = Qlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1]
+    end
+    Alm_p = PencilArrays.PencilArray(Alm)
+    R_p = PencilArrays.allocate(Alm_p; dims=(:l,:m), eltype=ComplexF64)
+    SHTnsKit.dist_SH_rotate_euler(cfg, Alm_p, π/2, π/2, -π/2, R_p)
+    Rlm_mat = zeros(ComplexF64, lmax+1, mmax+1)
+    lloc = axes(R_p, 1); mloc = axes(R_p, 2)
+    gl_l = PencilArrays.globalindices(R_p, 1)
+    gl_m = PencilArrays.globalindices(R_p, 2)
+    for (ii, il) in enumerate(lloc), (jj, jm) in enumerate(mloc)
+        Rlm_mat[gl_l[ii], gl_m[jj]] = R_p[il, jm]
+    end
+    MPI.Allreduce!(Rlm_mat, +, PencilArrays.communicator(R_p))
+    Rlm = similar(Qlm)
+    @inbounds for m in 0:mmax, l in m:lmax
+        Rlm[SHTnsKit.LM_index(lmax, cfg.mres, l, m) + 1] = Rlm_mat[l+1, m+1]
+    end
+    return Rlm
 end
