@@ -157,7 +157,9 @@ end
 Prototype-based distributed synthesis. Builds (θ,m) spectra from Alm (:l,:m), reduces across l-pencil,
 maps to (θ,k) with Hermitian, and inverse FFTs along φ to return a (θ,φ) PencilArray matching prototype_θφ.
 """
-function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; 
+                            prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+                            
     # Convert Alm to internal normalization if needed
     Alm_mat = Array(Alm)
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
@@ -248,11 +250,13 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.Penc
 end
 
 """
-    dist_SHsphtor_to_spat(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
+    dist_SHsphtor_to_spat(cfg, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; 
+                    prototype_θφ::PencilArrays.PencilArray, real_output=true)
 
 Prototype-based distributed vector synthesis (placeholder). Computes local dense result for now.
 """
-function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, 
+                    Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
     # Convert to internal normalization
     Slm_local = Array(Slm); Tlm_local = Array(Tlm)
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
@@ -371,11 +375,15 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArra
 end
 
 """
-    dist_SHqst_to_spat(cfg, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
+    dist_SHqst_to_spat(cfg, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, 
+                        Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output=true)
 
 Prototype-based distributed qst synthesis (placeholder). Computes local dense result for now.
 """
-function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, 
+                                Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; 
+                                prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true)
+
     # Convert spectra to internal normalization if needed
     Qlm_local = Array(Qlm); Slm_local = Array(Slm); Tlm_local = Array(Tlm)
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
@@ -525,7 +533,9 @@ end
 Distributed vector analysis. Returns local dense Slm,Tlm matrices reduced across θ-pencil communicators.
 For single rank, falls back to serial.
 """
-function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, 
+                                    Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+
     comm = PencilArrays.communicator(Vtθφ)
     np = MPI.Comm_size(comm)
     if np == 1
