@@ -149,6 +149,8 @@ New to the distributed API? Start with the guide:
 
 - docs/Distributed_SHTnsKit_Guide.md
 
+Changelog: see [CHANGELOG.md](CHANGELOG.md)
+
 ### Distributed API Cheatsheet
 
 - Scalar
