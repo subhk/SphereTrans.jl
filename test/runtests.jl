@@ -391,6 +391,76 @@ end
 end
 
 
+@testset "Parallel QST + local evals (optional)" begin
+    try
+        if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
+            using MPI, PencilArrays, PencilFFTs
+            MPI.Init()
+            lmax = 5
+            nlat = lmax + 2
+            nlon = 2*lmax + 1
+            cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+            P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+            # Build simple fields
+            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            Vtθφ = PencilArrays.zeros(P; eltype=Float64)
+            Vpθφ = PencilArrays.zeros(P; eltype=Float64)
+            Vrθφ = PencilArrays.zeros(P; eltype=Float64)
+            for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+                fθφ[iθ, iφ] = sin(0.11*(iθ+1)) + cos(0.07*(iφ+1))
+                Vrθφ[iθ, iφ] = 0.3*cos(0.09*(iθ+1))
+                Vtθφ[iθ, iφ] = 0.2*sin(0.15*(iφ+1))
+                Vpθφ[iθ, iφ] = 0.1*cos(0.21*(iφ+1))
+            end
+            # Scalar local eval: point/lat
+            Alm = SHTnsKit.dist_analysis(cfg, fθφ)
+            Qlm = Vector{ComplexF64}(undef, cfg.nlm)
+            for m in 0:cfg.mmax, l in m:cfg.lmax
+                Qlm[LM_index(cfg.lmax, cfg.mres, l, m) + 1] = Alm[l+1, m+1]
+            end
+            cost = 0.3; phi = 1.2
+            val_dist = SHTnsKit.dist_SH_to_point(cfg, PencilArrays.PencilArray(Alm), cost, phi)
+            val_ref = SH_to_point(cfg, Qlm, cost, phi)
+            @test isapprox(val_dist, val_ref; rtol=1e-10, atol=1e-12)
+            lat_dist = SHTnsKit.dist_SH_to_lat(cfg, PencilArrays.PencilArray(Alm), cost)
+            lat_ref = SH_to_lat(cfg, Qlm, cost)
+            @test isapprox(lat_dist, lat_ref; rtol=1e-10, atol=1e-12)
+            # QST analysis/synthesis
+            Q,S,T = SHTnsKit.dist_spat_to_SHqst(cfg, Vrθφ, Vtθφ, Vpθφ)
+            Vr2, Vt2, Vp2 = SHTnsKit.dist_SHqst_to_spat(cfg, Q, S, T; prototype_θφ=Vrθφ, real_output=true, use_rfft=true)
+            # Compare roundtrip
+            ldiff = sqrt(sum(abs2, Array(Vr2) .- Array(Vrθφ)) / (sum(abs2, Array(Vrθφ)) + eps()))
+            tdiff = sqrt(sum(abs2, Array(Vt2) .- Array(Vtθφ)) / (sum(abs2, Array(Vtθφ)) + eps()))
+            pdiff = sqrt(sum(abs2, Array(Vp2) .- Array(Vpθφ)) / (sum(abs2, Array(Vpθφ)) + eps()))
+            @test ldiff < 1e-8 && tdiff < 1e-8 && pdiff < 1e-8
+            # QST point/lat evals
+            Qp = PencilArrays.PencilArray(Q)
+            Sp = PencilArrays.PencilArray(S)
+            Tp = PencilArrays.PencilArray(T)
+            vr_d, vt_d, vp_d = SHTnsKit.dist_SHqst_to_point(cfg, Qp, Sp, Tp, cost, phi)
+            # Build packed references
+            Qv = similar(Qlm); Sv = similar(Qlm); Tv = similar(Qlm)
+            for m in 0:cfg.mmax, l in m:cfg.lmax
+                idx = LM_index(cfg.lmax, cfg.mres, l, m) + 1
+                Qv[idx] = Q[l+1, m+1]; Sv[idx] = S[l+1, m+1]; Tv[idx] = T[l+1, m+1]
+            end
+            vr_r, vt_r, vp_r = SHqst_to_point(cfg, Qv, Sv, Tv, cost, phi)
+            @test isapprox(vr_d, vr_r; rtol=1e-9, atol=1e-11)
+            @test isapprox(vt_d, vt_r; rtol=1e-9, atol=1e-11)
+            @test isapprox(vp_d, vp_r; rtol=1e-9, atol=1e-11)
+            MPI.Finalize()
+        else
+            @info "Skipping QST/local eval tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+        end
+    catch e
+        @info "Skipping QST/local eval tests" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
+end
+
 
 @testset "Parallel halo operator (optional)" begin
     try

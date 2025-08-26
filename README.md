@@ -109,28 +109,37 @@ destroy_config(cfg)
 ### Parallel Computing (MPI)
 
 ```julia
-using SHTnsKit
-using MPI, PencilArrays, PencilFFTs
+using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
 
-# Create configuration
-cfg = create_gauss_config(Float64, 64, 64, 130, 256)
+# Config
+lmax = 32
+nlat = lmax + 2
+nlon = 2*lmax + 1
+cfg = create_gauss_config(lmax, nlat; nlon=nlon)
 
-# Create parallel configuration for MPI
-pcfg = create_parallel_config(cfg, MPI.COMM_WORLD)
+# Pencil grid: dims (:θ,:φ)
+P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
+fθφ = PencilArrays.zeros(P; eltype=Float64)
 
-# Parallel spherical harmonic operations
-sh_coeffs = randn(ComplexF64, cfg.nlm)
-result = similar(sh_coeffs)
+# Fill some data (each rank writes to its local block)
+for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
+    fθφ[iθ, iφ] = sin(0.2*(iθ+1)) + cos(0.1*(iφ+1))
+end
 
-# Parallel operators
-parallel_apply_operator(pcfg, :laplacian, sh_coeffs, result)  # No communication
-parallel_apply_operator(pcfg, :costheta, sh_coeffs, result)   # Requires communication
+# Distributed analysis and synthesis
+Alm = SHTnsKit.dist_analysis(cfg, fθφ; use_rfft=true)
+fθφ2 = SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ=fθφ, real_output=true, use_rfft=true)
 
-# Parallel transforms
-spatial_data = allocate_spatial(cfg)
-memory_efficient_parallel_transform!(pcfg, :synthesis, sh_coeffs, spatial_data)
+# Vector/QST transforms (distributed)
+Vt = copy(fθφ); Vp = copy(fθφ)
+Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vt, Vp; use_rfft=true)
+Vt2, Vp2 = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ=Vt, real_output=true, use_rfft=true)
+
+Vr = copy(fθφ)
+Q,S,T = SHTnsKit.dist_spat_to_SHqst(cfg, Vr, Vt, Vp)
+Vr2, Vt2, Vp2 = SHTnsKit.dist_SHqst_to_spat(cfg, Q, S, T; prototype_θφ=Vr, real_output=true)
 
 MPI.Finalize()
 ```

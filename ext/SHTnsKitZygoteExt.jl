@@ -1,6 +1,7 @@
 module SHTnsKitZygoteExt
 
 using Zygote
+using PencilArrays
 using ..SHTnsKit
 
 """
@@ -12,6 +13,25 @@ Returns an array the same size as `f`.
 function SHTnsKit.zgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
     loss(x) = SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, x))
     return Zygote.gradient(loss, f)[1]
+end
+
+##########
+# PencilArray distributed convenience wrappers
+##########
+
+function SHTnsKit.zgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
+    loss(x) = SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, x))
+    # Zygote preserves container type for many array wrappers; return as-is
+    return Zygote.gradient(loss, fθφ)[1]
+end
+
+function SHTnsKit.zgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+    loss(Xt, Xp) = begin
+        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)
+        SHTnsKit.energy_vector(cfg, Slm, Tlm)
+    end
+    g = Zygote.gradient(loss, Vtθφ, Vpθφ)
+    return g[1], g[2]
 end
 
 """
