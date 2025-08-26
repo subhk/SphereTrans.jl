@@ -2,11 +2,17 @@
 # Distributed transforms using PencilFFTs/PencilArrays (scalar) and safe fallbacks for vector/QST
 ##########
 
-function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
     comm = PencilArrays.communicator(fθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
-    pfft = PencilFFTs.plan_fft(fθφ; dims=2)
-    Fθk = PencilFFTs.fft(fθφ, pfft)
+    # Choose FFT path
+    if use_rfft && eltype(fθφ) <: Real
+        pfft = SHTnsKitParallelExt._get_or_plan(:rfft, fθφ)
+        Fθk = PencilFFTs.rfft(fθφ, pfft)
+    else
+        pfft = SHTnsKitParallelExt._get_or_plan(:fft, fθφ)
+        Fθk = PencilFFTs.fft(fθφ, pfft)
+    end
     Fθm = PencilArrays.transpose(Fθk, (; dims=(1,2), names=(:θ,:m)))
     Alm_local = zeros(ComplexF64, lmax+1, mmax+1)
     θrange = axes(Fθm, 1); mrange = axes(Fθm, 2)
@@ -49,7 +55,7 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
 end
 
 function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix, fθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
-    Alm = SHTnsKit.dist_analysis(plan.cfg, fθφ; use_tables)
+    Alm = SHTnsKit.dist_analysis(plan.cfg, fθφ; use_tables, use_rfft=plan.use_rfft)
     copyto!(Alm_out, Alm)
     return Alm_out
 end
@@ -118,12 +124,19 @@ end
 ## Vector/QST distributed implementations
 
 # Distributed vector analysis (spheroidal/toroidal)
-function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
+function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
     comm = PencilArrays.communicator(Vtθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
-    pfft = SHTnsKitParallelExt._get_or_plan(:fft, Vtθφ)
-    Ftθk = PencilFFTs.fft(Vtθφ, pfft)
-    Fpθk = PencilFFTs.fft(Vpθφ, pfft)
+    # Choose FFT path per input eltype
+    if use_rfft && eltype(Vtθφ) <: Real && eltype(Vpθφ) <: Real
+        pfft = SHTnsKitParallelExt._get_or_plan(:rfft, Vtθφ)
+        Ftθk = PencilFFTs.rfft(Vtθφ, pfft)
+        Fpθk = PencilFFTs.rfft(Vpθφ, pfft)
+    else
+        pfft = SHTnsKitParallelExt._get_or_plan(:fft, Vtθφ)
+        Ftθk = PencilFFTs.fft(Vtθφ, pfft)
+        Fpθk = PencilFFTs.fft(Vpθφ, pfft)
+    end
     Ftθm = PencilArrays.transpose(Ftθk, (; dims=(1,2), names=(:θ,:m)))
     Fpθm = PencilArrays.transpose(Fpθk, (; dims=(1,2), names=(:θ,:m)))
 
@@ -194,7 +207,7 @@ end
 
 function SHTnsKit.dist_spat_to_SHsphtor!(plan::DistSphtorPlan, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix,
                                          Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
-    Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(plan.cfg, Vtθφ, Vpθφ; use_tables)
+    Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(plan.cfg, Vtθφ, Vpθφ; use_tables, use_rfft=plan.use_rfft)
     copyto!(Slm_out, Slm); copyto!(Tlm_out, Tlm)
     return Slm_out, Tlm_out
 end
