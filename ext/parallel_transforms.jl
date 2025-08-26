@@ -2,30 +2,30 @@
 # Distributed transforms using PencilFFTs/PencilArrays (scalar) and safe fallbacks for vector/QST
 ##########
 
-function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
-    comm = PencilArrays.communicator(fθφ)
+function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
+    comm = communicator(fθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Choose FFT path
     if use_rfft && eltype(fθφ) <: Real
         pfft = SHTnsKitParallelExt._get_or_plan(:rfft, fθφ)
-        Fθk = PencilFFTs.rfft(fθφ, pfft)
+        Fθk = rfft(fθφ, pfft)
     else
         pfft = SHTnsKitParallelExt._get_or_plan(:fft, fθφ)
-        Fθk = PencilFFTs.fft(fθφ, pfft)
+        Fθk = fft(fθφ, pfft)
     end
-    Fθm = PencilArrays.transpose(Fθk, (; dims=(1,2), names=(:θ,:m)))
+    Fθm = transpose(Fθk, (; dims=(1,2), names=(:θ,:m)))
     Alm_local = zeros(ComplexF64, lmax+1, mmax+1)
     θrange = axes(Fθm, 1); mrange = axes(Fθm, 2)
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables)
     P = Vector{Float64}(undef, lmax + 1)
     for m in mrange
         mm = m - first(mrange)
-        mglob = PencilArrays.globalindices(Fθm, 2)[mm+1]
+        mglob = globalindices(Fθm, 2)[mm+1]
         mval = mglob - 1
         (mval <= mmax) || continue
         col = mval + 1
         for (ii,iθ) in enumerate(θrange)
-            iglob = PencilArrays.globalindices(Fθm, 1)[ii]
+            iglob = globalindices(Fθm, 1)[ii]
             Fi = Fθm[iθ, m]
             wi = cfg.w[iglob]
             if use_tbl
@@ -54,13 +54,13 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.Pen
     end
 end
 
-function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix, fθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
+function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix, fθφ::PencilArray; use_tables=plan.cfg.use_plm_tables)
     Alm = SHTnsKit.dist_analysis(plan.cfg, fθφ; use_tables, use_rfft=plan.use_rfft)
     copyto!(Alm_out, Alm)
     return Alm_out
 end
 
-function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Allocate Fourier pencil: complex full or rFFT half-spectrum using a zero rFFT to get correct shape
     use_r = use_rfft && real_output && (eltype(prototype_θφ) <: Real)
@@ -68,19 +68,19 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
         Zθφ = similar(prototype_θφ)
         fill!(Zθφ, zero(eltype(Zθφ)))
         pr = SHTnsKitParallelExt._get_or_plan(:rfft, Zθφ)
-        Fθk = PencilFFTs.rfft(Zθφ, pr)
+        Fθk = rfft(Zθφ, pr)
         fill!(Fθk, 0)
     else
-        Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        Fθk = allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
         fill!(Fθk, 0)
     end
     θloc = axes(Fθk, 1); kloc = axes(Fθk, 2)
-    mloc = axes(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
+    mloc = axes(allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
     nlon = cfg.nlon
     P = Vector{Float64}(undef, lmax + 1)
     G = Vector{ComplexF64}(undef, length(θloc))
     for (jj, jm) in enumerate(mloc)
-        mglob = PencilArrays.globalindices(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)[jj]
+        mglob = globalindices(allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)[jj]
         mval = mglob - 1
         (mval <= mmax) || continue
         col = mval + 1
@@ -88,7 +88,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             tbl = cfg.plm_tables[col]
             for (ii,iθ) in enumerate(θloc)
                 g = 0.0 + 0.0im
-                iglobθ = PencilArrays.globalindices(Fθk, 1)[ii]
+                iglobθ = globalindices(Fθk, 1)[ii]
                 @inbounds for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, iglobθ]) * Alm[l+1, col]
                 end
@@ -96,7 +96,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             end
         else
             for (ii,iθ) in enumerate(θloc)
-                iglobθ = PencilArrays.globalindices(Fθk, 1)[ii]
+                iglobθ = globalindices(Fθk, 1)[ii]
                 SHTnsKit.Plm_row!(P, cfg.x[iglobθ], lmax, mval)
                 g = 0.0 + 0.0im
                 @inbounds for l in mval:lmax
@@ -118,19 +118,19 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
     end
     if use_r
         pir = SHTnsKitParallelExt._get_or_plan(:irfft, Fθk)
-        fθφ = PencilFFTs.irfft(Fθk, pir)
+        fθφ = irfft(Fθk, pir)
     else
-        pifft = PencilFFTs.plan_fft(Fθk; dims=2)
-        fθφ = PencilFFTs.ifft(Fθk, pifft)
+        pifft = plan_fft(Fθk; dims=2)
+        fθφ = ifft(Fθk, pifft)
     end
     return real_output ? real.(fθφ) : fθφ
 end
 
-function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::PencilArray; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     return SHTnsKit.dist_synthesis(cfg, Array(Alm); prototype_θφ, real_output, use_rfft)
 end
 
-function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArrays.PencilArray, Alm::PencilArrays.PencilArray; real_output::Bool=true)
+function SHTnsKit.dist_synthesis!(plan::DistPlan, fθφ_out::PencilArray, Alm::PencilArray; real_output::Bool=true)
     f = SHTnsKit.dist_synthesis(plan.cfg, Alm; prototype_θφ=plan.prototype_θφ, real_output, use_rfft=plan.use_rfft)
     copyto!(fθφ_out, f)
     return fθφ_out
@@ -139,28 +139,28 @@ end
 ## Vector/QST distributed implementations
 
 # Distributed vector analysis (spheroidal/toroidal)
-function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
-    comm = PencilArrays.communicator(Vtθφ)
+function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArray, Vpθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
+    comm = communicator(Vtθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Choose FFT path per input eltype
     if use_rfft && eltype(Vtθφ) <: Real && eltype(Vpθφ) <: Real
         pfft = SHTnsKitParallelExt._get_or_plan(:rfft, Vtθφ)
-        Ftθk = PencilFFTs.rfft(Vtθφ, pfft)
-        Fpθk = PencilFFTs.rfft(Vpθφ, pfft)
+        Ftθk = rfft(Vtθφ, pfft)
+        Fpθk = rfft(Vpθφ, pfft)
     else
         pfft = SHTnsKitParallelExt._get_or_plan(:fft, Vtθφ)
-        Ftθk = PencilFFTs.fft(Vtθφ, pfft)
-        Fpθk = PencilFFTs.fft(Vpθφ, pfft)
+        Ftθk = fft(Vtθφ, pfft)
+        Fpθk = fft(Vpθφ, pfft)
     end
-    Ftθm = PencilArrays.transpose(Ftθk, (; dims=(1,2), names=(:θ,:m)))
-    Fpθm = PencilArrays.transpose(Fpθk, (; dims=(1,2), names=(:θ,:m)))
+    Ftθm = transpose(Ftθk, (; dims=(1,2), names=(:θ,:m)))
+    Fpθm = transpose(Fpθk, (; dims=(1,2), names=(:θ,:m)))
 
     Slm_local = zeros(ComplexF64, lmax+1, mmax+1)
     Tlm_local = zeros(ComplexF64, lmax+1, mmax+1)
 
     θrange = axes(Ftθm, 1); mrange = axes(Ftθm, 2)
-    gl_θ = PencilArrays.globalindices(Ftθm, 1)
-    gl_m = PencilArrays.globalindices(Ftθm, 2)
+    gl_θ = globalindices(Ftθm, 1)
+    gl_m = globalindices(Ftθm, 2)
 
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
     P = Vector{Float64}(undef, lmax + 1)
@@ -221,14 +221,14 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
 end
 
 function SHTnsKit.dist_spat_to_SHsphtor!(plan::DistSphtorPlan, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix,
-                                         Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray; use_tables=plan.cfg.use_plm_tables)
+                                         Vtθφ::PencilArray, Vpθφ::PencilArray; use_tables=plan.cfg.use_plm_tables)
     Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(plan.cfg, Vtθφ, Vpθφ; use_tables, use_rfft=plan.use_rfft)
     copyto!(Slm_out, Slm); copyto!(Tlm_out, Tlm)
     return Slm_out, Tlm_out
 end
 
 # Distributed vector synthesis (spheroidal/toroidal) from dense spectra
-function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Slm,1) == lmax+1 && size(Slm,2) == mmax+1 || throw(DimensionMismatch("Slm dims"))
     size(Tlm,1) == lmax+1 && size(Tlm,2) == mmax+1 || throw(DimensionMismatch("Tlm dims"))
@@ -246,19 +246,19 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
         Zθφ = similar(prototype_θφ)
         fill!(Zθφ, zero(eltype(Zθφ)))
         pr = SHTnsKitParallelExt._get_or_plan(:rfft, Zθφ)
-        Fθk = PencilFFTs.rfft(Zθφ, pr)
-        Fφk = PencilFFTs.rfft(Zθφ, pr)
+        Fθk = rfft(Zθφ, pr)
+        Fφk = rfft(Zθφ, pr)
         fill!(Fθk, 0); fill!(Fφk, 0)
     else
-        Fθk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
-        Fφk = PencilArrays.allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        Fθk = allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
+        Fφk = allocate(prototype_θφ; dims=(:θ,:k), eltype=ComplexF64)
         fill!(Fθk, 0); fill!(Fφk, 0)
     end
 
     θloc = axes(Fθk, 1)
-    mloc = axes(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
-    gl_θ = PencilArrays.globalindices(Fθk, 1)
-    gl_m = PencilArrays.globalindices(PencilArrays.allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
+    mloc = axes(allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
+    gl_θ = globalindices(Fθk, 1)
+    gl_m = globalindices(allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)
 
     nlon = cfg.nlon
     P = Vector{Float64}(undef, lmax + 1)
@@ -330,12 +330,12 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
 
     if use_r
         pir = SHTnsKitParallelExt._get_or_plan(:irfft, Fθk)
-        Vtθφ = PencilFFTs.irfft(Fθk, pir)
-        Vpθφ = PencilFFTs.irfft(Fφk, pir)
+        Vtθφ = irfft(Fθk, pir)
+        Vpθφ = irfft(Fφk, pir)
     else
         pifft = SHTnsKitParallelExt._get_or_plan(:ifft, Fθk)
-        Vtθφ = PencilFFTs.ifft(Fθk, pifft)
-        Vpθφ = PencilFFTs.ifft(Fφk, pifft)
+        Vtθφ = ifft(Fθk, pifft)
+        Vpθφ = ifft(Fφk, pifft)
     end
     if real_output
         Vtθφ = real.(Vtθφ)
@@ -343,7 +343,7 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
     end
     if cfg.robert_form
         θloc2 = axes(Vtθφ, 1)
-        gl_θ2 = PencilArrays.globalindices(Vtθφ, 1)
+        gl_θ2 = globalindices(Vtθφ, 1)
         for (ii, iθ) in enumerate(θloc2)
             x = cfg.x[gl_θ2[ii]]
             sθ = sqrt(max(0.0, 1 - x*x))
@@ -355,11 +355,11 @@ function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::AbstractMa
 end
 
 # Convenience: spectral inputs as PencilArray (dense layout (:l,:m))
-function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_SHsphtor_to_spat(cfg::SHTnsKit.SHTConfig, Slm::PencilArray, Tlm::PencilArray; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     return SHTnsKit.dist_SHsphtor_to_spat(cfg, Array(Slm), Array(Tlm); prototype_θφ, real_output, use_rfft)
 end
 
-function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::PencilArrays.PencilArray, Vpθφ_out::PencilArrays.PencilArray,
+function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::PencilArray, Vpθφ_out::PencilArray,
                                          Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
     Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(plan.cfg, Slm, Tlm; prototype_θφ=plan.prototype_θφ, real_output, use_rfft=plan.use_rfft)
     copyto!(Vtθφ_out, Vt); copyto!(Vpθφ_out, Vp)
@@ -367,27 +367,27 @@ function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::Penci
 end
 
 # QST distributed implementations by composition
-function SHTnsKit.dist_spat_to_SHqst(cfg::SHTnsKit.SHTConfig, Vrθφ::PencilArrays.PencilArray, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+function SHTnsKit.dist_spat_to_SHqst(cfg::SHTnsKit.SHTConfig, Vrθφ::PencilArray, Vtθφ::PencilArray, Vpθφ::PencilArray)
     Qlm = SHTnsKit.dist_analysis(cfg, Vrθφ)
     Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vtθφ, Vpθφ)
     return Qlm, Slm, Tlm
 end
 
 function SHTnsKit.dist_spat_to_SHqst!(plan::DistQstPlan, Qlm_out::AbstractMatrix, Slm_out::AbstractMatrix, Tlm_out::AbstractMatrix,
-                                      Vrθφ::PencilArrays.PencilArray, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+                                      Vrθφ::PencilArray, Vtθφ::PencilArray, Vpθφ::PencilArray)
     Q, S, T = SHTnsKit.dist_spat_to_SHqst(plan.cfg, Vrθφ, Vtθφ, Vpθφ)
     copyto!(Qlm_out, Q); copyto!(Slm_out, S); copyto!(Tlm_out, T)
     return Qlm_out, Slm_out, Tlm_out
 end
 
 # Synthesis to distributed fields from dense spectra
-function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::AbstractMatrix, Slm::AbstractMatrix, Tlm::AbstractMatrix; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     Vr = SHTnsKit.dist_synthesis(cfg, Qlm; prototype_θφ, real_output, use_rfft)
     Vt, Vp = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ, real_output, use_rfft)
     return Vr, Vt, Vp
 end
 
-function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArrays.PencilArray, Slm::PencilArrays.PencilArray, Tlm::PencilArrays.PencilArray; prototype_θφ::PencilArrays.PencilArray, real_output::Bool=true, use_rfft::Bool=false)
+function SHTnsKit.dist_SHqst_to_spat(cfg::SHTnsKit.SHTConfig, Qlm::PencilArray, Slm::PencilArray, Tlm::PencilArray; prototype_θφ::PencilArray, real_output::Bool=true, use_rfft::Bool=false)
     Vr, Vt, Vp = SHTnsKit.dist_SHqst_to_spat(cfg, Array(Qlm), Array(Slm), Array(Tlm); prototype_θφ, real_output, use_rfft)
     return Vr, Vt, Vp
 end
@@ -396,8 +396,8 @@ end
 # Simple roundtrip diagnostics (optional helpers)
 ##########
 
-function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
-    comm = PencilArrays.communicator(fθφ)
+function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray)
+    comm = communicator(fθφ)
     Alm = SHTnsKit.dist_analysis(cfg, fθφ)
     fθφ_out = SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ=fθφ, real_output=true)
     # Local and global relative errors
@@ -414,8 +414,8 @@ function SHTnsKit.dist_scalar_roundtrip!(cfg::SHTnsKit.SHTConfig, fθφ::PencilA
     return rel_local, rel_global
 end
 
-function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
-    comm = PencilArrays.communicator(Vtθφ)
+function SHTnsKit.dist_vector_roundtrip!(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArray, Vpθφ::PencilArray)
+    comm = communicator(Vtθφ)
     Slm, Tlm = SHTnsKit.dist_spat_to_SHsphtor(cfg, Vtθφ, Vpθφ)
     Vt2, Vp2 = SHTnsKit.dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ=Vtθφ, real_output=true)
     # θ component

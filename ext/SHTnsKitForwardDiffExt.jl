@@ -21,12 +21,12 @@ end
 # PencilArray distributed convenience wrappers
 ##########
 
-function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::PencilArrays.PencilArray)
+function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray)
     # Flatten local block; gradient is computed locally and returned in same Pencil layout
     nlat = length(axes(fθφ, 1)); nlon = length(axes(fθφ, 2))
     function loss_flat(z)
         xloc = reshape(z, nlat, nlon)
-        return SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, PencilArrays.PencilArray(xloc)))
+        return SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, PencilArray(xloc)))
     end
     g = ForwardDiff.gradient(loss_flat, vec(Array(fθφ)))
     gl = reshape(g, nlat, nlon)
@@ -35,12 +35,12 @@ function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::PencilArr
     return gout
 end
 
-function SHTnsKit.fdgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArrays.PencilArray, Vpθφ::PencilArrays.PencilArray)
+function SHTnsKit.fdgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilArray, Vpθφ::PencilArray)
     nlat = length(axes(Vtθφ, 1)); nlon = length(axes(Vtθφ, 2))
     function loss_flat(z)
         Xt = reshape(view(z, 1:nlat*nlon), nlat, nlon)
         Xp = reshape(view(z, nlat*nlon+1:2*nlat*nlon), nlat, nlon)
-        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, PencilArrays.PencilArray(Xt), PencilArrays.PencilArray(Xp))
+        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, PencilArray(Xt), PencilArray(Xp))
         return SHTnsKit.energy_vector(cfg, Slm, Tlm)
     end
     z0 = vcat(vec(Array(Vtθφ)), vec(Array(Vpθφ)))
