@@ -6,6 +6,29 @@ using PencilFFTs
 using ..SHTnsKit
 
 """
+Internal helpers: try true in-place PencilFFTs, else copy from returned array.
+"""
+function _fft_to!(dest, src, plan)
+    try
+        PencilFFTs.fft!(src, plan; dest=dest)
+        return dest
+    catch
+        copyto!(dest, PencilFFTs.fft(src, plan))
+        return dest
+    end
+end
+
+function _ifft_to!(dest, src, plan)
+    try
+        PencilFFTs.ifft!(src, plan; dest=dest)
+        return dest
+    catch
+        copyto!(dest, PencilFFTs.ifft(src, plan))
+        return dest
+    end
+end
+
+"""
     dist_analysis(cfg, fθφ::PencilArrays.PencilArray; use_tables=cfg.use_plm_tables)
 
 Distributed scalar analysis using PencilArrays/PencilFFTs.
@@ -1060,11 +1083,11 @@ function SHTnsKit.dist_spat_to_SHsphtor!(plan::DistSphtorPlan, Slm_out::Abstract
     size(Slm_out,1)==lmax+1 && size(Slm_out,2)==mmax+1 || throw(DimensionMismatch("Slm_out dims"))
     size(Tlm_out,1)==lmax+1 && size(Tlm_out,2)==mmax+1 || throw(DimensionMismatch("Tlm_out dims"))
     fill!(Slm_out, 0); fill!(Tlm_out, 0)
-    # FFT along φ then transpose to (θ,m)
-    Fθk_t = PencilFFTs.fft(Vtθφ, plan.pfft)
-    Fθm_t = PencilArrays.transpose(Fθk_t, (; dims=(1,2), names=(:θ,:m)))
-    Fθk_p = PencilFFTs.fft(Vpθφ, plan.pfft)
-    Fθm_p = PencilArrays.transpose(Fθk_p, (; dims=(1,2), names=(:θ,:m)))
+    # FFT along φ then transpose to (θ,m) using plan buffer
+    _fft_to!(plan.Fθk, Vtθφ, plan.pfft)
+    Fθm_t = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
+    _fft_to!(plan.Fθk, Vpθφ, plan.pfft)
+    Fθm_p = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
     θrange = axes(Fθm_t, 1)
     mrange = axes(Fθm_t, 2)
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
@@ -1210,7 +1233,7 @@ function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::Penci
             end
         end
     end
-    Vtθφ_tmp = PencilFFTs.ifft(plan.Fθk, plan.pifft)
+    Vtθφ_tmp = eltype(Vtθφ_out) <: Complex ? _ifft_to!(Vtθφ_out, plan.Fθk, plan.pifft) : PencilFFTs.ifft(plan.Fθk, plan.pifft)
     # Reuse Fθk for Vp
     fill!(plan.Fθk, 0)
     for (ii,iθ) in enumerate(θloc)
@@ -1235,7 +1258,7 @@ function SHTnsKit.dist_SHsphtor_to_spat!(plan::DistSphtorPlan, Vtθφ_out::Penci
             end
         end
     end
-    Vpθφ_tmp = PencilFFTs.ifft(plan.Fθk, plan.pifft)
+    Vpθφ_tmp = eltype(Vpθφ_out) <: Complex ? _ifft_to!(Vpθφ_out, plan.Fθk, plan.pifft) : PencilFFTs.ifft(plan.Fθk, plan.pifft)
     # Robert form scaling
     if cfg.robert_form
         θl = axes(Vtθφ_tmp, 1)
@@ -1275,10 +1298,10 @@ function SHTnsKit.dist_analysis!(plan::DistAnalysisPlan, Alm_out::AbstractMatrix
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Alm_out,1) == lmax+1 || throw(DimensionMismatch("Alm_out rows must be lmax+1"))
     size(Alm_out,2) == mmax+1 || throw(DimensionMismatch("Alm_out cols must be mmax+1"))
-    # 1) FFT along φ into (θ,k)
-    Fθk_local = PencilFFTs.fft(fθφ, plan.pfft)
+    # 1) FFT along φ into (θ,k) using plan buffer if available
+    _fft_to!(plan.Fθk, fθφ, plan.pfft)
     # 2) Transpose to (θ,m)
-    Fθm = PencilArrays.transpose(Fθk_local, (; dims=(1,2), names=(:θ,:m)))
+    Fθm = PencilArrays.transpose(plan.Fθk, (; dims=(1,2), names=(:θ,:m)))
     # 3) Accumulate contributions into Alm_out
     fill!(Alm_out, 0)
     θrange = axes(Fθm, 1)
