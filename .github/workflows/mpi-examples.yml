@@ -1,0 +1,47 @@
+name: MPI Examples
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-mpi-examples:
+    name: Julia ${{ matrix.version }} - Ubuntu - MPI Examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Install system MPI and FFTW
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openmpi-bin libopenmpi-dev libfftw3-dev
+
+      - name: Instantiate with MPI dependencies
+        run: |
+          julia --project=. -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.add(["MPI","PencilArrays","PencilFFTs"])
+            Pkg.instantiate()
+          '
+
+      - name: Run parallel example (scalar)
+        run: |
+          mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl
+
+      - name: Run parallel example (vector)
+        run: |
+          mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --vector
+
