@@ -49,6 +49,7 @@ export grad_grid_energy_scalar_field, grad_grid_energy_vector_fields, grad_grid_
 export energy_scalar_packed, grad_energy_scalar_packed
 export energy_vector_packed, grad_energy_vector_packed
 export loss_vorticity_grid, grad_loss_vorticity_Tlm, loss_and_grad_vorticity_Tlm
+export prepare_plm_tables!, enable_plm_tables!, disable_plm_tables!
 
 # AD convenience wrappers (populated via extensions)
 export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm
