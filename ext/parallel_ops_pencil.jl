@@ -3,7 +3,7 @@
 ##########
 
 """
-    dist_apply_laplacian!(cfg, Alm_pencil::PencilArrays.PencilArray)
+    dist_apply_laplacian!(cfg, Alm_pencil::PencilArray)
 
 In-place multiply by -l(l+1) for distributed Alm with dims (:l,:m). No communication.
 """
@@ -17,7 +17,7 @@ function SHTnsKit.dist_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Alm_pencil::Pen
 end
 
 """
-    dist_SH_mul_mx!(cfg, mx, Alm_pencil::PencilArrays.PencilArray, R_pencil::PencilArrays.PencilArray)
+    dist_SH_mul_mx!(cfg, mx, Alm_pencil::PencilArray, R_pencil::PencilArray)
 
 Apply 3-diagonal operator to distributed Alm pencils using per-m Allgatherv of l-columns.
 """
