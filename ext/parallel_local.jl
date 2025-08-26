@@ -25,13 +25,14 @@ function SHTnsKit.dist_SH_to_lat(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArra
     gl_l = PencilArrays.globalindices(Alm_pencil, 1)
     gl_m = PencilArrays.globalindices(Alm_pencil, 2)
     # m = 0 if present locally
-    if any(gl_m .== 1)
-        Plm_row!(P, x, lmax, 0)
+    j0 = findfirst(==(1), gl_m)
+    if j0 !== nothing
+        SHTnsKit.Plm_row!(P, x, lmax, 0)
         g0 = 0.0 + 0.0im
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
             if lval <= ltr
-                g0 += cfg.Nlm[lval+1, 1] * P[lval+1] * Alm_pencil[il, first(mloc)]
+                g0 += cfg.Nlm[lval+1, 1] * P[lval+1] * Alm_pencil[il, mloc[j0]]
             end
         end
         vals_local .+= g0
@@ -40,7 +41,7 @@ function SHTnsKit.dist_SH_to_lat(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilArra
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         (mval > 0 && mval <= mtr) || continue
-        Plm_row!(P, x, lmax, mval)
+        SHTnsKit.Plm_row!(P, x, lmax, mval)
         gm = 0.0 + 0.0im
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
@@ -70,12 +71,13 @@ function SHTnsKit.dist_SH_to_point(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilAr
     gl_m = PencilArrays.globalindices(Alm_pencil, 2)
     s_local = 0.0 + 0.0im
     # m=0
-    if any(gl_m .== 1)
-        Plm_row!(P, x, lmax, 0)
+    j0 = findfirst(==(1), gl_m)
+    if j0 !== nothing
+        SHTnsKit.Plm_row!(P, x, lmax, 0)
         g0 = 0.0 + 0.0im
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
-            g0 += cfg.Nlm[lval+1, 1] * P[lval+1] * Alm_pencil[il, first(mloc)]
+            g0 += cfg.Nlm[lval+1, 1] * P[lval+1] * Alm_pencil[il, mloc[j0]]
         end
         s_local += g0
     end
@@ -83,7 +85,7 @@ function SHTnsKit.dist_SH_to_point(cfg::SHTnsKit.SHTConfig, Alm_pencil::PencilAr
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         mval > 0 || continue
-        Plm_row!(P, x, lmax, mval)
+        SHTnsKit.Plm_row!(P, x, lmax, mval)
         gm = 0.0 + 0.0im
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
@@ -115,23 +117,24 @@ function SHTnsKit.dist_SHqst_to_point(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays
     vt_local = 0.0 + 0.0im
     vp_local = 0.0 + 0.0im
     # m=0
-    if any(gl_m .== 1)
-        Plm_and_dPdx_row!(P, dPdx, x, lmax, 0)
+    j0 = findfirst(==(1), gl_m)
+    if j0 !== nothing
+        SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, 0)
         for (ii, il) in enumerate(lloc)
             lval = gl_l[ii] - 1
             N = cfg.Nlm[lval+1, 1]
             Y = N * P[lval+1]
             dθY = -sθ * N * dPdx[lval+1]
-            vr_local += Y   * Q_p[il, first(mloc)]
-            vt_local += dθY * S_p[il, first(mloc)]
-            vp_local += (sθ * N * dPdx[lval+1]) * T_p[il, first(mloc)]
+            vr_local += Y   * Q_p[il, mloc[j0]]
+            vt_local += dθY * S_p[il, mloc[j0]]
+            vp_local += (sθ * N * dPdx[lval+1]) * T_p[il, mloc[j0]]
         end
     end
     # m>0
     for (jj, jm) in enumerate(mloc)
         mval = gl_m[jj] - 1
         mval > 0 || continue
-        Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
+        SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
         gvr = 0.0 + 0.0im
         gvt = 0.0 + 0.0im
         gvp = 0.0 + 0.0im
@@ -155,6 +158,74 @@ function SHTnsKit.dist_SHqst_to_point(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays
     vt = MPI.Allreduce(vt_local, +, comm)
     vp = MPI.Allreduce(vp_local, +, comm)
     return real(vr), real(vt), real(vp)
+end
+
+"""
+    dist_SHqst_to_lat(cfg, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost::Real;
+                      nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax) -> Vr, Vt, Vp
+"""
+function SHTnsKit.dist_SHqst_to_lat(cfg::SHTnsKit.SHTConfig, Q_p::PencilArrays.PencilArray, S_p::PencilArrays.PencilArray, T_p::PencilArrays.PencilArray, cost::Real;
+                                    nphi::Int=cfg.nlon, ltr::Int=cfg.lmax, mtr::Int=cfg.mmax)
+    comm = PencilArrays.communicator(Q_p)
+    lmax = cfg.lmax
+    x = float(cost)
+    P = Vector{Float64}(undef, lmax + 1)
+    dPdx = Vector{Float64}(undef, lmax + 1)
+    lloc = axes(Q_p, 1); mloc = axes(Q_p, 2)
+    gl_l = PencilArrays.globalindices(Q_p, 1)
+    gl_m = PencilArrays.globalindices(Q_p, 2)
+    sθ = sqrt(max(0.0, 1 - x*x)); inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
+    Vr_local = zeros(ComplexF64, nphi)
+    Vt_local = zeros(ComplexF64, nphi)
+    Vp_local = zeros(ComplexF64, nphi)
+    # m=0
+    j0 = findfirst(==(1), gl_m)
+    if j0 !== nothing
+        SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, 0)
+        g0 = 0.0 + 0.0im; gθ0 = 0.0 + 0.0im; gφ0 = 0.0 + 0.0im
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if lval <= ltr
+                N = cfg.Nlm[lval+1, 1]
+                Y = N * P[lval+1]
+                dθY = -sθ * N * dPdx[lval+1]
+                g0  += Y * Q_p[il, mloc[j0]]
+                gθ0 += dθY * S_p[il, mloc[j0]]
+                gφ0 += (sθ * N * dPdx[lval+1]) * T_p[il, mloc[j0]]
+            end
+        end
+        Vr_local .+= g0; Vt_local .+= gθ0; Vp_local .+= gφ0
+    end
+    # m>0
+    for (jj, jm) in enumerate(mloc)
+        mval = gl_m[jj] - 1
+        (mval > 0 && mval <= mtr) || continue
+        SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
+        g  = 0.0 + 0.0im
+        gθ = 0.0 + 0.0im
+        gφ = 0.0 + 0.0im
+        for (ii, il) in enumerate(lloc)
+            lval = gl_l[ii] - 1
+            if mval <= lval <= ltr
+                N = cfg.Nlm[lval+1, mval+1]
+                Y = N * P[lval+1]
+                dθY = -sθ * N * dPdx[lval+1]
+                g  += Y   * Q_p[il, jm]
+                gθ += dθY * S_p[il, jm] + (0 + 1im) * mval * inv_sθ * Y * T_p[il, jm]
+                gφ += (0 + 1im) * mval * inv_sθ * Y * S_p[il, jm] + (sθ * N * dPdx[lval+1]) * T_p[il, jm]
+            end
+        end
+        @inbounds for j in 0:(nphi-1)
+            ph = cis(2π * mval * j / nphi)
+            Vr_local[j+1] += 2 * real(g * ph)
+            Vt_local[j+1] += 2 * real(gθ * ph)
+            Vp_local[j+1] += 2 * real(gφ * ph)
+        end
+    end
+    MPI.Allreduce!(Vr_local, +, comm)
+    MPI.Allreduce!(Vt_local, +, comm)
+    MPI.Allreduce!(Vp_local, +, comm)
+    return real.(Vr_local), real.(Vt_local), real.(Vp_local)
 end
 
 """
@@ -218,4 +289,3 @@ function SHTnsKit.dist_SH_to_spat_cplx(cfg::SHTnsKit.SHTConfig, alm_packed::Abst
     end
     return SHTnsKit.dist_synthesis(cfg, Alm; prototype_θφ, real_output=false)
 end
-
