@@ -147,6 +147,7 @@ end
                     @test rel < 1e-8
                 end
             end
+            @test maxdiff < 1e-12
             MPI.Finalize()
         else
             @info "Skipping norms/phase/robert/tables tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
@@ -436,7 +437,7 @@ end
             print("
 [info] Skipping halo operator test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)
 ")
-    except Exception as e:
+    catch e
         print("
 [info] Skipping halo operator test: ", e, "
 ")
@@ -476,15 +477,16 @@ end
             maxdiff = 0.0
             for (ii, il) in enumerate(lloc)
                 for (jj, jm) in enumerate(mloc)
-                    # In Julia, we'd do: maxdiff = max(maxdiff, abs(Alm_p[il,jm] - Rlm[gl_l[ii],gl_m[jj]]))
-                    pass
+                    diff = abs(Alm_p[il, jm] - Rlm[gl_l[ii], gl_m[jj]])
+                    maxdiff = max(maxdiff, diff)
             end
+            @test maxdiff < 1e-12
             MPI.Finalize()
         else
-            println("[info] Skipping Z-rotation test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)")
+            @info "Skipping Z-rotation test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
         end
     catch e
-        println("[info] Skipping Z-rotation test: ", e)
+        @info "Skipping Z-rotation test" exception=(e, catch_backtrace())
         try
             MPI.isinitialized() && MPI.Finalize()
         catch
@@ -524,17 +526,20 @@ end
             gl_l = PencilArrays.globalindices(R_p, 1)
             gl_m = PencilArrays.globalindices(R_p, 2)
             maxdiff = 0.0
-            for (ii, il) in enumerate(lloc):
-                for (jj, jm) in enumerate(mloc):
-                    pass
-            print("[info] Y-rotation allgatherm test appended (checks performed in Julia environment)")
+            for (ii, il) in enumerate(lloc)
+                for (jj, jm) in enumerate(mloc)
+                    maxdiff = max(maxdiff, abs(R_p[il, jm] - Rlm[gl_l[ii], gl_m[jj]]))
+                end
+            end
+            @test maxdiff < 1e-9
             MPI.Finalize()
-        else:
-            print("[info] Skipping Y-rotation allgatherm test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)")
-    except Exception as e:
-        print("[info] Skipping Y-rotation allgatherm test:", e)
-        try:
-            pass
-        except:
-            pass
+        else
+            @info "Skipping Y-rotation allgatherm test (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
+    catch e
+        @info "Skipping Y-rotation allgatherm test" exception=(e, catch_backtrace())
+        try
+            MPI.isinitialized() && MPI.Finalize()
+        catch
+        end
+    end
 end
