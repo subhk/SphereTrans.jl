@@ -1,13 +1,24 @@
 """
-Operator matrices and application in orthonormal spherical harmonics.
+Spherical Differential Operators in Spectral Space
 
-We expose SHTns-compatible functions:
-- `mul_ct_matrix(cfg, mx)`: fill `mx` (length 2*nlm) with coefficients for cosθ operator.
-- `st_dt_matrix(cfg, mx)`: fill `mx` (length 2*nlm) with coefficients for sinθ ∂_θ operator.
-- `SH_mul_mx(cfg, mx, Qlm, Rlm)`: apply a 3-diagonal operator that couples (l,m) to l±1 at fixed m.
+This module implements differential operators that act on spherical harmonic coefficients.
+The operators are represented as sparse matrices that couple neighboring degrees l at fixed
+azimuthal order m, taking advantage of the recurrence relations for spherical harmonics.
 
-Layout of `mx`: for packed index `lm` (SHTns LM order, m≥0), we store two coefficients
-`mx[2*lm+1] = c_minus` for Y_{l-1}^m and `mx[2*lm+2] = c_plus` for Y_{l+1}^m, with out-of-range neighbors ignored.
+The key operators implemented are:
+- cos(θ) multiplication: couples Y_l^m to Y_{l±1}^m  
+- sin(θ) ∂/∂θ derivative: couples Y_l^m to Y_{l±1}^m with different coefficients
+
+SHTns-compatible functions provided:
+- `mul_ct_matrix(cfg, mx)`: fill `mx` (length 2*nlm) with coefficients for cos(θ) operator
+- `st_dt_matrix(cfg, mx)`: fill `mx` (length 2*nlm) with coefficients for sin(θ) ∂/∂θ operator  
+- `SH_mul_mx(cfg, mx, Qlm, Rlm)`: apply a tridiagonal operator that couples (l,m) to l±1 at fixed m
+
+Matrix storage format:
+For each packed index `lm` (SHTns LM order, m≥0), we store two coupling coefficients:
+- `mx[2*lm+1] = c_minus` for coupling to Y_{l-1}^m (lower degree neighbor)
+- `mx[2*lm+2] = c_plus` for coupling to Y_{l+1}^m (higher degree neighbor)
+Out-of-range neighbors (l<m or l>lmax) are automatically ignored.
 """
 
 """
