@@ -49,6 +49,9 @@ jobs:
           arch: x64
           
       - uses: julia-actions/cache@v2
+        with:
+          # Key on OS + Julia + Project/Manifest hash + commit to avoid stale caches
+          key: ${{ runner.os }}-julia-${{ matrix.version }}-${{ hashFiles('Project.toml') }}-${{ hashFiles('Manifest.toml') }}-${{ github.sha }}
       
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -68,6 +71,14 @@ jobs:
           echo "Windows dependencies handled by Julia packages"
       
       - uses: julia-actions/julia-buildpkg@v1
+
+      - name: Instantiate and precompile
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
+      - name: Verify FFTW availability
+        run: |
+          julia --project=. -e 'try using FFTW; println("FFTW OK") catch e; println("FFTW missing: ", e); exit(1) end'
       
       - name: Run tests with enhanced error handling
         uses: julia-actions/julia-runtest@v1
