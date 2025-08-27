@@ -28,7 +28,7 @@ jobs:
       matrix:
         version:
           - '1.10'  # Current LTS
-          - '1'     # Latest stable release
+          - '1.11'  # Latest stable release
         os:
           - macOS-latest
           - windows-latest
