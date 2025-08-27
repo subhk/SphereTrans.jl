@@ -1,27 +1,32 @@
 
+# Julia package for fast spherical harmonic transforms using the SHTns library
+# SHTns (Spherical Harmonic Transform numerical software) provides efficient 
+# computation of Spherical Harmonic Transforms for scientific computing applications
 module SHTnsKit
 
-using LinearAlgebra
-using FFTW
-using Base.Threads
+# Import required standard libraries
+using LinearAlgebra  # For linear algebra operations
+using FFTW          # For Fast Fourier Transform operations
+using Base.Threads  # For multi-threading support
 
-include("fftutils.jl")
-include("layout.jl")
-include("mathutils.jl")
-include("gausslegendre.jl")
-include("legendre.jl")
-include("normalization.jl")
-include("config.jl")
-include("plan.jl")
-include("transform.jl")
-include("complex_packed.jl")
-include("vector.jl")
-include("operators.jl")
-include("rotations.jl")
-include("local.jl")
-include("diagnostics.jl")
-include("api_compat.jl")
-include("parallel_dense.jl")
+# Include all module source files
+include("fftutils.jl")      # FFT utility functions and helpers
+include("layout.jl")        # Data layout and memory organization
+include("mathutils.jl")     # Mathematical utility functions
+include("gausslegendre.jl") # Gauss-Legendre quadrature implementation
+include("legendre.jl")      # Legendre polynomial computations
+include("normalization.jl") # Spherical harmonic normalization
+include("config.jl")        # Configuration and setup functions
+include("plan.jl")          # Transform planning and optimization
+include("transform.jl")     # Core transform implementations
+include("complex_packed.jl")# Complex number packing utilities
+include("vector.jl")        # Vector field operations
+include("operators.jl")     # Differential operators on sphere
+include("rotations.jl")     # Spherical rotation operations
+include("local.jl")         # Local (thread-local) operations
+include("diagnostics.jl")   # Diagnostic and analysis tools
+include("api_compat.jl")    # API compatibility layer
+include("parallel_dense.jl")# Parallel dense matrix operations
 
 export SHTConfig, create_gauss_config, destroy_config
 export analysis, synthesis
