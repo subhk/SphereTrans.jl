@@ -1,90 +1,156 @@
 """
     Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
 
-Fill `P` with associated Legendre values `P_l^m(x)` for `l = 0..lmax` with zeros for `l < m`.
-Uses the Ferrers definition with the Condon–Shortley phase included.
+Compute associated Legendre polynomials P_l^m(x) for all degrees l = 0..lmax at fixed order m.
+
+This function implements the stable three-term recurrence relations for associated 
+Legendre polynomials. The algorithm follows the Ferrers definition with the 
+Condon-Shortley phase factor (-1)^m included, which is standard in physics.
+
+The input x = cos(θ) where θ is the colatitude angle.
+Results are stored as P[l+1] = P_l^m(x) for l = 0..lmax (1-based indexing).
 """
 function Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
+    # Initialize output array to zero
     @inbounds fill!(P, zero(T))
+    
+    # Validate order parameter
     m < 0 && throw(ArgumentError("m must be ≥ 0"))
+    
+    # Early return if no valid polynomials exist
     lmax >= m || return P
-    # Base cases
+
+    # ===== SPECIAL CASE: m = 0 (ordinary Legendre polynomials) =====
     if m == 0
-        P[1] = one(T)                 # P_0^0
+        # Base cases for ordinary Legendre polynomials
+        P[1] = one(T)                 # P_0^0(x) = 1
         if lmax >= 1
-            P[2] = x                  # P_1^0
+            P[2] = x                  # P_1^0(x) = x
         end
+        
+        # Three-term recurrence for P_l^0(x)
         for l in 2:lmax
-            # P_l^0(x) = ((2l-1)x P_{l-1}^0 - (l-1) P_{l-2}^0)/l
+            # Bonnet's recurrence: (l+1)P_{l+1} = (2l+1)x P_l - l P_{l-1}
+            # Rearranged: P_l^0(x) = ((2l-1)x P_{l-1}^0 - (l-1) P_{l-2}^0)/l
             P[l+1] = ((2l - 1) * x * P[l] - (l - 1) * P[l-1]) / l
         end
         return P
     end
 
-    # P_m^m(x) = (-1)^m (2m-1)!! (1-x^2)^{m/2}
+    # ===== GENERAL CASE: m > 0 (associated Legendre polynomials) =====
+    
+    # Start with P_m^m(x) using explicit formula
+    # P_m^m(x) = (-1)^m (2m-1)!! (1-x²)^{m/2}
     pmm = one(T)
-    sx2 = max(zero(T), 1 - x*x)  # guard minor negative due to fp
-    fact = one(T)
+    sx2 = max(zero(T), 1 - x*x)  # (1-x²), guarded against roundoff for |x|≈1
+    fact = one(T)                  # Tracks (2k-1) in double factorial
+    
     for k in 1:m
-        pmm *= -fact * sqrt(sx2)
-        fact += 2
+        pmm *= -fact * sqrt(sx2)   # Build up (-1)^m (2m-1)!! (1-x²)^{m/2}
+        fact += 2                  # Next odd number: 1, 3, 5, ...
     end
     P[m+1] = pmm
+
+    # If lmax = m, we're done
     if lmax == m
         return P
     end
+
+    # Compute P_{m+1}^m(x) using explicit formula
     # P_{m+1}^m(x) = x (2m+1) P_m^m(x)
     P[m+2] = x * (2m + 1) * pmm
+
+    # Use three-term recurrence for remaining degrees l ≥ m+2
     for l in (m+2):lmax
+        # Recurrence relation for associated Legendre polynomials:
         # P_l^m(x) = ((2l-1)x P_{l-1}^m - (l+m-1) P_{l-2}^m)/(l-m)
         P[l+1] = ((2l - 1) * x * P[l] - (l + m - 1) * P[l-1]) / (l - m)
     end
+    
     return P
 end
 
 """
     Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
 
-Fill `P[l+1] = P_l^m(x)` and `dPdx[l+1] = d/dx P_l^m(x)` for `l = m..lmax`.
-`dPdx` is derivative with respect to `x = cosθ` (not θ).
+Simultaneously compute associated Legendre polynomials P_l^m(x) and their derivatives.
+
+This function efficiently computes both P_l^m(x) and dP_l^m/dx for all degrees
+l = m..lmax at fixed order m. The derivatives are computed with respect to the
+argument x = cos(θ), not with respect to the angle θ itself.
+
+The derivative calculation uses the standard recurrence relation:
+dP_l^m/dx = [l*x*P_l^m - (l+m)*P_{l-1}^m] / (x²-1)
+
+This is essential for computing gradients and differential operators on the sphere.
 """
 function Plm_and_dPdx_row!(P::AbstractVector{T}, dPdx::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
+    # First compute the Legendre polynomials
     Plm_row!(P, x, lmax, m)
+    
     @inbounds begin
+        # Initialize derivative array
         fill!(dPdx, zero(T))
+        
+        # Early return if no valid polynomials
         if lmax < m
             return P, dPdx
         end
+        
+        # Precompute common factor (x² - 1) for derivative formula
         x2m1 = x*x - one(T)
-        # l = m
+        
+        # Handle l = m case (base case for derivatives)
         l = m
         dPdx[l+1] = (l == 0) ? zero(T) : (m * x * P[l+1]) / x2m1
-        # l ≥ m+1
+        
+        # Compute derivatives for l ≥ m+1 using recurrence relation
         for l in (m+1):lmax
+            # Standard derivative recurrence: 
+            # dP_l^m/dx = [l*x*P_l^m - (l+m)*P_{l-1}^m] / (x²-1)
             dPdx[l+1] = (l * x * P[l+1] - (l + m) * P[l]) / x2m1
         end
     end
+    
     return P, dPdx
 end
 
 """
     Nlm_table(lmax::Int, mmax::Int)
 
-Precompute normalization factors `N_{l,m} = sqrt((2l+1)/(4π) * (l-m)!/(l+m)!)` for 0≤m≤mmax, m≤l≤lmax.
-Returns a matrix `N` sized (lmax+1, mmax+1) where indices are `(l+1, m+1)`.
+Precompute normalization factors for orthonormal spherical harmonics.
+
+The normalization ensures that the spherical harmonics form an orthonormal basis:
+∫ Y_l^m(θ,φ) [Y_{l'}^{m'}(θ,φ)]* dΩ = δ_{ll'} δ_{mm'}
+
+The normalization factor is:
+N_{l,m} = sqrt[(2l+1)/(4π) * (l-m)!/(l+m)!]
+
+This function computes all factors for 0≤m≤mmax, m≤l≤lmax using stable
+logarithmic arithmetic to avoid factorial overflow.
+
+Returns matrix N[l+1,m+1] with 1-based indexing.
 """
 function Nlm_table(lmax::Int, mmax::Int)
+    # Allocate normalization table
     N = Matrix{Float64}(undef, lmax + 1, mmax + 1)
+    
     for m in 0:mmax
         for l in 0:lmax
             if l < m
+                # No spherical harmonic exists for l < m
                 N[l+1, m+1] = 0.0
             else
-                # Use loggamma to avoid overflow in factorials
+                # Compute normalization factor in log space for numerical stability
+                # log(N_{l,m}) = 0.5 * [log(2l+1) - log(4π) + log(Γ(l-m+1)) - log(Γ(l+m+1))]
+                # Using Γ(n) = (n-1)! for integer n
                 lr = 0.5 * (log(2l + 1.0) - log(4π)) + 0.5 * (loggamma(l - m + 1) - loggamma(l + m + 1))
+                
+                # Convert back from log space
                 N[l+1, m+1] = exp(lr)
             end
         end
     end
+    
     return N
 end

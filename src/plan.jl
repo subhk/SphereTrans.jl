@@ -1,39 +1,80 @@
 """
-Lightweight plan to reuse buffers and FFT plans for SHT transforms.
-Reduces allocations and improves locality without increasing peak memory.
+Optimized Transform Planning for Spherical Harmonic Operations
+
+This module implements a planning system for spherical harmonic transforms that
+pre-allocates working arrays and FFT plans to minimize runtime overhead. The
+planning approach is inspired by FFTW's philosophy: spend time upfront to
+optimize repeated operations.
+
+Benefits of Planning:
+- Eliminates repeated memory allocations during transforms
+- Pre-optimizes FFTW plans for maximum performance
+- Improves cache locality by reusing buffers
+- Reduces garbage collection pressure in performance-critical loops
+
+The SHTPlan stores all necessary working arrays and can handle both complex
+FFTs and real-optimized FFTs (RFFT) depending on the use case.
 """
+
 struct SHTPlan
-    cfg::SHTConfig
-    P::Vector{Float64}
-    dPdx::Vector{Float64}
-    G::Vector{ComplexF64}
-    Fθk::Matrix{ComplexF64}
-    fft_plan::Any
-    ifft_plan::Any
-    use_rfft::Bool
+    cfg::SHTConfig                # Configuration parameters
+    P::Vector{Float64}           # Working array for Legendre polynomials P_l^m(x)
+    dPdx::Vector{Float64}        # Working array for derivatives dP_l^m/dx  
+    G::Vector{ComplexF64}        # Temporary array for latitudinal profiles
+    Fθk::Matrix{ComplexF64}      # Fourier coefficient matrix [latitude × longitude]
+    fft_plan::Any               # Pre-optimized forward FFT plan (or nothing for RFFT)
+    ifft_plan::Any              # Pre-optimized inverse FFT plan (or nothing for RFFT)  
+    use_rfft::Bool              # Flag: true = use real FFT optimization, false = complex FFT
 end
 
 """
     SHTPlan(cfg::SHTConfig; use_rfft=false)
 
-Create a plan with reusable buffers and in-place FFTW plans along φ (dim=2).
-If `use_rfft=true`, allocate half-spectrum buffer for real-output synthesis and
-use `FFTW.irfft` instead of complex iFFT.
+Create an optimized transform plan with pre-allocated buffers and FFT plans.
+
+This constructor performs the "planning" phase: it allocates all working memory
+and optimizes FFTW plans for the specific grid configuration. The resulting
+plan can then be reused for many transforms without additional allocations.
+
+Parameters:
+- cfg: SHTConfig defining the grid and spectral resolution
+- use_rfft: Enable real-FFT optimization for real-valued output fields
+
+Real FFT optimization (use_rfft=true):
+- Allocates smaller Fourier buffer (N/2+1 instead of N complex numbers)
+- Skips complex FFTW planning (uses RFFT functions directly)
+- Reduces memory usage and improves performance for real-valued synthesis
+
+Complex FFT mode (use_rfft=false):
+- Full-spectrum Fourier buffer for maximum flexibility
+- Pre-optimizes both forward and inverse FFT plans
+- Required for complex-valued fields or analysis operations
 """
 function SHTPlan(cfg::SHTConfig; use_rfft::Bool=false)
-    P = Vector{Float64}(undef, cfg.lmax + 1)
-    dPdx = Vector{Float64}(undef, cfg.lmax + 1)
-    G = Vector{ComplexF64}(undef, cfg.nlat)
+    # Allocate working arrays for Legendre polynomial computation
+    P = Vector{Float64}(undef, cfg.lmax + 1)     # P_l^m(cos θ) values
+    dPdx = Vector{Float64}(undef, cfg.lmax + 1)  # dP_l^m/d(cos θ) derivatives
+    G = Vector{ComplexF64}(undef, cfg.nlat)      # Temporary latitudinal profiles
+    
     if use_rfft
-        nlon_half = fld(cfg.nlon, 2) + 1
+        # Real FFT optimization path
+        nlon_half = fld(cfg.nlon, 2) + 1  # Only need positive frequencies + Nyquist
         Fθk = Matrix{ComplexF64}(undef, cfg.nlat, nlon_half)
-        fill!(Fθk, 0)
+        fill!(Fθk, 0)  # Initialize to zero
+        
+        # No FFT planning needed (will use FFTW.rfft/irfft functions directly)
         return SHTPlan(cfg, P, dPdx, G, Fθk, nothing, nothing, true)
+        
     else
+        # Full complex FFT path 
         Fθk = Matrix{ComplexF64}(undef, cfg.nlat, cfg.nlon)
-        fill!(Fθk, 0)
-        fft_plan = FFTW.plan_fft!(Fθk, 2)
-        ifft_plan = FFTW.plan_ifft!(Fθk, 2)
+        fill!(Fθk, 0)  # Initialize to zero
+        
+        # Pre-optimize FFTW plans for this specific array layout
+        # Planning may take time but subsequent transforms will be faster
+        fft_plan = FFTW.plan_fft!(Fθk, 2)   # Forward FFT along longitude (dim 2)
+        ifft_plan = FFTW.plan_ifft!(Fθk, 2) # Inverse FFT along longitude (dim 2)
+        
         return SHTPlan(cfg, P, dPdx, G, Fθk, fft_plan, ifft_plan, false)
     end
 end

@@ -1,51 +1,115 @@
 """
-Diagnostics: energy, enstrophy, and vorticity for scalar and vector fields.
+Diagnostic Functions for Spherical Harmonic Fields
 
-Assumes orthonormal spherical harmonics with Condon–Shortley phase.
-All spectral functions accept matrices shaped (lmax+1, mmax+1) with m ≥ 0.
-For real fields (default), contributions for m>0 are doubled.
+This module provides functions to compute physical diagnostics from spectral
+coefficients, including energy, enstrophy, and vorticity. These diagnostics
+are fundamental for analyzing geophysical flows and validating numerical methods.
+
+Key assumptions:
+- Uses orthonormal spherical harmonics with Condon-Shortley phase convention
+- All spectral coefficient matrices have shape (lmax+1, mmax+1) with m ≥ 0
+- For real fields, m>0 modes contribute twice due to Hermitian symmetry
 """
 
+# ===== HERMITIAN SYMMETRY WEIGHTS =====
+# For real fields, we store only m≥0 coefficients but need to account for
+# the symmetric m<0 modes in energy calculations
 _wm_real(cfg::SHTConfig) = [m == 0 ? 1.0 : 2.0 for m in 0:cfg.mmax]
 
-"""energy_scalar(cfg, alm; real_field=true) -> Float64"""
+"""
+    energy_scalar(cfg, alm; real_field=true) -> Float64
+
+Compute the total energy of a scalar field from its spherical harmonic coefficients.
+
+For a scalar field f(θ,φ) = Σ a_lm Y_l^m(θ,φ), the energy is defined as:
+E = (1/2) ∫ |f|² dΩ = (1/2) Σ |a_lm|²
+
+This represents the L² norm of the field, which is conserved under orthonormal
+spherical harmonic transforms (Parseval's identity).
+"""
 function energy_scalar(cfg::SHTConfig, alm::AbstractMatrix; real_field::Bool=true)
+    # Validate coefficient array dimensions
     size(alm,1) == cfg.lmax+1 && size(alm,2) == cfg.mmax+1 || throw(DimensionMismatch("alm dims"))
+    
+    # Set up weights for real field symmetry
     w = real_field ? _wm_real(cfg) : ones(cfg.mmax + 1)
+    
+    # Accumulate energy from all modes
     e = 0.0
-    @inbounds for m in 0:cfg.mmax
-        for l in m:cfg.lmax
-            e += w[m+1] * abs2(alm[l+1, m+1])
+    @inbounds for m in 0:cfg.mmax           # Loop over azimuthal orders
+        for l in m:cfg.lmax                 # Loop over degrees (l ≥ m constraint)
+            e += w[m+1] * abs2(alm[l+1, m+1])  # |a_lm|² with symmetry weight
         end
     end
+    
+    # Factor of 1/2 from energy definition
     return 0.5 * e
 end
 
-"""energy_vector(cfg, Slm, Tlm; real_field=true) -> Float64"""
+"""
+    energy_vector(cfg, Slm, Tlm; real_field=true) -> Float64
+
+Compute the kinetic energy of a vector field from its spheroidal/toroidal decomposition.
+
+For a vector field V(θ,φ) = ∇×(T r̂) + ∇(S), where S and T are the spheroidal
+and toroidal scalars, the kinetic energy is:
+
+E = (1/2) ∫ |V|² dΩ = (1/2) Σ l(l+1) [|S_lm|² + |T_lm|²]
+
+The l(l+1) factor arises from the gradient operators in the spheroidal/toroidal
+decomposition. This energy is fundamental in fluid dynamics applications.
+"""
 function energy_vector(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_field::Bool=true)
+    # Validate coefficient array dimensions
     size(Slm) == (cfg.lmax+1, cfg.mmax+1) && size(Tlm) == size(Slm) || throw(DimensionMismatch("Slm/Tlm dims"))
+    
+    # Set up weights for real field symmetry
     w = real_field ? _wm_real(cfg) : ones(cfg.mmax + 1)
+    
+    # Accumulate kinetic energy from both spheroidal and toroidal components
     e = 0.0
     @inbounds for m in 0:cfg.mmax
-        for l in max(1,m):cfg.lmax
-            L2 = l*(l+1)
+        for l in max(1,m):cfg.lmax           # Start from l=1 since l=0 has no gradient
+            L2 = l*(l+1)                     # Laplacian eigenvalue factor
             e += w[m+1] * L2 * (abs2(Slm[l+1, m+1]) + abs2(Tlm[l+1, m+1]))
         end
     end
+    
+    # Factor of 1/2 from kinetic energy definition
     return 0.5 * e
 end
 
-"""enstrophy(cfg, Tlm; real_field=true) -> Float64"""
+"""
+    enstrophy(cfg, Tlm; real_field=true) -> Float64
+
+Compute the enstrophy from the toroidal component of a vector field.
+
+Enstrophy measures the mean-square vorticity and is defined as:
+Z = (1/2) ∫ |ζ|² dΩ = (1/2) Σ [l(l+1)]² |T_lm|²
+
+where ζ is the vorticity (curl of the velocity field). In the spheroidal/toroidal
+decomposition, vorticity comes solely from the toroidal component T, with the
+[l(l+1)]² factor arising from the curl operation.
+
+Enstrophy is a key diagnostic in 2D turbulence and geostrophic flows.
+"""
 function enstrophy(cfg::SHTConfig, Tlm::AbstractMatrix; real_field::Bool=true)
+    # Validate coefficient array dimensions
     size(Tlm) == (cfg.lmax+1, cfg.mmax+1) || throw(DimensionMismatch("Tlm dims"))
+    
+    # Set up weights for real field symmetry
     w = real_field ? _wm_real(cfg) : ones(cfg.mmax + 1)
+    
+    # Accumulate enstrophy from toroidal modes
     z = 0.0
     @inbounds for m in 0:cfg.mmax
-        for l in max(1,m):cfg.lmax
-            L2 = l*(l+1)
-            z += w[m+1] * (L2^2) * abs2(Tlm[l+1, m+1])
+        for l in max(1,m):cfg.lmax           # Start from l=1 since l=0 has no curl
+            L2 = l*(l+1)                     # Laplacian eigenvalue
+            z += w[m+1] * (L2^2) * abs2(Tlm[l+1, m+1])  # [l(l+1)]² factor from curl
         end
     end
+    
+    # Factor of 1/2 from enstrophy definition
     return 0.5 * z
 end
 

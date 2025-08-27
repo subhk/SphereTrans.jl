@@ -1,41 +1,103 @@
 """
-Fallback DFT along longitude to enable AD (e.g., ForwardDiff) when FFTW
-does not support the element type (like Dual numbers).
+FFT Utilities with Automatic Differentiation Support
+
+This module provides FFT operations along the longitude dimension with automatic
+fallback to pure Julia DFT when FFTW cannot handle certain element types.
+
+The primary use case is enabling automatic differentiation through SHTnsKit
+transforms. FFTW cannot handle ForwardDiff.Dual numbers or other AD types,
+so we provide a pure Julia DFT fallback that works with any numeric type.
+
+Performance Notes:
+- FFTW path: O(N log N) - used for normal Float64/ComplexF64 operations
+- DFT fallback: O(N²) - slower but works with arbitrary element types
+- Fallback is essential for gradient computations using ForwardDiff, Zygote, etc.
 """
 
+# Precompute 2π for efficiency in DFT calculations
 const _TWO_PI = 2π
 
+"""
+    _dft_phi(A::AbstractMatrix, dir::Int)
+
+Pure Julia discrete Fourier transform implementation along longitude (phi direction).
+
+This function implements the standard DFT formula manually, without relying on
+FFTW. While slower than optimized FFT libraries, it works with any numeric type
+including automatic differentiation types like ForwardDiff.Dual.
+
+Parameters:
+- A: Input matrix [latitude × longitude] 
+- dir: Direction flag (+1 for inverse DFT, -1 for forward DFT)
+
+The DFT formula implemented is:
+Y[k] = Σⱼ A[j] * exp(dir * 2πi * k * j / N)
+"""
 function _dft_phi(A::AbstractMatrix, dir::Int)
     nlat, nlon = size(A)
-    Y = similar(complex.(A))
+    Y = similar(complex.(A))  # Ensure output is complex-valued
+    
+    # Compute DFT for each latitude band independently
     @inbounds for i in 1:nlat
+        # For each output frequency k
         for k in 0:(nlon-1)
-            s = zero(eltype(Y))
+            s = zero(eltype(Y))  # Accumulator for this frequency
+            
+            # Sum over all input points j
             for j in 0:(nlon-1)
+                # DFT kernel: exp(dir * 2πi * k * j / N)
                 s += A[i, j+1] * cis(dir * _TWO_PI * k * j / nlon)
             end
-            Y[i, k+1] = s
+            
+            Y[i, k+1] = s  # Store result (converting to 1-based indexing)
         end
     end
+    
     return Y
 end
 
-"""fft_phi(A): FFT along second dimension with AD-friendly fallback"""
+"""
+    fft_phi(A::AbstractMatrix)
+
+Forward FFT along the longitude dimension with automatic differentiation support.
+
+This function first attempts to use FFTW's optimized FFT. If that fails (e.g.,
+due to unsupported element types in AD), it automatically falls back to the
+pure Julia DFT implementation.
+
+The longitude dimension corresponds to the azimuthal angle φ in spherical
+coordinates, hence the function name.
+"""
 function fft_phi(A::AbstractMatrix)
     try
+        # Primary path: use optimized FFTW along dimension 2 (longitude)
         return fft(A, 2)
     catch
-        return _dft_phi(A, -1)
+        # Fallback path: use pure Julia DFT for AD compatibility
+        return _dft_phi(A, -1)  # Forward transform uses -1 direction
     end
 end
 
-"""ifft_phi(A): inverse FFT along second dimension with AD-friendly fallback"""
+"""
+    ifft_phi(A::AbstractMatrix)
+
+Inverse FFT along the longitude dimension with automatic differentiation support.
+
+Like fft_phi, this function attempts FFTW first and falls back to pure Julia
+DFT if needed. The inverse transform includes the proper normalization factor.
+
+The scaling by 1/N is required to make the forward and inverse transforms
+true inverses of each other.
+"""
 function ifft_phi(A::AbstractMatrix)
-    nlon = size(A,2)
+    nlon = size(A,2)  # Number of longitude points for normalization
+    
     try
+        # Primary path: use optimized FFTW inverse FFT
         return ifft(A, 2)
     catch
-        return (1/nlon) * _dft_phi(A, +1)
+        # Fallback path: use pure Julia inverse DFT with proper scaling  
+        return (1/nlon) * _dft_phi(A, +1)  # Inverse transform uses +1 direction
     end
 end
 

@@ -1,74 +1,119 @@
 """
-Vector spherical harmonic transforms (spheroidal/toroidal) in pure Julia.
+Vector Spherical Harmonic Transforms using Spheroidal/Toroidal Decomposition
 
-We use the decomposition V = ∇_s S + r̂ × ∇_s T where S,T are scalar potentials with SH
-coefficients Slm, Tlm. On the unit sphere:
-- Vθ = ∂θ S + (im/ sinθ) T
-- Vφ = (im/ sinθ) S - ∂θ T
+This module implements vector spherical harmonic transforms using the Helmholtz
+decomposition into spheroidal and toroidal components. Any vector field on the
+sphere can be uniquely decomposed as:
 
-with Y_lm(θ,φ) = N_{l,m} P_l^m(cosθ) e^{imφ}. We implement analysis/synthesis by FFT in φ and
-Gauss–Legendre quadrature in θ, like the scalar case.
+V(θ,φ) = ∇S(θ,φ) + r̂ × ∇T(θ,φ)
+
+where S and T are scalar potentials called the spheroidal and toroidal scalars.
+
+Mathematical Framework:
+- S and T are expanded in spherical harmonics: S = Σ S_lm Y_l^m, T = Σ T_lm Y_l^m  
+- The velocity components are:
+  * V_θ = ∂S/∂θ + (im/sin θ) T_lm Y_l^m
+  * V_φ = (im/sin θ) S_lm Y_l^m - (1/sin θ) ∂T/∂θ
+
+Physical Interpretation:
+- Spheroidal component (∇S): potential flow, divergent part
+- Toroidal component (r̂ × ∇T): rotational flow, includes vorticity
+
+Implementation uses FFT in longitude and Gauss-Legendre quadrature in latitude,
+following the same efficient approach as scalar transforms.
 """
 
 """
     SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
         -> Vt::Matrix{Float64}, Vp::Matrix{Float64}
 
-Synthesize vector field components (θ, φ) from spheroidal/toroidal spectra.
+Synthesize vector field components from spheroidal and toroidal spectral coefficients.
+
+This function performs the inverse vector spherical harmonic transform, converting
+from spectral space (S_lm, T_lm) to physical space (V_θ, V_φ) components.
+
+The synthesis computes:
+- V_θ = Σ_lm [∂Y_l^m/∂θ S_lm + (im/sin θ) Y_l^m T_lm]  
+- V_φ = Σ_lm [(im/sin θ) Y_l^m S_lm - (1/sin θ) ∂Y_l^m/∂θ T_lm]
+
+Returns the θ (colatitude) and φ (longitude) components of the vector field.
 """
 function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatrix; real_output::Bool=true)
+    # Validate input dimensions
     lmax, mmax = cfg.lmax, cfg.mmax
     size(Slm,1) == lmax+1 && size(Slm,2) == mmax+1 || throw(DimensionMismatch("Slm dims"))
     size(Tlm,1) == lmax+1 && size(Tlm,2) == mmax+1 || throw(DimensionMismatch("Tlm dims"))
-    # Convert incoming coefficients to internal normalization if needed
+    
+    # Convert to internal normalization if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
         S2 = similar(Slm); T2 = similar(Tlm)
         convert_alm_norm!(S2, Slm, cfg; to_internal=true)
         convert_alm_norm!(T2, Tlm, cfg; to_internal=true)
         Slm = S2; Tlm = T2
     end
+    # Set up arrays for synthesis
     nlat, nlon = cfg.nlat, cfg.nlon
     CT = eltype(Slm)
-    Fθ = Matrix{CT}(undef, nlat, nlon)
-    Fφ = Matrix{CT}(undef, nlat, nlon)
+    Fθ = Matrix{CT}(undef, nlat, nlon)  # Fourier coefficients for θ-component
+    Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier coefficients for φ-component
     fill!(Fθ, 0.0 + 0.0im); fill!(Fφ, 0.0 + 0.0im)
 
-    P = Vector{Float64}(undef, lmax + 1)
-    dPdx = Vector{Float64}(undef, lmax + 1)
-    inv_scaleφ = nlon
+    # Working arrays for Legendre polynomial computation
+    P = Vector{Float64}(undef, lmax + 1)      # Legendre polynomials P_l^m(x)
+    dPdx = Vector{Float64}(undef, lmax + 1)   # Derivatives dP_l^m/dx
+    inv_scaleφ = nlon                         # Inverse FFT scaling factor
 
+    # Process each azimuthal mode m in parallel
     @threads for m in 0:mmax
-        col = m + 1
+        col = m + 1  # 1-based indexing for Julia arrays
+        
+        # Compute vector components at each latitude
         for i in 1:nlat
-            x = cfg.x[i]
-            sθ = sqrt(max(0.0, 1 - x*x))
-            gθ = 0.0 + 0.0im
-            gφ = 0.0 + 0.0im
-            inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ
-            Ict = one(CT) * (0 + 1im)
+            x = cfg.x[i]                                    # x = cos(θ_i)
+            sθ = sqrt(max(0.0, 1 - x*x))                   # sin(θ_i), guarded for poles
+            gθ = 0.0 + 0.0im                               # Accumulator for θ-component  
+            gφ = 0.0 + 0.0im                               # Accumulator for φ-component
+            inv_sθ = sθ == 0 ? 0.0 : 1.0 / sθ             # 1/sin(θ), handling poles
+            Ict = one(CT) * (0 + 1im)                      # Imaginary unit for azimuthal derivatives
+            
+            # Choose computation path: precomputed tables or on-the-fly calculation
             if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1 && length(cfg.dplm_tables) == mmax+1
+                # Fast path: use precomputed Legendre polynomial tables
                 tblP = cfg.plm_tables[m+1]; tbld = cfg.dplm_tables[m+1]
+                # Sum contributions from all l-degrees for this (i,m) pair
                 @inbounds for l in m:lmax
-                    N = cfg.Nlm[l+1, col]
-                    dθY = -sθ * N * tbld[l+1, i]
-                    Y = N * tblP[l+1, i]
-                    Sl = Slm[l+1, col]
-                    Tl = Tlm[l+1, col]
-                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
-                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * tbld[l+1, i]) * Tl
+                    N = cfg.Nlm[l+1, col]                           # Normalization factor
+                    dθY = -sθ * N * tbld[l+1, i]                   # ∂Y_l^m/∂θ = -sin(θ) N d P_l^m/dx  
+                    Y = N * tblP[l+1, i]                           # Y_l^m = N P_l^m(cos θ)
+                    
+                    # Get spectral coefficients for this (l,m) mode
+                    Sl = Slm[l+1, col]                             # Spheroidal coefficient
+                    Tl = Tlm[l+1, col]                             # Toroidal coefficient
+                    
+                    # Accumulate vector components using decomposition formulas
+                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl      # V_θ = ∂S/∂θ + (im/sin θ) T
+                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * tbld[l+1, i]) * Tl  # V_φ = (im/sin θ) S - ∂T/∂θ
                 end
             else
+                # Fallback path: compute Legendre polynomials on-the-fly
                 Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
+                
                 @inbounds for l in m:lmax
-                    N = cfg.Nlm[l+1, col]
-                    dθY = -sθ * N * dPdx[l+1]
-                    Y = N * P[l+1]
+                    N = cfg.Nlm[l+1, col]                          # Normalization factor
+                    dθY = -sθ * N * dPdx[l+1]                      # ∂Y_l^m/∂θ = -sin(θ) N d P_l^m/dx
+                    Y = N * P[l+1]                                 # Y_l^m = N P_l^m(cos θ)
+                    
+                    # Get spectral coefficients
                     Sl = Slm[l+1, col]
                     Tl = Tlm[l+1, col]
-                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl
-                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl
+                    
+                    # Accumulate vector components
+                    gθ += dθY * Sl + Ict * m * inv_sθ * Y * Tl      # V_θ component
+                    gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * dPdx[l+1]) * Tl  # V_φ component
                 end
             end
+            
+            # Store Fourier coefficients with inverse FFT scaling
             Fθ[i, col] = inv_scaleφ * gθ
             Fφ[i, col] = inv_scaleφ * gφ
         end

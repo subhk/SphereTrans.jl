@@ -1,23 +1,53 @@
 """
-Normalization and Condon–Shortley phase conversions for spherical harmonic
-coefficients. Internally, transforms use orthonormal Y_lm with CS phase.
+Spherical Harmonic Normalization and Phase Conversion Utilities
+
+This module handles conversions between different normalization conventions and
+phase definitions used in spherical harmonic analysis. Different fields use
+different conventions, so we provide conversion utilities to maintain compatibility.
+
+Internal Convention:
+- SHTnsKit internally uses orthonormal spherical harmonics with Condon-Shortley phase
+- This ensures numerical stability and follows physics conventions
+
+External Conventions Supported:
+- :orthonormal - Standard physics normalization: ∫ Y_l^m (Y_{l'}^{m'})* dΩ = δ_{ll'} δ_{mm'}
+- :fourpi - Geodesy convention: Y_l^m scaled by sqrt(4π)  
+- :schmidt - Semi-normalized: common in geomagnetism and geodesy
+
+Phase Conventions:
+- Condon-Shortley phase: includes (-1)^m factor (standard in physics)
+- No CS phase: omits the (-1)^m factor (used in some mathematics texts)
 """
 
 """
     norm_scale_from_orthonormal(l::Int, m::Int, to::Symbol) -> Float64
 
-Return k such that Y_to = k * Y_orthonormal.
-Supported `to`: :orthonormal, :fourpi, :schmidt
+Calculate the scaling factor to convert from orthonormal to target normalization.
+
+Returns k such that Y_target = k * Y_orthonormal, allowing conversion between
+different spherical harmonic normalization conventions while preserving the
+mathematical relationships.
+
+The scale factor depends on the target convention:
+- :orthonormal → k = 1 (no scaling)
+- :fourpi → k = sqrt(4π) (geodesy convention)
+- :schmidt → k = sqrt(4π/(2l+1)) (semi-normalized, common in geomagnetics)
 """
 function norm_scale_from_orthonormal(l::Int, m::Int, to::Symbol)
     if to === :orthonormal
+        # No conversion needed
         return 1.0
+        
     elseif to === :fourpi
-        # Common geodesy convention: overall sqrt(4π)
+        # Geodesy convention: multiply by sqrt(4π) 
+        # This removes the 1/sqrt(4π) factor from orthonormal normalization
         return sqrt(4π)
+        
     elseif to === :schmidt
-        # Schmidt semi-normalized: sqrt(4π/(2l+1)) relative to orthonormal
+        # Schmidt semi-normalized spherical harmonics
+        # Used extensively in geomagnetic field modeling (e.g., IGRF, WMM)
         return sqrt(4π / (2l + 1))
+        
     else
         throw(ArgumentError("Unsupported normalization: $to"))
     end
@@ -26,15 +56,26 @@ end
 """
     cs_phase_factor(m::Int, cs_from::Bool, cs_to::Bool) -> Float64
 
-Return α such that Y_to = α * Y_from when toggling Condon–Shortley phase.
-If switching from CS to no-CS: α = (-1)^m; from no-CS to CS: α = (-1)^m (inverse).
+Calculate the phase factor for converting between Condon-Shortley conventions.
+
+The Condon-Shortley phase is a (-1)^m factor included in some spherical harmonic
+definitions. This function returns the scaling factor α such that:
+Y_to = α * Y_from when switching phase conventions.
+
+The conversion rule is:
+- If cs_from = cs_to: α = 1 (no change needed)
+- If switching: α = (-1)^m (the CS phase factor itself)
+
+Note: This applies to the basis functions. For coefficients, the transformation
+may need to be inverted depending on the context.
 """
 function cs_phase_factor(m::Int, cs_from::Bool, cs_to::Bool)
     if cs_from == cs_to
+        # No phase conversion needed
         return 1.0
     else
-        # Toggle CS: multiply by (-1)^m on the basis; coefficients scale by inverse
-        # Caller must invert when mapping coefficients.
+        # Apply Condon-Shortley phase toggle: (-1)^m
+        # This handles switching between CS and non-CS conventions
         return (-1.0)^m
     end
 end
