@@ -388,6 +388,9 @@ mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl --qst
 
 # Ensure required optional packages are available (first time)
 julia --project=. -e 'using Pkg; Pkg.add(["MPI","PencilArrays","PencilFFTs"])'
+ 
+# Distributed FFT roundtrip (2 processes)
+mpiexec -n 2 julia --project=. examples/parallel_fft_roundtrip.jl
 ```
 
 Spectral operator demo (cosθ application in spectral space):

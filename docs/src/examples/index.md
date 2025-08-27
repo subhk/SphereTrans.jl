@@ -463,6 +463,16 @@ MPI.Finalize()
 - Using parallel operators for distributed computation
 - Performance timing and comparison with models
 
+### Run Example Scripts
+
+```bash
+# Per-rank SHT scalar roundtrip (safe PencilArrays allocation)
+mpiexec -n 2 julia --project=. examples/parallel_roundtrip.jl
+
+# Distributed FFT roundtrip along φ using PencilFFTs
+mpiexec -n 2 julia --project=. examples/parallel_fft_roundtrip.jl
+```
+
 ### SIMD Vectorization Example
 
 **Goal:** Leverage advanced SIMD optimizations for single-node performance
