@@ -1,69 +1,90 @@
-using Test
-using LinearAlgebra
-using ChainRulesCore
-using Random
-using SHTnsKit
-using Zygote
+# SHTnsKit.jl Test Suite
+# 
+# This comprehensive test suite validates the correctness of spherical harmonic transforms
+# and related operations in both serial and parallel (MPI) environments.
 
+using Test              # Julia testing framework
+using LinearAlgebra    # For linear algebra operations 
+using ChainRulesCore   # For automatic differentiation support
+using Random           # For reproducible random number generation
+using SHTnsKit         # The package being tested
+using Zygote          # For automatic differentiation tests
+
+"""
+    parseval_scalar_test(lmax::Int)
+
+Test Parseval's identity for scalar fields: energy should be conserved between
+spectral and spatial representations. This verifies the orthogonality and 
+normalization of the spherical harmonic basis functions.
+"""
 function parseval_scalar_test(lmax::Int)
-    nlat = lmax + 2
-    nlon = 2*lmax + 1
+    # Set up a slightly over-resolved grid to ensure accuracy
+    nlat = lmax + 2  # Extra latitude points for Gauss-Legendre accuracy
+    nlon = 2*lmax + 1  # Minimum longitude points for alias-free transforms
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    rng = MersenneTwister(42)
+    rng = MersenneTwister(42)  # Reproducible random numbers
 
-    # Generate random spectral coefficients and synthesize the field
+    # Generate random spectral coefficients with proper symmetry for real fields
     alm = randn(rng, lmax+1, lmax+1) .+ im * randn(rng, lmax+1, lmax+1)
-    # Ensure real-field consistency: m=0 coefficients real
+    # Ensure real-field consistency: m=0 coefficients must be real
     alm[:, 1] .= real.(alm[:, 1])
     f = synthesis(cfg, alm; real_output=true)
 
+    # Parseval's identity: ∫|f|² dΩ = Σ|a_lm|² (energy conservation)
     @test isapprox(energy_scalar(cfg, alm), grid_energy_scalar(cfg, f); rtol=1e-10, atol=1e-12)
  
 
+
+# ===== PARALLEL/DISTRIBUTED TESTS =====
+# These tests validate the MPI-parallel spherical harmonic transforms
+# They are optional and only run when SHTNSKIT_RUN_MPI_TESTS=1
 
 @testset "Parallel roundtrip (optional)" begin
     try
         if get(ENV, "SHTNSKIT_RUN_MPI_TESTS", "0") == "1"
             @info "Attempting optional parallel roundtrip tests"
-            @eval using MPI
-            @eval using PencilArrays
-            @eval using PencilFFTs
+            @eval using MPI           # Message Passing Interface for parallelization
+            @eval using PencilArrays  # Distributed array framework 
+            @eval using PencilFFTs    # Distributed FFT operations
 
-            MPI.Init()
+            MPI.Init()  # Initialize MPI environment
             lmax = 6
             nlat = lmax + 2
             nlon = 2*lmax + 1
 
+            # Create configuration and distributed data layout
             cfg = create_gauss_config(lmax, nlat; nlon=nlon)
             P = PencilArrays.Pencil((:θ,:φ), (nlat, nlon); comm=MPI.COMM_WORLD)
-            fθφ = PencilArrays.zeros(P; eltype=Float64)
+            fθφ = PencilArrays.zeros(P; eltype=Float64)  # Distributed spatial array
 
-            # simple fill
+            # Fill with simple test pattern (each process fills its local portion)
             for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
                 fθφ[iθ, iφ] = sin(0.1*(iθ+1)) + cos(0.2*(iφ+1))
             end
             
+            # Test scalar roundtrip: spatial → spectral → spatial
             rel_local, rel_global = dist_scalar_roundtrip!(cfg, fθφ)
-            @test rel_global < 1e-8
+            @test rel_global < 1e-8  # Check global error across all processes
 
-            # vector
-            Vt = PencilArrays.zeros(P; eltype=Float64)
-            Vp = PencilArrays.zeros(P; eltype=Float64)
+            # Test vector field roundtrip
+            Vt = PencilArrays.zeros(P; eltype=Float64)  # θ-component
+            Vp = PencilArrays.zeros(P; eltype=Float64)  # φ-component
             for (iθ, iφ) in zip(eachindex(axes(Vt,1)), eachindex(axes(Vt,2)))
-                Vt[iθ, iφ] = 0.1*(iθ+1)
-                Vp[iθ, iφ] = 0.05*(iφ+1)
+                Vt[iθ, iφ] = 0.1*(iθ+1)     # Meridional velocity
+                Vp[iθ, iφ] = 0.05*(iφ+1)    # Zonal velocity
             end
 
+            # Test vector roundtrip: (Vt,Vp) → (S_lm,T_lm) → (Vt,Vp)
             (rl_t, rg_t), (rl_p, rg_p) = dist_vector_roundtrip!(cfg, Vt, Vp)
-            @test rg_t < 1e-7 && rg_p < 1e-7
-            MPI.Finalize()
+            @test rg_t < 1e-7 && rg_p < 1e-7  # Both components should roundtrip accurately
+            MPI.Finalize()  # Clean up MPI resources
         else
             @info "Skipping parallel roundtrip tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
         end
     catch e
         @info "Skipping parallel roundtrip tests" exception=(e, catch_backtrace())
         try
-            MPI.isinitialized() && MPI.Finalize()
+            MPI.isinitialized() && MPI.Finalize()  # Ensure MPI cleanup on error
         catch
         end
     end
