@@ -27,7 +27,6 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'  # Current LTS
           - '1.11'  # Latest stable release
         os:
           - macOS-latest
