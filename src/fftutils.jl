@@ -73,6 +73,9 @@ function fft_phi(A::AbstractMatrix)
         # Primary path: use optimized FFTW along dimension 2 (longitude)
         return fft(A, 2)
     catch
+        if get(ENV, "SHTNSKIT_FORCE_FFTW", "0") == "1"
+            error("FFTW unavailable but SHTNSKIT_FORCE_FFTW=1; refusing DFT fallback")
+        end
         # Fallback path: use pure Julia DFT for AD compatibility
         return _dft_phi(A, -1)  # Forward transform uses -1 direction
     end
@@ -96,8 +99,10 @@ function ifft_phi(A::AbstractMatrix)
         # Primary path: use optimized FFTW inverse FFT
         return ifft(A, 2)
     catch
+        if get(ENV, "SHTNSKIT_FORCE_FFTW", "0") == "1"
+            error("FFTW unavailable but SHTNSKIT_FORCE_FFTW=1; refusing DFT fallback")
+        end
         # Fallback path: use pure Julia inverse DFT with proper scaling  
         return (1/nlon) * _dft_phi(A, +1)  # Inverse transform uses +1 direction
     end
 end
-

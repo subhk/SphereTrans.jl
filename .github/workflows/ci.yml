@@ -83,6 +83,9 @@ jobs:
       - name: Run tests with enhanced error handling
         uses: julia-actions/julia-runtest@v1
         env:
+          SHTNSKIT_TEST_VERBOSE: "1"
+          SHTNSKIT_PHI_SCALE: "dft"
+          SHTNSKIT_FORCE_FFTW: "1"
           # Advanced features testing
           SHTNSKIT_TEST_ADVANCED: "true"
           SHTNSKIT_TEST_AD: "true"
