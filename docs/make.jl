@@ -164,7 +164,9 @@ if get(ENV, "CI", "false") == "true"
         target = "build",
         deps = nothing,
         make = nothing,
-        versions = ["stable" => "v^", "v#.#", "dev" => "dev"],
+        # Until the first tagged release, publish only the "dev" docs.
+        # After tagging (e.g., v0.1.0), switch to: ["stable" => "v^", "v#.#", "dev" => "dev"]
+        versions = ["dev" => "dev"],
         forcepush = false,
         deploy_config = Documenter.GitHubActions(),
         push_preview = true
