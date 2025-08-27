@@ -386,27 +386,6 @@ vplan = DistSphtorPlan(cfg, PencilArrays.zeros(Pθφ; eltype=Float64); use_rfft=
 MPI.Finalize()
 ```
 
-### Architecture Overview
-
-SHTnsKit.jl uses Julia's modern package extension system:
-
-```
-SHTnsKit/
-├── src/                          # Core functionality (always available)
-├── ext/
-│   ├── SHTnsKitParallelExt.jl   # MPI + PencilArrays + PencilFFTs
-│   └── SHTnsKitLoopVecExt.jl    # LoopVectorization optimizations
-└── examples/
-    ├── parallel_roundtrip.jl    # Distributed scalar/vector/3D roundtrip demo
-    └── alloc_benchmark.jl       # Allocation micro-benchmark for plan vs baseline
-```
-
-**Graceful Feature Detection:**
-- **No optional packages**: All functions work in serial mode
-- **MPI available**: Parallel computing automatically enabled
-- **Full stack**: Maximum performance with all optimizations
-
-
 ### Automatic Differentiation
 
 Full support for gradient-based optimization:
@@ -553,8 +532,6 @@ Tip: To avoid allocations for real-output distributed synthesis, construct plans
 Contributions are welcome! Areas of particular interest:
 
 - **GPU Computing**: CUDA/ROCm support for massive parallelism
-- **Advanced Algorithms**: Fast multipole methods, butterfly algorithms  
-- **Domain-Specific Tools**: Climate analysis, astrophysics applications
 - **Performance Optimization**: Architecture-specific tuning
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
