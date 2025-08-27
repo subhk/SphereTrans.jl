@@ -102,9 +102,6 @@ include("parallel_ops_pencil.jl")       # Parallel differential operators using 
 include("parallel_rotations_pencil.jl") # Parallel spherical rotation operations
 include("parallel_local.jl")            # Local (per-process) operations and utilities
 
-# ===== CONVENIENCE FUNCTIONS =====
-# Convenience: forward Base.zeros for Pencil topologies to PencilArrays.zeros
-# This helps users who call `zeros(P; eltype=...)` instead of `PencilArrays.zeros(P; ...)`
-import Base: zeros
-zeros(P::Pencil; eltype=Float64) = PencilArrays.zeros(P; eltype=eltype)
+# Note: Avoid forwarding Base.zeros(Pencil) to PencilArrays.zeros to prevent
+# potential recursion when PencilArrays.zeros may call Base.zeros internally.
 end # module SHTnsKitParallelExt
