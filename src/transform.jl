@@ -58,13 +58,13 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
             alm[l+1, col] *= cfg.Nlm[l+1, col] * scaleφ
         end
     end
-    # Convert to cfg's requested normalization/CS if needed
+    # Convert to user's requested normalization/phase convention if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
         alm2 = similar(alm)
-        convert_alm_norm!(alm2, alm, cfg; to_internal=false)
+        convert_alm_norm!(alm2, alm, cfg; to_internal=false)  # Convert from internal to user format
         return alm2
     else
-        return alm
+        return alm  # Already in the desired orthonormal format
     end
 end
 
