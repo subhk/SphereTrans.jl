@@ -82,27 +82,35 @@ export loss_vorticity_grid, grad_loss_vorticity_Tlm, loss_and_grad_vorticity_Tlm
 # ===== PERFORMANCE OPTIMIZATIONS =====
 export prepare_plm_tables!, enable_plm_tables!, disable_plm_tables!  # Precomputed Legendre tables
 
-# Optional LoopVectorization-powered helpers (defined via extension)
-export analysis_turbo, synthesis_turbo
-export turbo_apply_laplacian!, benchmark_turbo_vs_simd
+# ===== EXTENSION-PROVIDED FUNCTIONS =====
+# These functions are implemented in Julia package extensions and only available when
+# the corresponding packages are loaded
 
-# AD convenience wrappers (populated via extensions)
-export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm
-export fdgrad_scalar_energy, fdgrad_vector_energy
-export zgrad_rotation_angles_real, zgrad_rotation_angles_cplx
-export dist_analysis, dist_synthesis
-export dist_scalar_roundtrip!, dist_vector_roundtrip!
-export DistPlan, dist_synthesis!
-export DistAnalysisPlan, dist_analysis!
-export DistSphtorPlan, dist_spat_to_SHsphtor!, dist_SHsphtor_to_spat!
-export DistQstPlan, dist_spat_to_SHqst!, dist_SHqst_to_spat!
-export dist_SH_to_lat, dist_SH_to_point, dist_SHqst_to_point
-export dist_spat_to_SH_packed, dist_SH_packed_to_spat
-export dist_spat_cplx_to_SH, dist_SH_to_spat_cplx
-export dist_SHqst_to_lat
-export dist_SH_rotate_euler
+# Optional LoopVectorization-powered helpers (SHTnsKitLoopVecExt extension)
+export analysis_turbo, synthesis_turbo                    # Vectorized transforms
+export turbo_apply_laplacian!, benchmark_turbo_vs_simd    # Performance utilities
+
+# Automatic Differentiation wrappers (AD extensions: Zygote, ForwardDiff)
+export zgrad_scalar_energy, zgrad_vector_energy, zgrad_enstrophy_Tlm      # Zygote gradients
+export fdgrad_scalar_energy, fdgrad_vector_energy                         # ForwardDiff gradients
+export zgrad_rotation_angles_real, zgrad_rotation_angles_cplx             # Rotation gradients
+
+# Distributed/Parallel computing functions (SHTnsKitParallelExt extension)
+export dist_analysis, dist_synthesis                      # Distributed transforms
+export dist_scalar_roundtrip!, dist_vector_roundtrip!    # Distributed roundtrip tests
+export DistPlan, dist_synthesis!                         # Distributed plans
+export DistAnalysisPlan, dist_analysis!                  
+export DistSphtorPlan, dist_spat_to_SHsphtor!, dist_SHsphtor_to_spat!  # Distributed vector transforms
+export DistQstPlan, dist_spat_to_SHqst!, dist_SHqst_to_spat!           # Distributed Q,S,T transforms
+export dist_SH_to_lat, dist_SH_to_point, dist_SHqst_to_point           # Distributed evaluation
+export dist_spat_to_SH_packed, dist_SH_packed_to_spat                   # Distributed packed transforms
+export dist_spat_cplx_to_SH, dist_SH_to_spat_cplx                      # Distributed complex transforms
+export dist_SHqst_to_lat                                                # Distributed Q,S,T to latitude
+export dist_SH_rotate_euler                                             # Distributed Euler rotations
 export dist_SH_Zrotate_packed, dist_SH_Yrotate_packed, dist_SH_Yrotate90_packed, dist_SH_Xrotate90_packed
 
+# ===== EXTENSION FALLBACK FUNCTIONS =====
+# These provide informative error messages when extension packages are not loaded
 # Default fallbacks if extensions are not loaded (use broad signatures to avoid overwriting)
 zgrad_scalar_energy(::SHTConfig, ::Any) = error("Zygote extension not loaded")
 zgrad_vector_energy(::SHTConfig, ::Any, ::Any) = error("Zygote extension not loaded")
