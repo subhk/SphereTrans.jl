@@ -17,6 +17,11 @@ Performance Notes:
 # Precompute 2π for efficiency in DFT calculations
 const _TWO_PI = 2π
 
+# Track which backend was used most recently for φ-FFTs: :fftw or :dft
+const _FFT_BACKEND = Ref{:Symbol}(:unknown)
+
+fft_phi_backend() = _FFT_BACKEND[]
+
 """
     _dft_phi(A::AbstractMatrix, dir::Int)
 
@@ -71,13 +76,17 @@ coordinates, hence the function name.
 function fft_phi(A::AbstractMatrix)
     try
         # Primary path: use optimized FFTW along dimension 2 (longitude)
-        return fft(A, 2)
+        local Y = fft(A, 2)
+        _FFT_BACKEND[] = :fftw
+        return Y
     catch
         if get(ENV, "SHTNSKIT_FORCE_FFTW", "0") == "1"
             error("FFTW unavailable but SHTNSKIT_FORCE_FFTW=1; refusing DFT fallback")
         end
         # Fallback path: use pure Julia DFT for AD compatibility
-        return _dft_phi(A, -1)  # Forward transform uses -1 direction
+        local Y = _dft_phi(A, -1)  # Forward transform uses -1 direction
+        _FFT_BACKEND[] = :dft
+        return Y
     end
 end
 
@@ -97,12 +106,16 @@ function ifft_phi(A::AbstractMatrix)
     
     try
         # Primary path: use optimized FFTW inverse FFT
-        return ifft(A, 2)
+        local y = ifft(A, 2)
+        _FFT_BACKEND[] = :fftw
+        return y
     catch
         if get(ENV, "SHTNSKIT_FORCE_FFTW", "0") == "1"
             error("FFTW unavailable but SHTNSKIT_FORCE_FFTW=1; refusing DFT fallback")
         end
         # Fallback path: use pure Julia inverse DFT with proper scaling  
-        return (1/nlon) * _dft_phi(A, +1)  # Inverse transform uses +1 direction
+        local y = (1/nlon) * _dft_phi(A, +1)  # Inverse transform uses +1 direction
+        _FFT_BACKEND[] = :dft
+        return y
     end
 end

@@ -47,6 +47,7 @@ export spat_to_SH, SH_to_spat, spat_to_SH_l, SH_to_spat_l, spat_to_SH_ml, SH_to_
 # ===== INDEXING AND COMPLEX NUMBER UTILITIES =====
 export nlm_calc, nlm_cplx_calc, LM_index, LiM_index, im_from_lm, LM_cplx_index
 export spat_cplx_to_SH, SH_to_spat_cplx, SH_to_point_cplx  # Complex number transforms
+export fft_phi_backend
 
 # ===== VECTOR FIELD TRANSFORMS =====
 export spat_to_SHsphtor, SHsphtor_to_spat, SHsph_to_spat, SHtor_to_spat, SH_to_grad_spat

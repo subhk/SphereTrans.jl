@@ -17,6 +17,11 @@ try
 catch e
     VERBOSE && @info "FFTW not available for tests" exception=(e, nothing)
 end
+VERBOSE && @info "phi_inv_scale mode" mode=get(ENV, "SHTNSKIT_PHI_SCALE", "dft")
+try
+    VERBOSE && @info "FFT backend (initial)" backend=SHTnsKit.fft_phi_backend()
+catch
+end
 
 """
     parseval_scalar_test(lmax::Int)
