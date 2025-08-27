@@ -142,43 +142,6 @@ Vr2, Vt2, Vp2 = SHTnsKit.dist_SHqst_to_spat(cfg, Q, S, T; prototype_θφ=Vr, rea
 MPI.Finalize()
 ```
 
-## Distributed Guide and API Cheatsheet
-
-New to the distributed API? Start with the guide:
-
-- docs/Distributed_SHTnsKit_Guide.md
-
-Changelog: see [CHANGELOG.md](CHANGELOG.md)
-
-### Distributed API Cheatsheet
-
-- Scalar
-  - `dist_analysis(cfg, fθφ; use_rfft=true)` → `Alm`
-  - `dist_synthesis(cfg, Alm; prototype_θφ=fθφ, real_output=true, use_rfft=true)` → `fθφ`
-  - Plans: `DistAnalysisPlan(cfg, fθφ; use_rfft)`, `DistPlan(cfg, fθφ; use_rfft)` and their `dist_*!(...)` variants
-- Vector (sphtor)
-  - `dist_spat_to_SHsphtor(cfg, Vt, Vp; use_rfft=true)` → `Slm, Tlm`
-  - `dist_SHsphtor_to_spat(cfg, Slm, Tlm; prototype_θφ=Vt, real_output=true, use_rfft=true)` → `Vt, Vp`
-  - Plan: `DistSphtorPlan(cfg, Vt; use_rfft)`
-- QST
-  - `dist_spat_to_SHqst(cfg, Vr, Vt, Vp)` → `Q, S, T`
-  - `dist_SHqst_to_spat(cfg, Q, S, T; prototype_θφ=Vr, real_output=true, use_rfft=true)` → `Vr, Vt, Vp`
-  - Plan: `DistQstPlan(cfg, Vr; use_rfft)`
-- Diagnostics (PencilArrays)
-  - `energy_scalar(cfg, Alm)`, `energy_vector_l_spectrum(cfg, Slm, Tlm)`, `grid_energy_scalar(cfg, fθφ)`
-  - Roundtrips: `dist_scalar_roundtrip!(cfg, fθφ)`, `dist_vector_roundtrip!(cfg, Vt, Vp)`
-- Operators and Rotations
-  - `dist_apply_laplacian!(cfg, Alm)`, `dist_SH_mul_mx!(cfg, mx, Alm, R)`
-  - Rotations: `dist_SH_Zrotate`, `dist_SH_Yrotate` (truncated-gather), `dist_SH_Yrotate_allgatherm!`, `dist_SH_rotate_euler`, `dist_SH_Yrotate90`, `dist_SH_Xrotate90`
-  - Packed rotations: `dist_SH_Zrotate_packed`, `dist_SH_Yrotate_packed`, `dist_SH_Yrotate90_packed`, `dist_SH_Xrotate90_packed`
-- Local/Point and Packed Conversions
-  - Local/point: `dist_SH_to_point`, `dist_SH_to_lat`, `dist_SHqst_to_point`, `dist_SHqst_to_lat`
-  - Packed real: `dist_spat_to_SH_packed`, `dist_SH_packed_to_spat`
-  - Packed complex: `dist_spat_cplx_to_SH`, `dist_SH_to_spat_cplx`
-- AD (distributed wrappers)
-  - Zygote: `zgrad_scalar_energy(cfg, fθφ)`, `zgrad_vector_energy(cfg, Vt, Vp)`
-  - ForwardDiff: `fdgrad_scalar_energy(cfg, fθφ)`, `fdgrad_vector_energy(cfg, Vt, Vp)`
-
 ### High-Performance SIMD
 
 ```julia
