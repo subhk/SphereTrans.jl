@@ -316,8 +316,8 @@ end
 
 # ===== CORE MATHEMATICAL PROPERTY TESTS =====
 @testset "Parseval identities" begin
-    parseval_scalar_test(4)  # Test scalar energy conservation
-    parseval_vector_test(4)  # Test vector energy conservation
+    parseval_scalar_test(10)  # Test scalar energy conservation
+    parseval_vector_test(10)  # Test vector energy conservation
 end
 
 # ===== AUTOMATIC DIFFERENTIATION TESTS =====
