@@ -7,35 +7,44 @@ Returns coefficients `alm` of size `(cfg.lmax+1, cfg.mmax+1)` with indices `(l+1
 Normalization uses orthonormal spherical harmonics with Condon–Shortley phase.
 """
 function analysis(cfg::SHTConfig, f::AbstractMatrix)
+    # Validate input dimensions match the configured grid
     nlat, nlon = cfg.nlat, cfg.nlon
     size(f, 1) == nlat || throw(DimensionMismatch("first dim must be nlat=$(nlat)"))
     size(f, 2) == nlon || throw(DimensionMismatch("second dim must be nlon=$(nlon)"))
+    
+    # Convert input to complex and perform FFT along longitude (φ) direction
     fC = complex.(f)
-    Fφ = fft_phi(fC)
+    Fφ = fft_phi(fC)  # Now Fφ[lat, m] contains Fourier modes
 
+    # Allocate output array for spherical harmonic coefficients
     lmax, mmax = cfg.lmax, cfg.mmax
     CT = eltype(Fφ)
-    alm = Matrix{CT}(undef, lmax + 1, mmax + 1)
+    alm = Matrix{CT}(undef, lmax + 1, mmax + 1)  # alm[l+1, m+1] for (l,m) indexing
     fill!(alm, 0.0 + 0.0im)
 
-    # Temporary buffer for P_l^m(x) at one θ or use precomputed tables
+    # Working buffer for Legendre polynomials (when tables not used)
     P = Vector{Float64}(undef, lmax + 1)
-    scaleφ = cfg.cphi  # 2π / nlon
+    scaleφ = cfg.cphi  # Longitude step size: 2π / nlon
+    
+    # Process each azimuthal mode m in parallel
     @threads for m in 0:mmax
-        col = m + 1
-        # Accumulate over latitudes
+        col = m + 1  # Julia 1-based indexing
+        
+        # Integrate over colatitude θ using Gauss-Legendre quadrature
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
-            tbl = cfg.plm_tables[m+1]
+            # Fast path: use precomputed Legendre polynomial tables
+            tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
-                Fi = Fφ[i, col]
-                wi = cfg.w[i]
-                @inbounds for l in m:lmax
+                Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
+                wi = cfg.w[i]         # Gauss-Legendre weight
+                @inbounds for l in m:lmax  # Only l ≥ m contribute for order m
                     alm[l+1, col] += (wi * tbl[l+1, i]) * Fi
                 end
             end
         else
+            # Fallback: compute Legendre polynomials on-the-fly
             for i in 1:nlat
-                Plm_row!(P, cfg.x[i], lmax, m)
+                Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
                 @inbounds for l in m:lmax
@@ -43,7 +52,8 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
                 end
             end
         end
-        # Apply normalization and φ scaling
+        
+        # Apply spherical harmonic normalization and longitude scaling
         @inbounds for l in m:lmax
             alm[l+1, col] *= cfg.Nlm[l+1, col] * scaleφ
         end
