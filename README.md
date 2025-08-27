@@ -620,5 +620,4 @@ SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), ens
 
 - **[SHTns Documentation](https://nschaeff.bitbucket.io/shtns/)**: Original C library
 - **[Spherical Harmonics Theory](https://en.wikipedia.org/wiki/Spherical_harmonics)**: Mathematical background  
-- **[Julia Parallel Computing](https://docs.julialang.org/en/v1/manual/parallel-computing/)**: Julia parallelization guide
-- **[MPI.jl Documentation](https://juliaparallel.org/MPI.jl/stable/)**: MPI interface for Julia
+
