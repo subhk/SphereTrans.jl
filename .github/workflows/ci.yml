@@ -31,7 +31,6 @@ jobs:
         os:
           - macOS-latest
           - windows-latest
-          - ubuntu-latest
         arch:
           - x64
         exclude:
@@ -52,11 +51,7 @@ jobs:
           # Key on OS + Julia + Project/Manifest hash + commit to avoid stale caches
           key: ${{ runner.os }}-julia-${{ matrix.version }}-${{ hashFiles('Project.toml') }}-${{ hashFiles('Manifest.toml') }}-${{ github.sha }}
       
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
+      # Linux deps step removed since Ubuntu is not in the test matrix
           
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -188,7 +183,7 @@ jobs:
 
   benchmark:
     name: Performance Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: macOS-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 45
     
@@ -201,10 +196,9 @@ jobs:
           
       - uses: julia-actions/cache@v2
       
-      - name: Install system dependencies
+      - name: Install system dependencies (macOS)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
+          brew install fftw
       
       - name: Run performance benchmarks
         run: |
@@ -253,7 +247,7 @@ jobs:
 
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: macOS-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     permissions:
       actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
@@ -269,10 +263,9 @@ jobs:
           
       - uses: julia-actions/cache@v2
       
-      - name: Install system dependencies
+      - name: Install system dependencies (macOS)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran libfftw3-dev
+          brew install fftw
       
       - name: Configure doc environment
         shell: julia --project=docs --color=yes {0}
