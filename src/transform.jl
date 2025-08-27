@@ -93,7 +93,7 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
     # Scale continuous Fourier coefficients to DFT bins for ifft.
     # ifft includes 1/nlon, so we multiply by nlon here to match f(φ) = Σ g_m e^{imφ}.
-    inv_scaleφ = nlon                    # Inverse FFT scaling factor
+    inv_scaleφ = nlon                    # Restore previous inverse FFT scaling
 
     # Convert incoming coefficients to internal normalization if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
