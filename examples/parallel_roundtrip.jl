@@ -64,7 +64,14 @@ function main()
 
     #paalloc(t; eltype=Float64) = (try PencilArrays.zeros(t; eltype=eltype) catch; PencilArrays.allocate(t; eltype=eltype) end)
     
-    paalloc(t; eltype=Float64) = PencilArrays.zeros(t; eltype=eltype)
+    #paalloc(t; eltype=Float64) = PencilArrays.zeros(t; eltype=eltype)
+
+    paalloc(t; eltype=Float64) = try
+    PencilArray{eltype}(t)
+    catch
+        PencilArrays.allocate(t; eltype=eltype)
+    end
+
     
     fθφ = paalloc(topo; eltype=Float64)       # Allocate distributed array
     fill!(fθφ, 0)
