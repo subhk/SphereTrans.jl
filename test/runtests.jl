@@ -267,49 +267,66 @@ end
     end
 end
 
+"""
+    parseval_vector_test(lmax::Int)
+
+Test Parseval's identity for vector fields: energy should be conserved between
+spectral (S_lm, T_lm) and spatial (V_θ, V_φ) representations. This tests the 
+spheroidal/toroidal decomposition and ensures proper normalization.
+"""
 function parseval_vector_test(lmax::Int)
-    nlat = lmax + 2
+    nlat = lmax + 2   # Over-resolved grid for accuracy
     nlon = 2*lmax + 1
 
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
-    rng = MersenneTwister(24)
+    rng = MersenneTwister(24)  # Different seed from scalar test
 
-    # Generate random vector spectra and synthesize the fields
-    Slm = randn(rng, lmax+1, lmax+1) .+ im * randn(rng, lmax+1, lmax+1)
-    Tlm = randn(rng, lmax+1, lmax+1) .+ im * randn(rng, lmax+1, lmax+1)
+    # Generate random spheroidal and toroidal spectral coefficients
+    Slm = randn(rng, lmax+1, lmax+1) .+ im * randn(rng, lmax+1, lmax+1)  # Spheroidal
+    Tlm = randn(rng, lmax+1, lmax+1) .+ im * randn(rng, lmax+1, lmax+1)  # Toroidal
+    # Ensure real-field consistency for m=0 modes
     Slm[:, 1] .= real.(Slm[:, 1])
     Tlm[:, 1] .= real.(Tlm[:, 1])
+    
+    # Synthesize vector components from spectral coefficients
     Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=true)
 
+    # Parseval for vector fields: ∫(|V_θ|² + |V_φ|²) dΩ = Σ(|S_lm|² + |T_lm|²)
     @test isapprox(energy_vector(cfg, Slm, Tlm), grid_energy_vector(cfg, Vt, Vp); rtol=1e-9, atol=1e-11)
 end
 
+# ===== CORE MATHEMATICAL PROPERTY TESTS =====
 @testset "Parseval identities" begin
-    parseval_scalar_test(4)
-    parseval_vector_test(4)
+    parseval_scalar_test(4)  # Test scalar energy conservation
+    parseval_vector_test(4)  # Test vector energy conservation
 end
+
+# ===== AUTOMATIC DIFFERENTIATION TESTS =====
+# These tests verify that SHTnsKit functions are compatible with Julia's 
+# automatic differentiation ecosystem (ForwardDiff, Zygote)
 
 @testset "AD gradients - ForwardDiff" begin
     try
-        using ForwardDiff
+        using ForwardDiff  # Forward-mode automatic differentiation
         lmax = 3
         nlat = lmax + 2
         nlon = 2*lmax + 1
 
         cfg = create_gauss_config(lmax, nlat; nlon=nlon)
         rng = MersenneTwister(7)
-        f0 = randn(rng, nlat, nlon)
+        f0 = randn(rng, nlat, nlon)  # Random spatial field
 
+        # Define loss function: spatial field → spectral energy
         loss(x) = energy_scalar(cfg, analysis(cfg, reshape(x, nlat, nlon)))
-        x0 = vec(f0)
-        g = ForwardDiff.gradient(loss, x0)
+        x0 = vec(f0)  # Flatten for ForwardDiff
+        g = ForwardDiff.gradient(loss, x0)  # Compute gradient w.r.t. spatial field
 
-        # Dot-test
-        h = randn(rng, length(x0))
+        # Validate gradient using finite difference check
+        h = randn(rng, length(x0))  # Random perturbation direction
         ϵ = 1e-6
-        φ(ξ) = loss(x0 .+ ξ .* h)
-        dfdξ_fd = (φ(ϵ) - φ(-ϵ)) / (2ϵ)
-        dfdξ_ad = dot(g, h)
+        φ(ξ) = loss(x0 .+ ξ .* h)  # Loss along perturbation direction
+        dfdξ_fd = (φ(ϵ) - φ(-ϵ)) / (2ϵ)  # Finite difference derivative
+        dfdξ_ad = dot(g, h)  # Automatic differentiation derivative
         @test isapprox(dfdξ_ad, dfdξ_fd; rtol=5e-4, atol=1e-7)
     catch e
         @info "Skipping ForwardDiff gradient test" exception=(e, catch_backtrace())
