@@ -1,17 +1,53 @@
+"""
+ForwardDiff Extension for Automatic Differentiation Support
+
+This extension provides automatic differentiation capabilities for SHTnsKit using 
+ForwardDiff.jl. It enables gradient computation through spherical harmonic transforms, 
+which is essential for optimization problems in spherical geometry.
+
+Key Features:
+- Automatic gradient computation for scalar and vector energy functionals
+- Support for both regular matrices and distributed arrays
+- Seamless integration with ForwardDiff's dual number arithmetic
+- Compatible with optimization workflows in geophysical modeling
+
+Mathematical Foundation:
+The extension computes gradients of energy functionals like:
+- Scalar energy: E = 0.5 ∫ |f(θ,φ)|² dΩ  
+- Vector energy: E = 0.5 ∫ |∇×V|² + |∇·V|² dΩ
+
+These are fundamental quantities in fluid dynamics and field theory.
+"""
 module SHTnsKitForwardDiffExt
 
 using ForwardDiff
 using SHTnsKit
 
+# ===== SCALAR FIELD GRADIENT COMPUTATION =====
+
 """
     fdgrad_scalar_energy(cfg, f) -> ∂E/∂f
 
 ForwardDiff gradient of scalar energy E = 0.5 ∫ |f|^2 under spectral transform.
-Returns an array with the same size as `f`.
+
+This function computes the functional derivative of the scalar energy with respect
+to the input field f. The energy is computed in spectral space after spherical
+harmonic analysis, making this useful for spectral optimization problems.
+
+Parameters:
+- cfg: SHTnsKit configuration defining the transform parameters
+- f: Input scalar field matrix [nlat × nlon]
+
+Returns:
+- Gradient matrix of same size as f, representing ∂E/∂f at each point
 """
 function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
     nlat, nlon = size(f)
+    
+    # Define the energy functional as a function of flattened field
     loss(x) = SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, reshape(x, nlat, nlon)))
+    
+    # Use ForwardDiff to compute gradient via dual numbers
     g = ForwardDiff.gradient(loss, vec(f))
     return reshape(g, nlat, nlon)
 end
