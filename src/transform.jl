@@ -153,15 +153,22 @@ SHTns-compatible scalar analysis. `Vr` is a flat vector of length `cfg.nspat = n
 Returns packed coefficients `Qlm` of length `cfg.nlm` with SHTns `LM` ordering.
 """
 function spat_to_SH(cfg::SHTConfig, Vr::AbstractVector{<:Real})
+    # Validate input size matches the spatial grid
     length(Vr) == cfg.nspat || throw(DimensionMismatch("Vr must have length $(cfg.nspat)"))
+    
+    # Reshape flat vector to 2D grid: Vr[lat*nlon + lon] -> f[lat, lon]
     f = reshape(Vr, cfg.nlat, cfg.nlon)
-    alm_mat = analysis(cfg, f)
-    Qlm = Vector{eltype(alm_mat)}(undef, cfg.nlm)
+    
+    # Perform forward spherical harmonic transform
+    alm_mat = analysis(cfg, f)  # Get coefficients in (l+1, m+1) matrix format
+    
+    # Convert to SHTns-compatible packed format using LM indexing
+    Qlm = Vector{eltype(alm_mat)}(undef, cfg.nlm)  # Packed coefficient array
     @inbounds for m in 0:cfg.mmax
-        (m % cfg.mres == 0) || continue
+        (m % cfg.mres == 0) || continue  # Skip m values not on the resolution grid
         for l in m:cfg.lmax
-            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1
-            Qlm[lm] = alm_mat[l+1, m+1]
+            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1  # Convert (l,m) to flat index
+            Qlm[lm] = alm_mat[l+1, m+1]  # Copy coefficient to packed array
         end
     end
     return Qlm
@@ -174,17 +181,24 @@ SHTns-compatible scalar synthesis to a real spatial field. Input is packed `Qlm`
 Returns a flat `Vector{Float64}` length `nlat*nlon`.
 """
 function SH_to_spat(cfg::SHTConfig, Qlm::AbstractVector{<:Complex})
+    # Validate input packed coefficient array size
     length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm must have length $(cfg.nlm)"))
-    alm_mat = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+    
+    # Convert from packed SHTns format to (l+1, m+1) matrix format
+    alm_mat = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)  # Coefficient matrix
     @inbounds for m in 0:cfg.mmax
-        (m % cfg.mres == 0) || continue
+        (m % cfg.mres == 0) || continue  # Skip m values not on the resolution grid
         for l in m:cfg.lmax
-            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1
-            alm_mat[l+1, m+1] = Qlm[lm]
+            lm = LM_index(cfg.lmax, cfg.mres, l, m) + 1  # Convert (l,m) to flat index
+            alm_mat[l+1, m+1] = Qlm[lm]  # Unpack coefficient from flat array
         end
     end
-    f = synthesis(cfg, alm_mat; real_output=true)
-    return vec(f)
+    
+    # Perform inverse spherical harmonic transform
+    f = synthesis(cfg, alm_mat; real_output=true)  # Get 2D spatial grid
+    
+    # Return as flat vector compatible with SHTns convention
+    return vec(f)  # Flatten f[lat, lon] -> Vr[lat*nlon + lon]
 end
 
  
