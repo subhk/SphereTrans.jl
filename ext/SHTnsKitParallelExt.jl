@@ -92,16 +92,19 @@ rfft(A, p) = PencilFFTs.rfft(A, p)                          # Execute real-to-co
 irfft(A, p) = PencilFFTs.irfft(A, p)                        # Execute complex-to-real IFFT
 
 
-include("parallel_diagnostics.jl")
-include("parallel_dispatch.jl")
-include("parallel_plans.jl")
-include("parallel_transforms.jl")
-include("parallel_ops_pencil.jl")
-include("parallel_rotations_pencil.jl")
-include("parallel_local.jl")
+# ===== PARALLEL EXTENSION MODULES =====
+# Include specialized modules for different aspects of parallel spherical harmonic transforms
+include("parallel_diagnostics.jl")      # Diagnostic and profiling tools for parallel operations
+include("parallel_dispatch.jl")         # Function dispatch and interface definitions  
+include("parallel_plans.jl")            # Distributed transform planning and setup
+include("parallel_transforms.jl")       # Core parallel transform implementations
+include("parallel_ops_pencil.jl")       # Parallel differential operators using PencilArrays
+include("parallel_rotations_pencil.jl") # Parallel spherical rotation operations
+include("parallel_local.jl")            # Local (per-process) operations and utilities
 
+# ===== CONVENIENCE FUNCTIONS =====
 # Convenience: forward Base.zeros for Pencil topologies to PencilArrays.zeros
-# This helps users who call `zeros(P; eltype=...)` instead of `PencilArrays.zeros(P; ...)`.
+# This helps users who call `zeros(P; eltype=...)` instead of `PencilArrays.zeros(P; ...)`
 import Base: zeros
 zeros(P::Pencil; eltype=Float64) = PencilArrays.zeros(P; eltype=eltype)
 end # module SHTnsKitParallelExt
