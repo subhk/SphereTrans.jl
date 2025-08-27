@@ -69,4 +69,9 @@ include("parallel_transforms.jl")
 include("parallel_ops_pencil.jl")
 include("parallel_rotations_pencil.jl")
 include("parallel_local.jl")
+
+# Convenience: forward Base.zeros for Pencil topologies to PencilArrays.zeros
+# This helps users who call `zeros(P; eltype=...)` instead of `PencilArrays.zeros(P; ...)`.
+import Base: zeros
+zeros(P::Pencil; eltype=Float64) = PencilArrays.zeros(P; eltype=eltype)
 end # module SHTnsKitParallelExt
