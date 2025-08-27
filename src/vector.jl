@@ -61,6 +61,7 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
     # Working arrays for Legendre polynomial computation
     P = Vector{Float64}(undef, lmax + 1)      # Legendre polynomials P_l^m(x)
     dPdx = Vector{Float64}(undef, lmax + 1)   # Derivatives dP_l^m/dx
+    # Scale continuous Fourier coefficients to DFT bins for ifft (factor nlon)
     inv_scaleφ = nlon                         # Inverse FFT scaling factor
 
     # Process each azimuthal mode m in parallel

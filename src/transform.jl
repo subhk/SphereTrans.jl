@@ -91,6 +91,8 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     # Working arrays for synthesis computation
     P = Vector{Float64}(undef, lmax + 1)  # Legendre polynomials buffer
     G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
+    # Scale continuous Fourier coefficients to DFT bins for ifft.
+    # ifft includes 1/nlon, so we multiply by nlon here to match f(φ) = Σ g_m e^{imφ}.
     inv_scaleφ = nlon                    # Inverse FFT scaling factor
 
     # Convert incoming coefficients to internal normalization if needed
