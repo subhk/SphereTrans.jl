@@ -1,7 +1,7 @@
 name = "SHTnsKit"
 uuid = "1b9d0af0-2e90-4fb0-9eae-4a2e2cdf5320"
 authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
-version = "1.1.1"
+version = "1.1.0"
 
 [deps]
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
@@ -26,7 +26,7 @@ SHTnsKitZygoteExt = ["Zygote"]
 
 [compat]
 ChainRulesCore = "1"
-FFTW = "1.7"
+FFTW = "1.8"
 ForwardDiff = "0.10, 1"
 LinearAlgebra = "1"
 LoopVectorization = "0.12"
