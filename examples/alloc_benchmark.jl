@@ -47,7 +47,8 @@ function bench_distributed(lmax::Int)
     nlon = 2*lmax + 1
     cfg = create_gauss_config(lmax, nlat; nlon=nlon)
     Pθφ = Pencil((nlat, nlon), (MPI.Comm_size(comm), 1), comm)
-    fθφ = PencilArrays.allocate(Pθφ; eltype=Float64)
+    paalloc(t; eltype=Float64) = (try PencilArrays.zeros(t; eltype=eltype) catch; try PencilArrays.zeros(t) catch; try SHTnsKitParallelExt.allocate(t; eltype=eltype) catch; SHTnsKitParallelExt.allocate(t) end end end)
+    fθφ = paalloc(Pθφ; eltype=Float64)
     fill!(fθφ, 0)
     # Fill deterministic content
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
@@ -68,8 +69,8 @@ function bench_distributed(lmax::Int)
         println("[dist scalar] analysis alloc bytes: baseline=$(a_alloc_max), plan=$(a_alloc_plan_max)")
     end
     # Vector: plan vs baseline
-    Vtθφ = PencilArrays.allocate(Pθφ; eltype=Float64); fill!(Vtθφ, 0)
-    Vpθφ = PencilArrays.allocate(Pθφ; eltype=Float64); fill!(Vpθφ, 0)
+    Vtθφ = paalloc(Pθφ; eltype=Float64); fill!(Vtθφ, 0)
+    Vpθφ = paalloc(Pθφ; eltype=Float64); fill!(Vpθφ, 0)
     for (iθ, iφ) in zip(eachindex(axes(Vtθφ,1)), eachindex(axes(Vtθφ,2)))
         Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
         Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
