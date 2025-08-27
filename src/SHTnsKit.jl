@@ -148,27 +148,31 @@ dist_SH_Yrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extens
 dist_SH_Xrotate90_packed(::SHTConfig, ::Any; kwargs...) = error("Parallel extension not loaded")
 
 
+# ===== PARALLEL ROTATION FUNCTIONS =====
 # Parallel rotations fallbacks (PencilArray-based)
-Dist = SHTnsKit
-# Non-bang / out-of-place and in-place variants
-function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Yrotate_allgatherm!(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Yrotate_truncgatherm!(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Yrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Yrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
-function dist_SH_Xrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end
+Dist = SHTnsKit  # Alias for distributed operations
+# Non-bang (out-of-place) and in-place rotation variants
+function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end          # Out-of-place Z rotation
+function dist_SH_Zrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end   # In-place Z rotation
+function dist_SH_Yrotate_allgatherm!(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end    # Y rotation with full gather
+function dist_SH_Yrotate_truncgatherm!(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end # Y rotation with truncated gather
+function dist_SH_Yrotate(::SHTConfig, ::Any, ::Any, ::Any); error("Parallel extension not loaded"); end              # General Y rotation
+function dist_SH_Yrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end                   # 90° Y rotation
+function dist_SH_Xrotate90(::SHTConfig, ::Any, ::Any); error("Parallel extension not loaded"); end                   # 90° X rotation
 
+# ===== LOOPVECTORIZATION EXTENSION FALLBACKS =====
 # LoopVectorization extension fallbacks (broad signatures to avoid overwriting)
-analysis_turbo(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
-synthesis_turbo(::SHTConfig, ::Any; real_output::Bool=true) = error("LoopVectorization extension not loaded")
-turbo_apply_laplacian!(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")
-benchmark_turbo_vs_simd(::SHTConfig; kwargs...) = error("LoopVectorization extension not loaded")
-export shtns_verbose, shtns_print_version, shtns_get_build_info
-export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid
-export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form
-export sh00_1, sh10_ct, sh11_st, shlm_e1, shtns_gauss_wts
-export shtns_print_cfg, legendre_sphPlm_array, legendre_sphPlm_deriv_array
-export shtns_malloc, shtns_free, shtns_set_many
+analysis_turbo(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")                    # Vectorized analysis
+synthesis_turbo(::SHTConfig, ::Any; real_output::Bool=true) = error("LoopVectorization extension not loaded")  # Vectorized synthesis
+turbo_apply_laplacian!(::SHTConfig, ::Any) = error("LoopVectorization extension not loaded")            # Vectorized Laplacian
+benchmark_turbo_vs_simd(::SHTConfig; kwargs...) = error("LoopVectorization extension not loaded")      # Performance comparison
+# ===== LOW-LEVEL SHTNS LIBRARY INTERFACE =====
+# Direct bindings to the underlying SHTns C library functions
+export shtns_verbose, shtns_print_version, shtns_get_build_info           # Library information
+export shtns_init, shtns_create, shtns_set_grid, shtns_set_grid_auto, shtns_create_with_grid  # Initialization
+export shtns_use_threads, shtns_reset, shtns_destroy, shtns_unset_grid, shtns_robert_form     # Configuration
+export sh00_1, sh10_ct, sh11_st, shlm_e1, shtns_gauss_wts               # Spherical harmonic values and weights
+export shtns_print_cfg, legendre_sphPlm_array, legendre_sphPlm_deriv_array  # Debugging and Legendre functions
+export shtns_malloc, shtns_free, shtns_set_many                          # Memory management
 
 end # module SHTnsKit
