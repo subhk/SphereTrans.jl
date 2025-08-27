@@ -95,19 +95,33 @@ Precompute associated Legendre tables P_l^m(x_i) for all i and m, stored as
 function prepare_plm_tables!(cfg::SHTConfig)
     lmax, mmax = cfg.lmax, cfg.mmax
     nlat = cfg.nlat
-    tables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]
-    dtables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]
-    P = Vector{Float64}(undef, lmax + 1)
-    dPdx = Vector{Float64}(undef, lmax + 1)
+    
+    # Allocate storage for Legendre polynomial tables
+    # Each m-order gets its own matrix: (degree+1) × (latitude points)
+    tables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]    # P_l^m values
+    dtables = [zeros(Float64, lmax + 1, nlat) for _ in 0:mmax]  # dP_l^m/dx derivatives
+    
+    # Working arrays for computing one row at a time
+    P = Vector{Float64}(undef, lmax + 1)      # P_l^m(x) for fixed (x,m), varying l
+    dPdx = Vector{Float64}(undef, lmax + 1)   # dP_l^m/dx for fixed (x,m), varying l
+    
+    # Compute tables for each azimuthal order m
     for m in 0:mmax
-        tbl = tables[m+1]
+        tbl = tables[m+1]    # Access using 1-based indexing
         dtbl = dtables[m+1]
+        
+        # Compute Legendre polynomials at each latitude point
         for i in 1:nlat
+            # Compute all degrees l for this (x_i, m) pair
             Plm_and_dPdx_row!(P, dPdx, cfg.x[i], lmax, m)
-            @inbounds @views tbl[:, i] .= P
-            @inbounds @views dtbl[:, i] .= dPdx
+            
+            # Store results in precomputed tables
+            @inbounds @views tbl[:, i] .= P      # P_l^m(x_i) for l=0:lmax
+            @inbounds @views dtbl[:, i] .= dPdx  # dP_l^m/dx(x_i) for l=0:lmax
         end
     end
+    
+    # Enable table usage and store in configuration
     cfg.plm_tables = tables
     cfg.dplm_tables = dtables
     cfg.use_plm_tables = true
