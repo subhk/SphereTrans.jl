@@ -61,7 +61,11 @@ function main()
     p = MPI.Comm_size(comm)
     pθ, pφ = _procgrid(p)                                    # Decompose processes into 2D grid
     topo = Pencil((nlat, nlon), (pθ, pφ), comm)            # Create distributed pencil topology
-    paalloc(t; eltype=Float64) = (try PencilArrays.zeros(t; eltype=eltype) catch; PencilArrays.allocate(t; eltype=eltype) end)
+
+    #paalloc(t; eltype=Float64) = (try PencilArrays.zeros(t; eltype=eltype) catch; PencilArrays.allocate(t; eltype=eltype) end)
+    
+    paalloc(t; eltype=Float64) = PencilArrays.zeros(t; eltype=eltype)
+    
     fθφ = paalloc(topo; eltype=Float64)       # Allocate distributed array
     fill!(fθφ, 0)
     
