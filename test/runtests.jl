@@ -23,6 +23,24 @@ try
 catch
 end
 
+@testset "Single-mode sanity" begin
+    # Construct a single spherical-harmonic mode and verify Parseval holds
+    lmax = 4
+    nlat = lmax + 2
+    nlon = 2*lmax + 1
+    cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+    alm = zeros(ComplexF64, lmax+1, lmax+1)
+    alm[3, 2] = 1.0 + 0im  # l=2, m=1
+    f = synthesis(cfg, alm; real_output=true)
+    E_spec = energy_scalar(cfg, alm)
+    E_grid = grid_energy_scalar(cfg, f)
+    try
+        VERBOSE && @info "Single-mode" l=2 m=1 E_spec E_grid backend=SHTnsKit.fft_phi_backend()
+    catch
+    end
+    @test isapprox(E_spec, E_grid; rtol=1e-10, atol=1e-12)
+end
+
 """
     parseval_scalar_test(lmax::Int)
 
