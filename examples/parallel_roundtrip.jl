@@ -196,8 +196,10 @@ function main()
         end
     end
 
-    MPI.Barrier(comm)
-    MPI.Finalize()
+    # ===== MPI CLEANUP =====
+    MPI.Barrier(comm)                                       # Synchronize all processes
+    MPI.Finalize()                                          # Clean up MPI environment
 end
 
+# Execute the main function when script is run
 main()
