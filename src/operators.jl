@@ -27,16 +27,24 @@ Out-of-range neighbors (l<m or l>lmax) are automatically ignored.
 Fill `mx` with coupling coefficients for cosθ operator: cosθ Y_l^m = a_l^m Y_{l-1}^m + b_l^m Y_{l+1}^m.
 """
 function mul_ct_matrix(cfg::SHTConfig, mx::AbstractVector{<:Real})
+    # Validate coefficient matrix size (2 coefficients per (l,m) mode)
     length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
+    
+    # Fill coupling coefficients for each (l,m) mode in packed order
     @inbounds for lm0 in 0:(cfg.nlm-1)
-        l = cfg.li[lm0+1]
-        m = cfg.mi[lm0+1]
-        # a_l^m for Y_{l-1}^m (zero if l==0)
+        l = cfg.li[lm0+1]  # Degree for this packed index
+        m = cfg.mi[lm0+1]  # Order for this packed index
+        
+        # Coupling coefficient to Y_{l-1}^m (downward in degree)
+        # From recurrence: cos(θ) Y_l^m = a_l^m Y_{l-1}^m + b_l^m Y_{l+1}^m
         a = (l == 0) ? 0.0 : sqrt(max(0.0, (l^2 - m^2) / ((2l - 1) * (2l + 1))))
-        # b_l^m for Y_{l+1}^m (zero if l==lmax)
+        
+        # Coupling coefficient to Y_{l+1}^m (upward in degree)  
         b = (l == cfg.lmax) ? 0.0 : sqrt(max(0.0, ((l + 1)^2 - m^2) / ((2l + 1) * (2l + 3))))
-        mx[2*lm0 + 1] = a
-        mx[2*lm0 + 2] = b
+        
+        # Store in packed format: [c_minus, c_plus] for each (l,m)
+        mx[2*lm0 + 1] = a  # Coefficient for Y_{l-1}^m
+        mx[2*lm0 + 2] = b  # Coefficient for Y_{l+1}^m
     end
     return mx
 end
@@ -48,16 +56,26 @@ Fill `mx` with coupling coefficients for sinθ ∂_θ operator:
 sinθ ∂_θ Y_l^m = l b_l^m Y_{l+1}^m - (l+1) a_l^m Y_{l-1}^m.
 """
 function st_dt_matrix(cfg::SHTConfig, mx::AbstractVector{<:Real})
+    # Validate coefficient matrix size (2 coefficients per (l,m) mode)
     length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
+    
+    # Fill coupling coefficients for the sin(θ) ∂/∂θ operator
     @inbounds for lm0 in 0:(cfg.nlm-1)
-        l = cfg.li[lm0+1]
-        m = cfg.mi[lm0+1]
+        l = cfg.li[lm0+1]  # Degree for this packed index
+        m = cfg.mi[lm0+1]  # Order for this packed index
+        
+        # Base coupling coefficients (same as cos(θ) operator)
         a = (l == 0) ? 0.0 : sqrt(max(0.0, (l^2 - m^2) / ((2l - 1) * (2l + 1))))
         b = (l == cfg.lmax) ? 0.0 : sqrt(max(0.0, ((l + 1)^2 - m^2) / ((2l + 1) * (2l + 3))))
-        c_minus = -(l + 1) * a
-        c_plus  =  l * b
-        mx[2*lm0 + 1] = c_minus
-        mx[2*lm0 + 2] = c_plus
+        
+        # Apply derivative operator weights
+        # sin(θ) ∂/∂θ Y_l^m = l b_l^m Y_{l+1}^m - (l+1) a_l^m Y_{l-1}^m
+        c_minus = -(l + 1) * a  # Coefficient for Y_{l-1}^m (negative contribution)
+        c_plus  =  l * b        # Coefficient for Y_{l+1}^m (positive contribution)
+        
+        # Store in packed format: [c_minus, c_plus] for each (l,m)
+        mx[2*lm0 + 1] = c_minus  # Coefficient for Y_{l-1}^m  
+        mx[2*lm0 + 2] = c_plus   # Coefficient for Y_{l+1}^m
     end
     return mx
 end
