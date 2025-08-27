@@ -41,6 +41,37 @@ end
     @test isapprox(E_spec, E_grid; rtol=1e-10, atol=1e-12)
 end
 
+@testset "Vector single-mode sanity" begin
+    # Verify vector Parseval with a single (l,m) coefficient in S or T
+    lmax = 4
+    nlat = lmax + 2
+    nlon = 2*lmax + 1
+    cfg = create_gauss_config(lmax, nlat; nlon=nlon)
+    # Single S-mode: l=2, m=1
+    Slm = zeros(ComplexF64, lmax+1, lmax+1)
+    Tlm = zeros(ComplexF64, lmax+1, lmax+1)
+    Slm[3, 2] = 1.0 + 0im
+    Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=true)
+    E_spec = energy_vector(cfg, Slm, Tlm)
+    E_grid = grid_energy_vector(cfg, Vt, Vp)
+    try
+        VERBOSE && @info "Vector single-mode (S)" l=2 m=1 E_spec E_grid backend=SHTnsKit.fft_phi_backend()
+    catch
+    end
+    @test isapprox(E_spec, E_grid; rtol=1e-9, atol=1e-11)
+    # Single T-mode: l=3, m=2
+    fill!(Slm, 0); fill!(Tlm, 0)
+    Tlm[4, 3] = 1.0 + 0im
+    Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=true)
+    E_spec = energy_vector(cfg, Slm, Tlm)
+    E_grid = grid_energy_vector(cfg, Vt, Vp)
+    try
+        VERBOSE && @info "Vector single-mode (T)" l=3 m=2 E_spec E_grid backend=SHTnsKit.fft_phi_backend()
+    catch
+    end
+    @test isapprox(E_spec, E_grid; rtol=1e-9, atol=1e-11)
+end
+
 """
     parseval_scalar_test(lmax::Int)
 
