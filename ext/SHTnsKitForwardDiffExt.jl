@@ -52,35 +52,85 @@ function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, f::AbstractMatri
     return reshape(g, nlat, nlon)
 end
 
-##########
+# ===== DISTRIBUTED ARRAY SUPPORT =====
 # Generic distributed/array wrappers (avoid hard dependency on PencilArrays)
-##########
+# These methods work with any AbstractArray type, including distributed arrays
 
+"""
+    fdgrad_scalar_energy(cfg, fθφ::AbstractArray) -> ∂E/∂fθφ
+
+ForwardDiff gradient computation for distributed arrays (e.g., PencilArrays).
+
+This overload handles distributed arrays by converting to local arrays for the
+gradient computation, then copying the result back to the distributed format.
+This approach maintains compatibility without requiring hard dependencies.
+
+The conversion pattern is:
+1. Extract local array data for ForwardDiff computation
+2. Compute gradient using standard ForwardDiff machinery  
+3. Copy result back to distributed array type
+"""
 function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::AbstractArray)
     nlat = length(axes(fθφ, 1)); nlon = length(axes(fθφ, 2))
+    
+    # Define energy loss function for flattened distributed array
     function loss_flat(z)
         xloc = reshape(z, nlat, nlon)
         return SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, xloc))
     end
+    
+    # Compute gradient on local array data
     g = ForwardDiff.gradient(loss_flat, vec(Array(fθφ)))
     gl = reshape(g, nlat, nlon)
+    
+    # Copy result back to distributed array format
     gout = similar(fθφ)
     copyto!(gout, gl)
     return gout
 end
 
+# ===== VECTOR FIELD GRADIENT COMPUTATION =====
+
+"""
+    fdgrad_vector_energy(cfg, Vtθφ, Vpθφ) -> (∂E/∂Vt, ∂E/∂Vp)
+
+ForwardDiff gradient of vector field energy for distributed arrays.
+
+This function computes gradients of the vector energy functional with respect
+to both theta and phi components of a vector field. The vector energy typically
+involves kinetic energy, enstrophy, or other quadratic functionals.
+
+The implementation concatenates both vector components into a single state vector,
+computes the energy gradient, then splits the result back into component gradients.
+
+Parameters:
+- cfg: SHTnsKit configuration
+- Vtθφ: Theta component of vector field (distributed array)
+- Vpθφ: Phi component of vector field (distributed array)
+
+Returns:
+- Tuple of gradient arrays (∂E/∂Vt, ∂E/∂Vp) with same types as inputs
+"""
 function SHTnsKit.fdgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::AbstractArray, Vpθφ::AbstractArray)
     nlat = length(axes(Vtθφ, 1)); nlon = length(axes(Vtθφ, 2))
+    
+    # Define vector energy functional for combined state vector [Vt; Vp]
     function loss_flat(z)
-        Xt = reshape(view(z, 1:nlat*nlon), nlat, nlon)
-        Xp = reshape(view(z, nlat*nlon+1:2*nlat*nlon), nlat, nlon)
-        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)
-        return SHTnsKit.energy_vector(cfg, Slm, Tlm)
+        Xt = reshape(view(z, 1:nlat*nlon), nlat, nlon)           # Extract Vt component
+        Xp = reshape(view(z, nlat*nlon+1:2*nlat*nlon), nlat, nlon) # Extract Vp component
+        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)      # Spheroidal/toroidal analysis
+        return SHTnsKit.energy_vector(cfg, Slm, Tlm)            # Compute vector energy
     end
-    z0 = vcat(vec(Array(Vtθφ)), vec(Array(Vpθφ)))
-    g = ForwardDiff.gradient(loss_flat, z0)
-    gVt = reshape(view(g, 1:nlat*nlon), nlat, nlon)
-    gVp = reshape(view(g, nlat*nlon+1:2*nlat*nlon), nlat, nlon)
+    
+    # Create combined state vector and compute gradient
+    z0 = vcat(vec(Array(Vtθφ)), vec(Array(Vpθφ)))              # Concatenate components
+    g = ForwardDiff.gradient(loss_flat, z0)                    # Compute full gradient
+    
+    # Split gradient back into component gradients
+    gVt = reshape(view(g, 1:nlat*nlon), nlat, nlon)            # ∂E/∂Vt component
+    gVp = reshape(view(g, nlat*nlon+1:2*nlat*nlon), nlat, nlon) # ∂E/∂Vp component
+    
+    # Copy back to distributed array format
     GVt = similar(Vtθφ); GVp = similar(Vpθφ)
     copyto!(GVt, gVt); copyto!(GVp, gVp)
     return GVt, GVp
@@ -88,19 +138,42 @@ end
 
 """
     fdgrad_vector_energy(cfg, Vt, Vp) -> (∂E/∂Vt, ∂E/∂Vp)
+
+ForwardDiff gradient of vector field energy for regular matrices.
+
+This is the standard matrix version of the vector energy gradient computation.
+It works directly with AbstractMatrix types without the distributed array
+overhead, making it more efficient for small to medium-sized problems.
+
+The algorithm is identical to the distributed version but avoids the Array()
+conversion since the inputs are already local matrices.
+
+Parameters:
+- cfg: SHTnsKit configuration
+- Vt: Theta component matrix [nlat × nlon]
+- Vp: Phi component matrix [nlat × nlon]
+
+Returns:
+- Tuple of gradient matrices (∂E/∂Vt, ∂E/∂Vp)
 """
 function SHTnsKit.fdgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix)
     nlat, nlon = size(Vt)
+    
+    # Define vector energy functional for matrix inputs
     function loss_flat(z)
-        Xt = reshape(view(z, 1:nlat*nlon), nlat, nlon)
-        Xp = reshape(view(z, nlat*nlon+1:2*nlat*nlon), nlat, nlon)
-        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)
-        return SHTnsKit.energy_vector(cfg, Slm, Tlm)
+        Xt = reshape(view(z, 1:nlat*nlon), nlat, nlon)           # Extract Vt component
+        Xp = reshape(view(z, nlat*nlon+1:2*nlat*nlon), nlat, nlon) # Extract Vp component
+        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)      # Transform to spectral
+        return SHTnsKit.energy_vector(cfg, Slm, Tlm)            # Compute energy
     end
-    z0 = vcat(vec(Vt), vec(Vp))
-    g = ForwardDiff.gradient(loss_flat, z0)
-    gVt = reshape(view(g, 1:nlat*nlon), nlat, nlon)
-    gVp = reshape(view(g, nlat*nlon+1:2*nlat*nlon), nlat, nlon)
+    
+    # Compute gradient directly on matrix data
+    z0 = vcat(vec(Vt), vec(Vp))                                 # Concatenate vector components
+    g = ForwardDiff.gradient(loss_flat, z0)                    # Compute gradient
+    
+    # Split result into component gradients
+    gVt = reshape(view(g, 1:nlat*nlon), nlat, nlon)            # ∂E/∂Vt
+    gVp = reshape(view(g, nlat*nlon+1:2*nlat*nlon), nlat, nlon) # ∂E/∂Vp
     return gVt, gVp
 end
 

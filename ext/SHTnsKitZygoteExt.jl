@@ -1,35 +1,103 @@
+"""
+Zygote Extension for Reverse-Mode Automatic Differentiation
+
+This extension provides Zygote.jl integration for reverse-mode automatic differentiation 
+through SHTnsKit operations. Zygote excels at gradients of scalar-valued functions and 
+is particularly well-suited for optimization and machine learning workflows.
+
+Key Features:
+- Reverse-mode AD through spherical harmonic transforms
+- Custom adjoints (pullback rules) for SHTnsKit operations  
+- Efficient gradient computation for energy functionals
+- Support for rotation and operator gradients
+- Compatible with both distributed and regular arrays
+
+Comparison with ForwardDiff:
+- Zygote: Better for many inputs → one output (optimization problems)
+- ForwardDiff: Better for few inputs → many outputs (Jacobians)
+
+The extension includes custom @adjoint definitions to ensure proper gradient flow
+through complex mathematical operations like rotations and matrix operations.
+"""
 module SHTnsKitZygoteExt
 
 using Zygote
 using SHTnsKit
 
+# ===== SCALAR FIELD GRADIENTS =====
+
 """
     zgrad_scalar_energy(cfg, f) -> ∂E/∂f
 
 Zygote gradient of scalar energy E = 0.5 ∫ |f|^2 under spectral transform.
-Returns an array the same size as `f`.
+
+This function uses Zygote's reverse-mode automatic differentiation to compute
+the gradient of the scalar energy functional. The computation flows through:
+spatial field → spherical harmonic analysis → energy computation → gradient.
+
+Parameters:
+- cfg: SHTnsKit configuration
+- f: Input scalar field matrix [nlat × nlon]
+
+Returns:
+- Gradient matrix of same size as f, computed via reverse-mode AD
 """
 function SHTnsKit.zgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
     loss(x) = SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, x))
     return Zygote.gradient(loss, f)[1]
 end
 
-##########
+# ===== DISTRIBUTED ARRAY SUPPORT =====
 # Generic distributed/array wrappers (avoid hard dependency on PencilArrays)
-##########
+# These provide automatic differentiation support for distributed computing
 
+"""
+    zgrad_scalar_energy(cfg, fθφ::AbstractArray) -> ∂E/∂fθφ
+
+Zygote gradient computation for distributed arrays using reverse-mode AD.
+
+This overload works with any AbstractArray type, including distributed arrays
+like PencilArrays. Zygote automatically handles the gradient computation through
+the distributed array operations without requiring explicit conversions.
+
+The advantage over ForwardDiff here is that Zygote can work directly with
+the distributed array types, preserving their structure throughout the
+automatic differentiation process.
+"""
 function SHTnsKit.zgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::AbstractArray)
     loss(x) = SHTnsKit.energy_scalar(cfg, SHTnsKit.analysis(cfg, x))
     return Zygote.gradient(loss, fθφ)[1]
 end
 
+# ===== VECTOR FIELD GRADIENTS =====
+
+"""
+    zgrad_vector_energy(cfg, Vtθφ, Vpθφ) -> (∂E/∂Vt, ∂E/∂Vp)
+
+Zygote gradient of vector field energy for distributed arrays.
+
+This function computes gradients of vector energy functionals using Zygote's
+reverse-mode automatic differentiation. The vector energy typically involves
+kinetic energy, enstrophy, or other quadratic functionals in fluid dynamics.
+
+Parameters:
+- cfg: SHTnsKit configuration
+- Vtθφ: Theta component of vector field (distributed array)
+- Vpθφ: Phi component of vector field (distributed array)
+
+Returns:
+- Tuple of gradient arrays (∂E/∂Vt, ∂E/∂Vp) with same structure as inputs
+"""
 function SHTnsKit.zgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::AbstractArray, Vpθφ::AbstractArray)
+    # Define vector energy functional for two-argument case
     loss(Xt, Xp) = begin
-        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)
-        SHTnsKit.energy_vector(cfg, Slm, Tlm)
+        Slm, Tlm = SHTnsKit.spat_to_SHsphtor(cfg, Xt, Xp)      # Spheroidal/toroidal analysis
+        SHTnsKit.energy_vector(cfg, Slm, Tlm)                  # Compute vector energy
     end
+    
+    # Use Zygote to compute gradients with respect to both vector components
     g = Zygote.gradient(loss, Vtθφ, Vpθφ)
-    return g[1], g[2]
+    return g[1], g[2]                                          # Return (∂E/∂Vt, ∂E/∂Vp)
 end
 
 """
