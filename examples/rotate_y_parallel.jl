@@ -31,9 +31,10 @@ function main()
     end
     p = MPI.Comm_size(comm)
     pθ,pφ = _procgrid(p)
-    topo = Pencil((nlat, nlon), (pθ, pφ), comm)
+    topo = Pencil((:θ, :φ), (nlat, nlon); comm)
     # test real field
-    fθφ = PencilArrays.zeros(topo; eltype=Float64)
+    fθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64)
+    fill!(fθφ, 0)
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3*(iθ+1)) + 0.7*cos(0.2*(iφ+1))
     end

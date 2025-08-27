@@ -33,8 +33,9 @@ function main()
     end
     p = MPI.Comm_size(comm)
     pθ, pφ = _procgrid(p)
-    topo = Pencil((nlat, nlon), (pθ, pφ), comm)
-    fθφ = PencilArrays.zeros(topo; eltype=Float64)
+    topo = Pencil((:θ, :φ), (nlat, nlon); comm)
+    fθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64)
+    fill!(fθφ, 0)
     # Deterministic-ish local fill
     for (iθ, iφ) in zip(eachindex(axes(fθφ,1)), eachindex(axes(fθφ,2)))
         fθφ[iθ, iφ] = sin(0.3 * (iθ + rank + 1)) + cos(0.2 * (iφ + 2))
@@ -55,8 +56,8 @@ function main()
     end
 
     if do_vector
-        Vtθφ = PencilArrays.zeros(topo; eltype=Float64)
-        Vpθφ = PencilArrays.zeros(topo; eltype=Float64)
+        Vtθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64); fill!(Vtθφ, 0)
+        Vpθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64); fill!(Vpθφ, 0)
         for (iθ, iφ) in zip(eachindex(axes(Vtθφ,1)), eachindex(axes(Vtθφ,2)))
             Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
             Vpθφ[iθ, iφ] = 0.2*sin(0.1*(iθ+rank+1))
@@ -82,9 +83,9 @@ function main()
 
     if do_qst
         # Build simple synthetic 3D field
-        Vrθφ = PencilArrays.zeros(topo; eltype=Float64)
-        Vtθφ = PencilArrays.zeros(topo; eltype=Float64)
-        Vpθφ = PencilArrays.zeros(topo; eltype=Float64)
+        Vrθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64); fill!(Vrθφ, 0)
+        Vtθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64); fill!(Vtθφ, 0)
+        Vpθφ = PencilArrays.allocate(topo; dims=(:θ, :φ), eltype=Float64); fill!(Vpθφ, 0)
         for (iθ, iφ) in zip(eachindex(axes(Vrθφ,1)), eachindex(axes(Vrθφ,2)))
             Vrθφ[iθ, iφ] = 0.3*sin(0.1*(iθ+1)) + 0.2*cos(0.05*(iφ+1))
             Vtθφ[iθ, iφ] = 0.1*(iθ+1) + 0.05*(iφ+1)
