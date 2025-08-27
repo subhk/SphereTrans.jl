@@ -9,6 +9,11 @@ using LinearAlgebra  # For linear algebra operations
 using FFTW          # For Fast Fourier Transform operations
 using Base.Threads  # For multi-threading support
 
+# Runtime knob for inverse-FFT φ scaling during synthesis.
+# Set ENV SHTNSKIT_PHI_SCALE to "quad" to use nlon/(2π) to match φ quadrature,
+# otherwise default to "dft" which uses nlon to cancel FFT's 1/n.
+phi_inv_scale(nlon::Integer) = (get(ENV, "SHTNSKIT_PHI_SCALE", "dft") == "quad" ? nlon/(2π) : nlon)
+
 # Include all module source files
 include("fftutils.jl")      # FFT utility functions and helpers
 include("layout.jl")        # Data layout and memory organization
