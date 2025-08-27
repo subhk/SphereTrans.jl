@@ -1,38 +1,60 @@
-__precompile__(false)
+__precompile__(false)  # Disable precompilation due to MPI dependencies
 module SHTnsKitParallelExt
 
-using MPI: Allreduce, Allreduce!, Allgather, Allgatherv, Comm_size, COMM_WORLD
-using PencilArrays: Pencil, PencilArray
-using PencilFFTs
-using SHTnsKit
+"""
+SHTnsKit Parallel Extension
 
-# Optional plan caching (opt-in via ENV SHTNSKIT_CACHE_PENCILFFTS=1)
+This Julia package extension provides distributed/parallel spherical harmonic transform
+capabilities using MPI for inter-process communication and PencilArrays for distributed
+memory management. The extension is automatically loaded when both MPI.jl and 
+PencilArrays.jl are available in the environment.
+
+Key capabilities:
+- Distributed spherical harmonic transforms across MPI processes
+- Pencil decomposition for memory-distributed arrays (latitude/longitude/spectral)
+- Parallel FFTs via PencilFFTs for longitude direction transforms
+- Load balancing and data redistribution for optimal performance
+- Caching of FFT plans for repeated operations (optional via environment variable)
+"""
+
+using MPI: Allreduce, Allreduce!, Allgather, Allgatherv, Comm_size, COMM_WORLD
+using PencilArrays: Pencil, PencilArray  # Distributed array framework
+using PencilFFTs                          # Distributed FFTs
+using SHTnsKit                           # Core spherical harmonic functionality
+
+# ===== FFT PLAN CACHING =====
+# Optional plan caching to avoid repeated planning overhead in performance-critical code
+# Enable via: ENV["SHTNSKIT_CACHE_PENCILFFTS"] = "1"
 const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") == "1")
 
+# Cache storage for FFT plans indexed by array characteristics
 const _pfft_cache = IdDict{Any,Any}()
 
+# Generate cache key based on array characteristics for FFT plan reuse
 _cache_key(kind::Symbol, A) = (kind, size(A,1), size(A,2), eltype(A), try Comm_size(communicator(A)) catch; 1 end)
 
 function _get_or_plan(kind::Symbol, A)
-    
+    # If caching disabled, create plan directly without storing
     if !_CACHE_PENCILFFTS[]
-        return kind === :fft  ? plan_fft(A; dims=2) :
-               kind === :ifft ? plan_fft(A; dims=2) :
-               kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :
-               kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) :
+        return kind === :fft  ? plan_fft(A; dims=2) :     # Forward FFT along longitude (dim 2)
+               kind === :ifft ? plan_fft(A; dims=2) :     # Inverse FFT along longitude  
+               kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :   # Real-to-complex FFT
+               kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) : # Complex-to-real IFFT
                error("unknown plan kind")
     end
     
+    # Check if we already have a cached plan for this array configuration
     key = _cache_key(kind, A)
     
     if haskey(_pfft_cache, key)
-        return _pfft_cache[key]
+        return _pfft_cache[key]  # Return cached plan
     end
 
-    plan = kind === :fft  ? plan_fft(A; dims=2) :
-           kind === :ifft ? plan_fft(A; dims=2) :
-           kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :
-           kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) :
+    # Create new plan and cache it for future use
+    plan = kind === :fft  ? plan_fft(A; dims=2) :     # Forward FFT along longitude
+           kind === :ifft ? plan_fft(A; dims=2) :     # Inverse FFT along longitude
+           kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :   # Real-to-complex FFT
+           kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) : # Complex-to-real IFFT
            error("unknown plan kind")
     _pfft_cache[key] = plan
     return plan
