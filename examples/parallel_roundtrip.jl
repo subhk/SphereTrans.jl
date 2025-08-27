@@ -61,7 +61,8 @@ function main()
     p = MPI.Comm_size(comm)
     pθ, pφ = _procgrid(p)                                    # Decompose processes into 2D grid
     topo = Pencil((nlat, nlon), (pθ, pφ), comm)            # Create distributed pencil topology
-    fθφ = PencilArrays.allocate(topo; eltype=Float64)       # Allocate distributed array
+    paalloc(t; eltype=Float64) = (try PencilArrays.zeros(t; eltype=eltype) catch; PencilArrays.allocate(t; eltype=eltype) end)
+    fθφ = paalloc(topo; eltype=Float64)       # Allocate distributed array
     fill!(fθφ, 0)
     
     # ===== TEST FIELD INITIALIZATION =====
@@ -100,8 +101,8 @@ function main()
     # ===== VECTOR FIELD ROUNDTRIP TEST (OPTIONAL) =====
     if do_vector
         # Allocate distributed arrays for vector field components (Vθ, Vφ)
-        Vtθφ = PencilArrays.allocate(topo; eltype=Float64); fill!(Vtθφ, 0)
-        Vpθφ = PencilArrays.allocate(topo; eltype=Float64); fill!(Vpθφ, 0)
+        Vtθφ = paalloc(topo; eltype=Float64); fill!(Vtθφ, 0)
+        Vpθφ = paalloc(topo; eltype=Float64); fill!(Vpθφ, 0)
         
         # Initialize test vector field with analytical functions
         # Each component has different spatial variation for comprehensive testing
@@ -147,9 +148,9 @@ function main()
     if do_qst
         # Build simple synthetic 3D vector field (Vr, Vθ, Vφ)
         # This tests the full 3D vector transform including the radial component
-        Vrθφ = PencilArrays.allocate(topo; eltype=Float64); fill!(Vrθφ, 0)
-        Vtθφ = PencilArrays.allocate(topo; eltype=Float64); fill!(Vtθφ, 0)
-        Vpθφ = PencilArrays.allocate(topo; eltype=Float64); fill!(Vpθφ, 0)
+        Vrθφ = paalloc(topo; eltype=Float64); fill!(Vrθφ, 0)
+        Vtθφ = paalloc(topo; eltype=Float64); fill!(Vtθφ, 0)
+        Vpθφ = paalloc(topo; eltype=Float64); fill!(Vpθφ, 0)
         
         # Initialize 3D vector field with different analytical functions for each component
         # This provides a comprehensive test of the Q-S-T decomposition
