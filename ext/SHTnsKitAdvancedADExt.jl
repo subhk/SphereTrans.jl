@@ -200,20 +200,20 @@ function ChainRulesCore.rrule(::typeof(SHTnsKit.SH_Yrotate90), cfg::SHTnsKit.SHT
     return y, pullback
 end
 
-function ChainRulesCore.rrule(::typeof(SHTnsKit.SH_Xrotate90), cfg::SHTnsKit.SHTConfig, Qlm, Rlm)
-    y = SHTnsKit.SH_Xrotate90(cfg, Qlm, Rlm)
-    function pullback(ȳ)
-        Q̄ = similar(Qlm)
-        # Inverse of Xrotate90 is rotation by -90 around X: Rz(-π/2)·Ry(-π/2)·Rz(π/2)
-        r = SHTnsKit.SHTRotation(cfg.lmax, cfg.mmax)
-        SHTnsKit.shtns_rotation_set_angles_ZYZ(r, -π/2, -π/2, π/2)
-        tmp = similar(ȳ)
-        SHTnsKit.shtns_rotation_apply_real(r, ȳ, tmp)
-        Q̄ .= tmp
-        return NoTangent(), NoTangent(), Q̄, ZeroTangent()
+    function ChainRulesCore.rrule(::typeof(SHTnsKit.SH_Xrotate90), cfg::SHTnsKit.SHTConfig, Qlm, Rlm)
+        y = SHTnsKit.SH_Xrotate90(cfg, Qlm, Rlm)
+        function pullback(ȳ)
+            Q̄ = similar(Qlm)
+            # Inverse of Xrotate90 is rotation by -90 around X: Rz(-π/2)·Ry(-π/2)·Rz(π/2)
+            r = SHTnsKit.SHTRotation(cfg.lmax, cfg.mmax)
+            SHTnsKit.shtns_rotation_set_angles_ZYZ(r, -π/2, -π/2, π/2)
+            tmp = similar(Qlm)
+            SHTnsKit.shtns_rotation_apply_real(r, ȳ, tmp)
+            copyto!(Q̄, tmp)
+            return NoTangent(), NoTangent(), Q̄, ZeroTangent()
+        end
+        return y, pullback
     end
-    return y, pullback
-end
 
 # Adjoint for complex rotation using conjugate-transpose of Wigner-D
 function ChainRulesCore.rrule(::typeof(SHTnsKit.shtns_rotation_apply_cplx), r::SHTnsKit.SHTRotation, Zlm, Rlm)
@@ -301,7 +301,7 @@ function ChainRulesCore.rrule(::typeof(SHTnsKit.shtns_rotation_apply_real), r::S
     function pullback(ȳ)
         lmax, mmax = r.lmax, r.mmax
         # Extend cotangent on packed to full complex
-        Zbar_full = zeros(eltype(complex(one(eltype(ȳ)))), SHTnsKit.nlm_cplx_calc(lmax, mmax, 1))
+        Zbar_full = zeros(eltype(Qlm), SHTnsKit.nlm_cplx_calc(lmax, mmax, 1))
         for l in 0:lmax
             mm = min(l, mmax)
             # m = 0

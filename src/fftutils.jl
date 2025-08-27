@@ -18,7 +18,7 @@ Performance Notes:
 const _TWO_PI = 2π
 
 # Track which backend was used most recently for φ-FFTs: :fftw or :dft
-const _FFT_BACKEND = Ref{:Symbol}(:unknown)
+const _FFT_BACKEND = Ref{Symbol}(:unknown)
 
 fft_phi_backend() = _FFT_BACKEND[]
 

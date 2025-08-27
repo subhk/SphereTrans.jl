@@ -83,10 +83,14 @@ function SHTnsKit.fdgrad_scalar_energy(cfg::SHTnsKit.SHTConfig, fθφ::AbstractA
     g = ForwardDiff.gradient(loss_flat, vec(Array(fθφ)))
     gl = reshape(g, nlat, nlon)
     
-    # Copy result back to distributed array format
-    gout = similar(fθφ)
-    copyto!(gout, gl)
-    return gout
+    # Copy result back to distributed array format if possible; otherwise return Array
+    try
+        gout = similar(fθφ, eltype(gl))
+        copyto!(gout, gl)
+        return gout
+    catch
+        return gl
+    end
 end
 
 # ===== VECTOR FIELD GRADIENT COMPUTATION =====
@@ -130,10 +134,14 @@ function SHTnsKit.fdgrad_vector_energy(cfg::SHTnsKit.SHTConfig, Vtθφ::Abstract
     gVt = reshape(view(g, 1:nlat*nlon), nlat, nlon)            # ∂E/∂Vt component
     gVp = reshape(view(g, nlat*nlon+1:2*nlat*nlon), nlat, nlon) # ∂E/∂Vp component
     
-    # Copy back to distributed array format
-    GVt = similar(Vtθφ); GVp = similar(Vpθφ)
-    copyto!(GVt, gVt); copyto!(GVp, gVp)
-    return GVt, GVp
+    # Copy back to distributed array format if supported; otherwise return Arrays
+    try
+        GVt = similar(Vtθφ, eltype(gVt)); GVp = similar(Vpθφ, eltype(gVp))
+        copyto!(GVt, gVt); copyto!(GVp, gVp)
+        return GVt, GVp
+    catch
+        return gVt, gVp
+    end
 end
 
 """
