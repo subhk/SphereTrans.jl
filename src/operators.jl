@@ -87,26 +87,36 @@ Apply a nearest-neighbor-in-l operator represented by `mx` to `Qlm` and write to
 Both `Qlm` and `Rlm` are length `cfg.nlm` packed vectors (m≥0, SHTns LM order).
 """
 function SH_mul_mx(cfg::SHTConfig, mx::AbstractVector{<:Real}, Qlm::AbstractVector{<:Complex}, Rlm::AbstractVector{<:Complex})
+    # Validate input array dimensions
     length(mx) == 2*cfg.nlm || throw(DimensionMismatch("mx length must be 2*nlm=$(2*cfg.nlm)"))
     length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be nlm=$(cfg.nlm)"))
     length(Rlm) == cfg.nlm || throw(DimensionMismatch("Rlm length must be nlm=$(cfg.nlm)"))
+    
     lmax = cfg.lmax; mres = cfg.mres
+    
+    # Apply the tridiagonal operator to each (l,m) mode
     @inbounds for lm0 in 0:(cfg.nlm-1)
-        l = cfg.li[lm0+1]; m = cfg.mi[lm0+1]
-        c_minus = mx[2*lm0 + 1]
-        c_plus  = mx[2*lm0 + 2]
-        acc = 0.0 + 0.0im
-        # l-1 neighbor
-        if l > m && l > 0
-            lm_prev = LM_index(lmax, mres, l-1, m)
-            acc += c_minus * Qlm[lm_prev + 1]
+        l = cfg.li[lm0+1]; m = cfg.mi[lm0+1]  # Get (l,m) for this packed index
+        
+        # Extract coupling coefficients for this (l,m) mode
+        c_minus = mx[2*lm0 + 1]  # Coefficient for coupling to Y_{l-1}^m
+        c_plus  = mx[2*lm0 + 2]  # Coefficient for coupling to Y_{l+1}^m
+        
+        acc = 0.0 + 0.0im  # Accumulator for the result
+        
+        # Couple to lower degree neighbor Y_{l-1}^m
+        if l > m && l > 0  # Check bounds: l-1 ≥ m and l-1 ≥ 0
+            lm_prev = LM_index(lmax, mres, l-1, m)  # Get packed index for (l-1,m)
+            acc += c_minus * Qlm[lm_prev + 1]       # Add contribution from lower neighbor
         end
-        # l+1 neighbor
-        if l < lmax
-            lm_next = LM_index(lmax, mres, l+1, m)
-            acc += c_plus * Qlm[lm_next + 1]
+        
+        # Couple to higher degree neighbor Y_{l+1}^m  
+        if l < lmax  # Check bounds: l+1 ≤ lmax
+            lm_next = LM_index(lmax, mres, l+1, m)  # Get packed index for (l+1,m)
+            acc += c_plus * Qlm[lm_next + 1]        # Add contribution from upper neighbor
         end
-        Rlm[lm0 + 1] = acc
+        
+        Rlm[lm0 + 1] = acc  # Store result for this (l,m) mode
     end
     return Rlm
 end
