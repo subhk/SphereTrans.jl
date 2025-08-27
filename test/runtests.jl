@@ -10,6 +10,14 @@ using Random           # For reproducible random number generation
 using SHTnsKit         # The package being tested
 using Zygote          # For automatic differentiation tests
 
+const VERBOSE = get(ENV, "SHTNSKIT_TEST_VERBOSE", "0") == "1"
+try
+    @eval using FFTW
+    VERBOSE && @info "FFTW available for tests"
+catch e
+    VERBOSE && @info "FFTW not available for tests" exception=(e, nothing)
+end
+
 """
     parseval_scalar_test(lmax::Int)
 
@@ -31,7 +39,10 @@ function parseval_scalar_test(lmax::Int)
     f = synthesis(cfg, alm; real_output=true)
 
     # Parseval's identity: ∫|f|² dΩ = Σ|a_lm|² (energy conservation)
-    @test isapprox(energy_scalar(cfg, alm), grid_energy_scalar(cfg, f); rtol=1e-10, atol=1e-12)
+    E_spec = energy_scalar(cfg, alm)
+    E_grid = grid_energy_scalar(cfg, f)
+    VERBOSE && @info "Parseval scalar" lmax E_spec E_grid rel=abs(E_spec - E_grid)/(abs(E_grid)+eps())
+    @test isapprox(E_spec, E_grid; rtol=1e-10, atol=1e-12)
  
 
 
@@ -292,7 +303,10 @@ function parseval_vector_test(lmax::Int)
     Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=true)
 
     # Parseval for vector fields: ∫(|V_θ|² + |V_φ|²) dΩ = Σ(|S_lm|² + |T_lm|²)
-    @test isapprox(energy_vector(cfg, Slm, Tlm), grid_energy_vector(cfg, Vt, Vp); rtol=1e-9, atol=1e-11)
+    E_vec = energy_vector(cfg, Slm, Tlm)
+    E_grid = grid_energy_vector(cfg, Vt, Vp)
+    VERBOSE && @info "Parseval vector" lmax E_vec E_grid rel=abs(E_vec - E_grid)/(abs(E_grid)+eps())
+    @test isapprox(E_vec, E_grid; rtol=1e-9, atol=1e-11)
 end
 
 # ===== CORE MATHEMATICAL PROPERTY TESTS =====
