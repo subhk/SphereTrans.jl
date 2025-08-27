@@ -77,42 +77,48 @@ Returns a grid `f` of shape `(cfg.nlat, cfg.nlon)`. If `real_output=true`,
 enforces Hermitian symmetry to produce real-valued output.
 """
 function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
+    # Validate input coefficient array dimensions
     lmax, mmax = cfg.lmax, cfg.mmax
     size(alm, 1) == lmax + 1 || throw(DimensionMismatch("first dim must be lmax+1=$(lmax+1)"))
     size(alm, 2) == mmax + 1 || throw(DimensionMismatch("second dim must be mmax+1=$(mmax+1)"))
 
+    # Allocate output array for spatial grid
     nlat, nlon = cfg.nlat, cfg.nlon
     CT = eltype(alm)
-    Fφ = Matrix{CT}(undef, nlat, nlon)
+    Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier modes: Fφ[lat, m]
     fill!(Fφ, 0.0 + 0.0im)
 
-    # Temporary buffers
-    P = Vector{Float64}(undef, lmax + 1)
-    G = Vector{CT}(undef, nlat)
-    inv_scaleφ = nlon
+    # Working arrays for synthesis computation
+    P = Vector{Float64}(undef, lmax + 1)  # Legendre polynomials buffer
+    G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
+    inv_scaleφ = nlon                    # Inverse FFT scaling factor
 
-    # Convert incoming coefficients to internal norm if needed
+    # Convert incoming coefficients to internal normalization if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
         alm_int = similar(alm)
-        convert_alm_norm!(alm_int, alm, cfg; to_internal=true)
+        convert_alm_norm!(alm_int, alm, cfg; to_internal=true)  # Convert to internal format
         alm = alm_int
     end
-    # Build azimuthal spectra from alm (internal)
+    
+    # Build azimuthal Fourier spectrum from spherical harmonic coefficients
     @threads for m in 0:mmax
-        col = m + 1
-        # G(θ_i) = sum_{l=m}^{lmax} Nlm * P_l^m(x_i) * alm_{l,m}
+        col = m + 1  # Julia 1-based indexing
+        
+        # Compute latitudinal profile: G(θ_i) = Σ_l [N_lm * P_l^m(x_i) * a_lm]
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
-            tbl = cfg.plm_tables[m+1]
+            # Fast path: use precomputed Legendre polynomial tables
+            tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
                 g = 0.0 + 0.0im
-                @inbounds for l in m:lmax
+                @inbounds for l in m:lmax  # Sum over degrees l ≥ m
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
                 end
                 G[i] = g
             end
         else
+            # Fallback: compute Legendre polynomials on-the-fly
             for i in 1:nlat
-                Plm_row!(P, cfg.x[i], lmax, m)
+                Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
                 @inbounds for l in m:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
@@ -120,22 +126,24 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
                 G[i] = g
             end
         end
-        # Place positive m Fourier modes
+        
+        # Store positive m Fourier modes in the frequency domain array
         @inbounds for i in 1:nlat
             Fφ[i, col] = inv_scaleφ * G[i]
         end
-        # Hermitian conjugate for negative m to ensure real output
+        
+        # For real output, enforce Hermitian symmetry: F(-m) = F*(m)
         if real_output && m > 0
-            conj_index = nlon - m + 1
+            conj_index = nlon - m + 1  # Index for negative frequency -m
             @inbounds for i in 1:nlat
                 Fφ[i, conj_index] = conj(Fφ[i, col])
             end
         end
     end
 
-    # Inverse FFT along φ
+    # Inverse FFT along longitude (φ) to get spatial field
     f = ifft_phi(Fφ)
-    return real_output ? real.(f) : f
+    return real_output ? real.(f) : f  # Return real part if real output requested
 end
 
 """
