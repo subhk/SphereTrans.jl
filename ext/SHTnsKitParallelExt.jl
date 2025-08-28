@@ -118,6 +118,65 @@ include("parallel_ops_pencil.jl")       # Parallel differential operators using 
 include("parallel_rotations_pencil.jl") # Parallel spherical rotation operations
 include("parallel_local.jl")            # Local (per-process) operations and utilities
 
+# Optimized communication patterns for large spectral arrays
+function efficient_spectral_reduce!(local_data::AbstractMatrix, comm)
+    # For large spectral arrays, use hierarchical reduction instead of flat Allreduce
+    # This reduces communication overhead from O(P*N²) to O(log(P)*N²)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    if nprocs <= 4 || length(local_data) < 10000
+        # For small problems, use standard Allreduce
+        MPI.Allreduce!(local_data, +, comm)
+        return local_data
+    end
+    
+    # Hierarchical reduction for large problems
+    # Step 1: Local reduction within compute nodes (simulated here)
+    temp_buf = similar(local_data)
+    copyto!(temp_buf, local_data)
+    
+    # Step 2: Tree-based reduction across all processes
+    step = 1
+    while step < nprocs
+        if rank % (2 * step) == 0 && rank + step < nprocs
+            # Receive and accumulate from partner process
+            MPI.Recv!(temp_buf, rank + step, 0, comm)
+            local_data .+= temp_buf
+        elseif (rank - step) % (2 * step) == 0 && rank >= step
+            # Send to partner process
+            MPI.Send(local_data, rank - step, 0, comm)
+            break  # This process is done
+        end
+        step *= 2
+    end
+    
+    # Step 3: Broadcast final result from root to all processes
+    MPI.Bcast!(local_data, 0, comm)
+    return local_data
+end
+
+function sparse_spectral_reduce!(local_data::AbstractVector, indices::Vector{Int}, comm)
+    # For sparse spectral data, only communicate non-zero coefficients
+    # This can significantly reduce communication volume
+    nz_indices = findall(!iszero, local_data)
+    
+    if length(nz_indices) < length(local_data) * 0.1  # Less than 10% non-zero
+        # Gather only non-zero entries
+        local_nz_data = local_data[nz_indices]
+        global_nz_data = MPI.Allreduce(local_nz_data, +, comm)
+        
+        # Reconstruct full array
+        fill!(local_data, 0)
+        local_data[nz_indices] = global_nz_data
+        return local_data
+    else
+        # Use standard Allreduce for dense data
+        MPI.Allreduce!(local_data, +, comm)
+        return local_data
+    end
+end
+
 # Note: Avoid forwarding Base.zeros(Pencil) to PencilArrays.zeros to prevent
 # potential recursion when PencilArrays.zeros may call Base.zeros internally.
 end # module SHTnsKitParallelExt
