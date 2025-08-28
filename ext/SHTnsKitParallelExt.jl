@@ -120,40 +120,101 @@ include("parallel_local.jl")            # Local (per-process) operations and uti
 
 # Optimized communication patterns for large spectral arrays
 function efficient_spectral_reduce!(local_data::AbstractMatrix, comm)
-    # For large spectral arrays, use hierarchical reduction instead of flat Allreduce
-    # This reduces communication overhead from O(P*N²) to O(log(P)*N²)
+    # Advanced hierarchical reduction with node-aware communication topology
+    # Optimizes for NUMA domains, compute nodes, and network topology
     rank = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
     
-    if nprocs <= 4 || length(local_data) < 10000
+    if nprocs <= 8 || length(local_data) < 5000
         # For small problems, use standard Allreduce
         MPI.Allreduce!(local_data, +, comm)
         return local_data
     end
     
-    # Hierarchical reduction for large problems
-    # Step 1: Local reduction within compute nodes (simulated here)
-    temp_buf = similar(local_data)
-    copyto!(temp_buf, local_data)
+    # Try to detect node-local communication capabilities
+    node_size = get(ENV, "SHTNSKIT_NODE_SIZE", "0")
+    ppn = node_size == "0" ? min(nprocs, 32) : parse(Int, node_size)  # processes per node
     
-    # Step 2: Tree-based reduction across all processes
+    # Multi-level hierarchical reduction for better scaling
+    hierarchical_spectral_reduce!(local_data, comm, ppn)
+    return local_data
+end
+
+function hierarchical_spectral_reduce!(local_data::AbstractMatrix, comm, ppn::Int)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    # Level 1: Intra-node reduction (shared memory optimization)
+    node_id = rank ÷ ppn
+    local_rank = rank % ppn
+    
+    # Create intra-node communicator for shared-memory optimization
+    node_comm = MPI.Comm_split(comm, node_id, local_rank)
+    node_nprocs = MPI.Comm_size(node_comm)
+    
+    if node_nprocs > 1
+        # Reduce within each compute node using optimized shared-memory path
+        MPI.Allreduce!(local_data, +, node_comm)
+    end
+    
+    # Level 2: Inter-node reduction (network-aware)
+    if local_rank == 0  # Node representatives
+        inter_node_comm = MPI.Comm_split(comm, 0, node_id)
+        inter_nprocs = MPI.Comm_size(inter_node_comm)
+        
+        if inter_nprocs > 1
+            # Use tree-based reduction between nodes for network efficiency
+            tree_reduce!(local_data, inter_node_comm)
+        end
+        
+        MPI.Comm_free(inter_node_comm)
+    else
+        # Create dummy communicator for non-representatives
+        MPI.Comm_split(comm, 1, 0)
+    end
+    
+    # Level 3: Broadcast results back within nodes
+    if node_nprocs > 1
+        MPI.Bcast!(local_data, 0, node_comm)
+    end
+    
+    MPI.Comm_free(node_comm)
+end
+
+function tree_reduce!(data::AbstractMatrix, comm)
+    # Optimized binary tree reduction for inter-node communication
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    temp_buf = similar(data)
+    
+    # Up-sweep: reduce up the tree
     step = 1
     while step < nprocs
         if rank % (2 * step) == 0 && rank + step < nprocs
-            # Receive and accumulate from partner process
-            MPI.Recv!(temp_buf, rank + step, 0, comm)
-            local_data .+= temp_buf
+            # Receive and accumulate from partner
+            MPI.Recv!(temp_buf, rank + step, step, comm)
+            data .+= temp_buf
         elseif (rank - step) % (2 * step) == 0 && rank >= step
-            # Send to partner process
-            MPI.Send(local_data, rank - step, 0, comm)
-            break  # This process is done
+            # Send to parent and exit
+            MPI.Send(data, rank - step, step, comm)
+            return
         end
         step *= 2
     end
     
-    # Step 3: Broadcast final result from root to all processes
-    MPI.Bcast!(local_data, 0, comm)
-    return local_data
+    # Down-sweep: broadcast final result
+    step = prevpow(2, nprocs - 1)
+    while step >= 1
+        if rank % (2 * step) == 0 && rank + step < nprocs
+            # Send result to child
+            MPI.Send(data, rank + step, -step, comm)
+        elseif (rank - step) % (2 * step) == 0 && rank >= step
+            # Receive final result from parent
+            MPI.Recv!(data, rank - step, -step, comm)
+        end
+        step ÷= 2
+    end
 end
 
 function sparse_spectral_reduce!(local_data::AbstractVector, indices::Vector{Int}, comm)

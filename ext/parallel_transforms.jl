@@ -260,7 +260,7 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
                 end
             else
                 SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
-                @inbounds for l in max(1,mval):lmax
+                @inbounds @simd ivdep for l in max(1,mval):lmax
                     N = cfg.Nlm[l+1, col]
                     dθY = -sθ * N * dPdx[l+1]
                     Y = N * P[l+1]

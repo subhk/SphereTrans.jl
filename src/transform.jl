@@ -6,7 +6,15 @@ Input grid `f` must be sized `(cfg.nlat, cfg.nlon)` and may be real or complex.
 Returns coefficients `alm` of size `(cfg.lmax+1, cfg.mmax+1)` with indices `(l+1, m+1)`.
 Normalization uses orthonormal spherical harmonics with Condon–Shortley phase.
 """
-function analysis(cfg::SHTConfig, f::AbstractMatrix)
+function analysis(cfg::SHTConfig, f::AbstractMatrix; use_fused_loops::Bool=true)
+    if use_fused_loops
+        return analysis_fused(cfg, f)
+    else
+        return analysis_unfused(cfg, f)
+    end
+end
+
+function analysis_unfused(cfg::SHTConfig, f::AbstractMatrix)
     # Validate input dimensions match the configured grid
     nlat, nlon = cfg.nlat, cfg.nlon
     size(f, 1) == nlat || throw(DimensionMismatch("first dim must be nlat=$(nlat)"))
