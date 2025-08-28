@@ -37,7 +37,7 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
             for i in 1:nlat
                 Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
                 wi = cfg.w[i]         # Gauss-Legendre weight
-                @inbounds for l in m:lmax  # Only l ≥ m contribute for order m
+                @inbounds @simd ivdep for l in m:lmax  # Only l ≥ m contribute for order m
                     alm[l+1, col] += (wi * tbl[l+1, i]) * Fi
                 end
             end
@@ -47,14 +47,14 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @inbounds for l in m:lmax
+                @inbounds @simd ivdep for l in m:lmax
                     alm[l+1, col] += (wi * P[l+1]) * Fi
                 end
             end
         end
         
-        # Apply spherical harmonic normalization and longitude scaling
-        @inbounds for l in m:lmax
+        # Apply spherical harmonic normalization and longitude scaling with SIMD
+        @inbounds @simd ivdep for l in m:lmax
             alm[l+1, col] *= cfg.Nlm[l+1, col] * scaleφ
         end
     end
@@ -112,7 +112,7 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
             tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
                 g = 0.0 + 0.0im
-                @inbounds for l in m:lmax  # Sum over degrees l ≥ m
+                @inbounds @simd ivdep for l in m:lmax  # Sum over degrees l ≥ m
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
                 end
                 G[i] = g
@@ -122,7 +122,7 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
-                @inbounds for l in m:lmax
+                @inbounds @simd ivdep for l in m:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
                 end
                 G[i] = g

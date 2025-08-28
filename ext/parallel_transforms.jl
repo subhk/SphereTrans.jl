@@ -7,7 +7,7 @@ function _dense_to_packed!(packed::Vector{ComplexF64}, dense::Matrix{ComplexF64}
     lmax, mmax, mres = cfg.lmax, cfg.mmax, cfg.mres
     @inbounds for m in 0:mmax
         (m % mres == 0) || continue
-        for l in m:lmax
+        @simd ivdep for l in m:lmax
             lm = SHTnsKit.LM_index(lmax, mres, l, m) + 1
             packed[lm] = dense[l+1, m+1]
         end
@@ -20,7 +20,7 @@ function _packed_to_dense!(dense::Matrix{ComplexF64}, packed::Vector{ComplexF64}
     fill!(dense, 0)
     @inbounds for m in 0:mmax
         (m % mres == 0) || continue
-        for l in m:lmax
+        @simd ivdep for l in m:lmax
             lm = SHTnsKit.LM_index(lmax, mres, l, m) + 1
             dense[l+1, m+1] = packed[lm]
         end
@@ -68,12 +68,12 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use
             wi = cfg.w[iglob]
             if use_tbl
                 tblcol = view(cfg.plm_tables[col], :, iglob)
-                @inbounds for l in mval:lmax
+                @inbounds @simd ivdep for l in mval:lmax
                     temp_dense[l+1, col] += wi * tblcol[l+1] * Fi
                 end
             else
                 SHTnsKit.Plm_row!(P, cfg.x[iglob], lmax, mval)
-                @inbounds for l in mval:lmax
+                @inbounds @simd ivdep for l in mval:lmax
                     temp_dense[l+1, col] += wi * P[l+1] * Fi
                 end
             end
@@ -84,18 +84,22 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use
     if use_packed_storage
         # Use efficient reduction for large spectral arrays
         SHTnsKitParallelExt.efficient_spectral_reduce!(temp_dense, comm)
-        # Apply normalization to dense matrix
-        @inbounds for m in 0:mmax, l in m:lmax
-            temp_dense[l+1, m+1] *= cfg.Nlm[l+1, m+1] * cfg.cphi
+        # Apply normalization to dense matrix with SIMD optimization  
+        @inbounds for m in 0:mmax
+            @simd ivdep for l in m:lmax
+                temp_dense[l+1, m+1] *= cfg.Nlm[l+1, m+1] * cfg.cphi
+            end
         end
         # Convert to packed storage
         _dense_to_packed!(Alm_local, temp_dense, cfg)
     else
         # Use efficient reduction for large spectral arrays
         SHTnsKitParallelExt.efficient_spectral_reduce!(Alm_local, comm)
-        # Apply normalization to dense matrix
-        @inbounds for m in 0:mmax, l in m:lmax
-            Alm_local[l+1, m+1] *= cfg.Nlm[l+1, m+1] * cfg.cphi
+        # Apply normalization to dense matrix with SIMD optimization
+        @inbounds for m in 0:mmax
+            @simd ivdep for l in m:lmax
+                Alm_local[l+1, m+1] *= cfg.Nlm[l+1, m+1] * cfg.cphi
+            end
         end
     end
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
@@ -148,7 +152,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             for (ii,iθ) in enumerate(θloc)
                 g = 0.0 + 0.0im
                 iglobθ = θ_globals[ii]
-                @inbounds for l in mval:lmax
+                @inbounds @simd ivdep for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, iglobθ]) * Alm[l+1, col]
                 end
                 G[ii] = g
@@ -158,7 +162,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
                 iglobθ = θ_globals[ii]
                 SHTnsKit.Plm_row!(P, cfg.x[iglobθ], lmax, mval)
                 g = 0.0 + 0.0im
-                @inbounds for l in mval:lmax
+                @inbounds @simd ivdep for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * Alm[l+1, col]
                 end
                 G[ii] = g
@@ -246,7 +250,7 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
             wi = cfg.w[iglobθ]
             if use_tbl
                 tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
-                @inbounds for l in max(1,mval):lmax
+                @inbounds @simd ivdep for l in max(1,mval):lmax
                     N = cfg.Nlm[l+1, col]
                     dθY = -sθ * N * tbld[l+1, iglobθ]
                     Y = N * tblP[l+1, iglobθ]
