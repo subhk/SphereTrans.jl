@@ -6,6 +6,11 @@ struct DistAnalysisPlan
     cfg::SHTnsKit.SHTConfig
     prototype_θφ::PencilArray
     use_rfft::Bool
+    # Pre-computed index maps for performance
+    θ_local_to_global::Vector{Int}
+    m_local_to_global::Vector{Int}
+    m_local_range::UnitRange{Int}
+    θ_local_range::UnitRange{Int}
 end
 
 DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; use_rfft::Bool=false) = DistAnalysisPlan(cfg, prototype_θφ, use_rfft)
