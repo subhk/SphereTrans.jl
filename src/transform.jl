@@ -198,7 +198,8 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
             tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
                 g = 0.0 + 0.0im
-                @inbounds @simd ivdep for l in m:lmax  # Sum over degrees l ≥ m
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax  # Sum over degrees l ≥ m
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
                 end
                 G[i] = g
@@ -276,7 +277,8 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
             tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
                 g = 0.0 + 0.0im
-                @inbounds @simd ivdep for l in m:lmax  # Sum over degrees l ≥ m
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax  # Sum over degrees l ≥ m
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
                 end
                 G[i] = g
