@@ -98,7 +98,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             tbl = cfg.plm_tables[col]
             for (ii,iθ) in enumerate(θloc)
                 g = 0.0 + 0.0im
-                iglobθ = globalindices(Fθk, 1)[ii]
+                iglobθ = θ_globals[ii]
                 @inbounds for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, iglobθ]) * Alm[l+1, col]
                 end
@@ -106,7 +106,7 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             end
         else
             for (ii,iθ) in enumerate(θloc)
-                iglobθ = globalindices(Fθk, 1)[ii]
+                iglobθ = θ_globals[ii]
                 SHTnsKit.Plm_row!(P, cfg.x[iglobθ], lmax, mval)
                 g = 0.0 + 0.0im
                 @inbounds for l in mval:lmax
