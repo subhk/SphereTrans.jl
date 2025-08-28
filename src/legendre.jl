@@ -107,7 +107,8 @@ function Plm_and_dPdx_row!(P::AbstractVector{T}, dPdx::AbstractVector{T}, x::T, 
         l = m
         dPdx[l+1] = (l == 0) ? zero(T) : (m * x * P[l+1]) / x2m1
         
-        # Compute derivatives for l ≥ m+1 using recurrence relation with SIMD optimization
+        # Compute derivatives for l ≥ m+1 using recurrence relation - SAFE to vectorize!
+        # Each dPdx[l+1] depends only on already-computed P[l+1] and P[l], no iteration dependencies
         @simd ivdep for l in (m+1):lmax
             # Standard derivative recurrence: 
             # dP_l^m/dx = [l*x*P_l^m - (l+m)*P_{l-1}^m] / (x²-1)

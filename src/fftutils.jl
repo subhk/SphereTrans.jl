@@ -48,8 +48,9 @@ function _dft_phi(A::AbstractMatrix, dir::Int)
         for k in 0:(nlon-1)
             s = zero(eltype(Y))  # Accumulator for this frequency
             
-            # Sum over all input points j with SIMD vectorization
-            @simd ivdep for j in 0:(nlon-1)
+            # Sum over all input points j - USE REDUCTION, NOT ivdep!
+            # Multiple j iterations accumulate into same 's', so this is a reduction operation
+            @simd for j in 0:(nlon-1)
                 # DFT kernel: exp(dir * 2πi * k * j / N)
                 s += A[i, j+1] * cis(dir * _TWO_PI * k * j / nlon)
             end
