@@ -28,7 +28,15 @@ function _packed_to_dense!(dense::Matrix{ComplexF64}, packed::Vector{ComplexF64}
     return dense
 end
 
-function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false, use_packed_storage::Bool=false)
+function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false, use_packed_storage::Bool=false, use_cache_blocking::Bool=true)
+    if use_cache_blocking
+        return dist_analysis_cache_blocked(cfg, fθφ; use_tables, use_rfft, use_packed_storage)
+    else
+        return dist_analysis_standard(cfg, fθφ; use_tables, use_rfft, use_packed_storage)
+    end
+end
+
+function dist_analysis_standard(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false, use_packed_storage::Bool=false)
     comm = communicator(fθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Choose FFT path
@@ -102,6 +110,108 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use
             end
         end
     end
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        Alm_out = similar(Alm_local)
+        SHTnsKit.convert_alm_norm!(Alm_out, Alm_local, cfg; to_internal=false)
+        return Alm_out
+    else
+        return Alm_local
+    end
+end
+
+"""
+    dist_analysis_cache_blocked(cfg, fθφ; kwargs...)
+
+Cache-optimized parallel analysis that processes data in cache-friendly blocks
+to minimize memory bandwidth and improve performance on NUMA systems.
+"""
+function dist_analysis_cache_blocked(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false, use_packed_storage::Bool=false)
+    comm = communicator(fθφ)
+    lmax, mmax = cfg.lmax, cfg.mmax
+    
+    # Choose FFT path
+    if use_rfft && eltype(fθφ) <: Real
+        pfft = SHTnsKitParallelExt._get_or_plan(:rfft, fθφ)
+        Fθk = rfft(fθφ, pfft)
+    else
+        pfft = SHTnsKitParallelExt._get_or_plan(:fft, fθφ)
+        Fθk = fft(fθφ, pfft)
+    end
+    Fθm = transpose(Fθk, (; dims=(1,2), names=(:θ,:m)))
+    
+    # Use packed storage for better memory efficiency
+    if use_packed_storage
+        Alm_local = zeros(ComplexF64, cfg.nlm)
+        temp_dense = zeros(ComplexF64, lmax+1, mmax+1)
+    else
+        Alm_local = zeros(ComplexF64, lmax+1, mmax+1)
+        temp_dense = Alm_local
+    end
+    
+    θrange = axes(Fθm, 1); mrange = axes(Fθm, 2)
+    use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables)
+    P = Vector{Float64}(undef, lmax + 1)
+    
+    # Pre-compute global index maps for performance
+    θ_globals = collect(globalindices(Fθm, 1))
+    m_globals = collect(globalindices(Fθm, 2))
+    
+    # CACHE BLOCKING: Process m-modes in cache-friendly blocks
+    cache_size_kb = get(ENV, "SHTNSKIT_CACHE_SIZE", "32") |> x -> parse(Int, x)  # L1 cache size in KB
+    elements_per_kb = 1024 ÷ sizeof(ComplexF64)  # ~128 complex numbers per KB
+    block_size_m = max(1, min(length(mrange), cache_size_kb * elements_per_kb ÷ (2 * length(θrange))))
+    
+    for m_start in 1:block_size_m:length(mrange)
+        m_end = min(m_start + block_size_m - 1, length(mrange))
+        m_block = mrange[m_start:m_end]
+        
+        # Process this block of m-modes together for better cache locality
+        for (jj, m) in enumerate(m_block)
+            mm_global = m_globals[m_start + jj - 1]
+            mval = mm_global - 1
+            (mval <= mmax) || continue
+            col = mval + 1
+            
+            # CACHE-OPTIMIZED: Process θ points in blocks for better L1 cache usage
+            θ_block_size = min(32, length(θrange))  # Tune for L1 cache
+            
+            for θ_start in 1:θ_block_size:length(θrange)
+                θ_end = min(θ_start + θ_block_size - 1, length(θrange))
+                
+                for ii in θ_start:θ_end
+                    iθ = θrange[ii]
+                    iglob = θ_globals[ii]
+                    Fi = Fθm[iθ, m]
+                    wi = cfg.w[iglob]
+                    
+                    if use_tbl
+                        tblcol = view(cfg.plm_tables[col], :, iglob)
+                        @inbounds @simd ivdep for l in mval:lmax
+                            # FUSION: Combine integration with normalization
+                            weight_norm = wi * cfg.Nlm[l+1, col] * cfg.cphi
+                            temp_dense[l+1, col] += (weight_norm * tblcol[l+1]) * Fi
+                        end
+                    else
+                        SHTnsKit.Plm_row!(P, cfg.x[iglob], lmax, mval)
+                        @inbounds @simd ivdep for l in mval:lmax
+                            # FUSION: Combine integration with normalization
+                            weight_norm = wi * cfg.Nlm[l+1, col] * cfg.cphi
+                            temp_dense[l+1, col] += (weight_norm * P[l+1]) * Fi
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    # Handle MPI reduction and final processing
+    if use_packed_storage
+        SHTnsKitParallelExt.efficient_spectral_reduce!(temp_dense, comm)
+        _dense_to_packed!(Alm_local, temp_dense, cfg)
+    else
+        SHTnsKitParallelExt.efficient_spectral_reduce!(Alm_local, comm)
+    end
+    
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
         Alm_out = similar(Alm_local)
         SHTnsKit.convert_alm_norm!(Alm_out, Alm_local, cfg; to_internal=false)
