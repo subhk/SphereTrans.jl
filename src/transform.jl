@@ -209,7 +209,8 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
-                @inbounds @simd ivdep for l in m:lmax
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
                 end
                 G[i] = g
@@ -288,7 +289,8 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
-                @inbounds @simd ivdep for l in m:lmax
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
                 end
                 G[i] = g

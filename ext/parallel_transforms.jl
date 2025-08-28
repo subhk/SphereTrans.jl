@@ -262,7 +262,8 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
             for (ii,iθ) in enumerate(θloc)
                 g = 0.0 + 0.0im
                 iglobθ = θ_globals[ii]
-                @inbounds @simd ivdep for l in mval:lmax
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, iglobθ]) * Alm[l+1, col]
                 end
                 G[ii] = g
@@ -272,7 +273,8 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
                 iglobθ = θ_globals[ii]
                 SHTnsKit.Plm_row!(P, cfg.x[iglobθ], lmax, mval)
                 g = 0.0 + 0.0im
-                @inbounds @simd ivdep for l in mval:lmax
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in mval:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * Alm[l+1, col]
                 end
                 G[ii] = g
@@ -360,6 +362,7 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
             wi = cfg.w[iglobθ]
             if use_tbl
                 tblP = cfg.plm_tables[col]; tbld = cfg.dplm_tables[col]
+                # SAFE to vectorize - each l updates DIFFERENT elements Slm_local[l+1,col] and Tlm_local[l+1,col]
                 @inbounds @simd ivdep for l in max(1,mval):lmax
                     N = cfg.Nlm[l+1, col]
                     dθY = -sθ * N * tbld[l+1, iglobθ]
@@ -370,6 +373,7 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
                 end
             else
                 SHTnsKit.Plm_and_dPdx_row!(P, dPdx, x, lmax, mval)
+                # SAFE to vectorize - each l updates DIFFERENT elements Slm_local[l+1,col] and Tlm_local[l+1,col]  
                 @inbounds @simd ivdep for l in max(1,mval):lmax
                     N = cfg.Nlm[l+1, col]
                     dθY = -sθ * N * dPdx[l+1]
