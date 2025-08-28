@@ -11,9 +11,11 @@ struct DistAnalysisPlan
     m_local_to_global::Vector{Int}
     m_local_range::UnitRange{Int}
     θ_local_range::UnitRange{Int}
+    # Memory layout optimization
+    use_packed_storage::Bool
 end
 
-function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; use_rfft::Bool=false)
+function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; use_rfft::Bool=false, use_packed_storage::Bool=true)
     # Pre-compute index mappings to avoid expensive lookups in tight loops
     temp_pencil = allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64)
     
@@ -24,7 +26,7 @@ function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; 
     m_local_to_global = collect(globalindices(temp_pencil, 2))
     
     return DistAnalysisPlan(cfg, prototype_θφ, use_rfft, θ_local_to_global, m_local_to_global, 
-                           m_range, θ_range)
+                           m_range, θ_range, use_packed_storage)
 end
 
 struct DistPlan
