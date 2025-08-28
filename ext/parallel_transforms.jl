@@ -18,14 +18,18 @@ function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use
     θrange = axes(Fθm, 1); mrange = axes(Fθm, 2)
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables)
     P = Vector{Float64}(undef, lmax + 1)
-    for m in mrange
-        mm = m - first(mrange)
-        mglob = globalindices(Fθm, 2)[mm+1]
+    
+    # Pre-compute global index maps for performance (O(1) lookups instead of O(N²))
+    θ_globals = collect(globalindices(Fθm, 1))
+    m_globals = collect(globalindices(Fθm, 2))
+    
+    for (jj, m) in enumerate(mrange)
+        mglob = m_globals[jj]
         mval = mglob - 1
         (mval <= mmax) || continue
         col = mval + 1
         for (ii,iθ) in enumerate(θrange)
-            iglob = globalindices(Fθm, 1)[ii]
+            iglob = θ_globals[ii]
             Fi = Fθm[iθ, m]
             wi = cfg.w[iglob]
             if use_tbl
@@ -79,8 +83,14 @@ function SHTnsKit.dist_synthesis(cfg::SHTnsKit.SHTConfig, Alm::AbstractMatrix; p
     nlon = cfg.nlon
     P = Vector{Float64}(undef, lmax + 1)
     G = Vector{ComplexF64}(undef, length(θloc))
+    
+    # Pre-compute global index maps for performance
+    temp_m_pencil = allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64)
+    m_globals = collect(globalindices(temp_m_pencil, 2))
+    θ_globals = collect(globalindices(Fθk, 1))
+    
     for (jj, jm) in enumerate(mloc)
-        mglob = globalindices(allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64), 2)[jj]
+        mglob = m_globals[jj]
         mval = mglob - 1
         (mval <= mmax) || continue
         col = mval + 1
@@ -159,8 +169,9 @@ function SHTnsKit.dist_spat_to_SHsphtor(cfg::SHTnsKit.SHTConfig, Vtθφ::PencilA
     Tlm_local = zeros(ComplexF64, lmax+1, mmax+1)
 
     θrange = axes(Ftθm, 1); mrange = axes(Ftθm, 2)
-    gl_θ = globalindices(Ftθm, 1)
-    gl_m = globalindices(Ftθm, 2)
+    # Pre-compute global index maps for performance (O(1) lookups instead of O(N²))
+    gl_θ = collect(globalindices(Ftθm, 1))
+    gl_m = collect(globalindices(Ftθm, 2))
 
     use_tbl = use_tables && cfg.use_plm_tables && !isempty(cfg.plm_tables) && !isempty(cfg.dplm_tables)
     P = Vector{Float64}(undef, lmax + 1)

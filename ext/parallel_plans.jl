@@ -13,7 +13,19 @@ struct DistAnalysisPlan
     θ_local_range::UnitRange{Int}
 end
 
-DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; use_rfft::Bool=false) = DistAnalysisPlan(cfg, prototype_θφ, use_rfft)
+function DistAnalysisPlan(cfg::SHTnsKit.SHTConfig, prototype_θφ::PencilArray; use_rfft::Bool=false)
+    # Pre-compute index mappings to avoid expensive lookups in tight loops
+    temp_pencil = allocate(prototype_θφ; dims=(:θ,:m), eltype=ComplexF64)
+    
+    θ_range = axes(temp_pencil, 1)
+    m_range = axes(temp_pencil, 2)
+    
+    θ_local_to_global = collect(globalindices(temp_pencil, 1))
+    m_local_to_global = collect(globalindices(temp_pencil, 2))
+    
+    return DistAnalysisPlan(cfg, prototype_θφ, use_rfft, θ_local_to_global, m_local_to_global, 
+                           m_range, θ_range)
+end
 
 struct DistPlan
     cfg::SHTnsKit.SHTConfig
