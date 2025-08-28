@@ -2,7 +2,33 @@
 # Distributed transforms using PencilFFTs/PencilArrays (scalar) and safe fallbacks for vector/QST
 ##########
 
-function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false)
+# Helper function to convert between dense (l+1,m+1) and packed LM storage
+function _dense_to_packed!(packed::Vector{ComplexF64}, dense::Matrix{ComplexF64}, cfg)
+    lmax, mmax, mres = cfg.lmax, cfg.mmax, cfg.mres
+    @inbounds for m in 0:mmax
+        (m % mres == 0) || continue
+        for l in m:lmax
+            lm = SHTnsKit.LM_index(lmax, mres, l, m) + 1
+            packed[lm] = dense[l+1, m+1]
+        end
+    end
+    return packed
+end
+
+function _packed_to_dense!(dense::Matrix{ComplexF64}, packed::Vector{ComplexF64}, cfg)
+    lmax, mmax, mres = cfg.lmax, cfg.mmax, cfg.mres
+    fill!(dense, 0)
+    @inbounds for m in 0:mmax
+        (m % mres == 0) || continue
+        for l in m:lmax
+            lm = SHTnsKit.LM_index(lmax, mres, l, m) + 1
+            dense[l+1, m+1] = packed[lm]
+        end
+    end
+    return dense
+end
+
+function SHTnsKit.dist_analysis(cfg::SHTnsKit.SHTConfig, fθφ::PencilArray; use_tables=cfg.use_plm_tables, use_rfft::Bool=false, use_packed_storage::Bool=false)
     comm = communicator(fθφ)
     lmax, mmax = cfg.lmax, cfg.mmax
     # Choose FFT path
