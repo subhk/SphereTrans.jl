@@ -31,7 +31,9 @@ const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") =
 const _pfft_cache = IdDict{Any,Any}()
 
 # Generate cache key based on array characteristics for FFT plan reuse
-_cache_key(kind::Symbol, A) = (kind, size(A,1), size(A,2), eltype(A), try Comm_size(communicator(A)) catch; 1 end)
+_cache_key(kind::Symbol, A) = (kind, size(A,1), size(A,2), eltype(A), 
+                               try Comm_size(communicator(A)) catch; 1 end,
+                               try hash(A.pencil.decomposition) catch; 0 end)
 
 function _get_or_plan(kind::Symbol, A)
     # If caching disabled, create plan directly without storing
@@ -72,14 +74,28 @@ const _has_pa_globalidx    = isdefined(PencilArrays, :globalindices)
 
 # Get MPI communicator from PencilArray (handles API name changes)
 communicator(A) = _has_pa_communicator ? (PencilArrays.communicator)(A) : (
-    isdefined(PencilArrays, :comm) ? (PencilArrays.comm)(A) : error("PencilArrays communicator not found"))
+    isdefined(PencilArrays, :comm) ? (PencilArrays.comm)(A) : 
+    hasfield(typeof(A), :pencil) && hasfield(typeof(A.pencil), :comm) ? A.pencil.comm :
+    error("PencilArrays communicator not found"))
 
-# Allocate PencilArray (handles API changes)
-allocate(args...; kwargs...) = _has_pa_allocate ? (PencilArrays.allocate)(args...; kwargs...) : error("PencilArrays.allocate not found")
+# Allocate PencilArray (handles API changes)  
+function allocate(args...; kwargs...)
+    if _has_pa_allocate 
+        return (PencilArrays.allocate)(args...; kwargs...)
+    elseif isdefined(PencilArrays, :PencilArray)
+        # Fallback for older versions
+        if length(args) >= 2 && isa(args[2], PencilArrays.Pencil)
+            return PencilArrays.PencilArray(undef, args[1], args[2]; kwargs...)
+        end
+    end
+    error("PencilArrays.allocate not found and no compatible fallback")
+end
 
 # Get global indices for a dimension (handles API name changes)
 globalindices(A, dim) = _has_pa_globalidx ? (PencilArrays.globalindices)(A, dim) : (
-    isdefined(PencilArrays, :global_indices) ? (PencilArrays.global_indices)(A, dim) : error("PencilArrays.globalindices not found"))
+    isdefined(PencilArrays, :global_indices) ? (PencilArrays.global_indices)(A, dim) :
+    hasfield(typeof(A), :pencil) && hasfield(typeof(A.pencil), :axes) ? 
+    A.pencil.axes[dim] : error("PencilArrays.globalindices not found"))
 
 # ===== DISTRIBUTED FFT WRAPPERS =====
 # Wrapper functions for PencilFFTs that work with distributed arrays
