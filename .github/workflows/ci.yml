@@ -231,19 +231,24 @@ jobs:
               t_anal = @belapsed analysis($cfg, $spatial_data)
               println("Analysis: $(t_anal*1000)ms")
               
-              # Laplacian benchmark
-              alm_out = similar(alm)
-              t_lapl = @belapsed apply_laplacian!($cfg, $alm, $alm_out)
-              println("Laplacian: $(t_lapl*1000)ms")
+              # Matrix operator benchmark (using cos(θ) operator)
+              try
+                mx = zeros(Float64, 2*cfg.nlm)
+                mul_ct_matrix(cfg, mx)
+                alm_out = similar(alm)
+                t_op = @belapsed SH_mul_mx($cfg, $mx, $alm, $alm_out)
+                println("Matrix operator: $(t_op*1000)ms")
+              catch
+                println("Matrix operator: not available")
+              end
               
-              # SIMD benchmark if available
+              # Turbo benchmark if LoopVectorization is available
               try
                 alm_copy = copy(alm)
-                t_simd = @belapsed simd_apply_laplacian!($cfg, $alm_copy)
-                speedup = t_lapl / t_simd
-                println("SIMD Laplacian: $(t_simd*1000)ms ($(speedup)x speedup)")
+                t_turbo = @belapsed turbo_apply_laplacian!($cfg, $alm_copy)
+                println("Turbo Laplacian: $(t_turbo*1000)ms")
               catch
-                println("SIMD Laplacian: not available")
+                println("Turbo Laplacian: not available (LoopVectorization extension not loaded)")
               end
             end
             
