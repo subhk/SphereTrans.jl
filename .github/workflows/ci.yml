@@ -219,27 +219,27 @@ jobs:
             for lmax in test_sizes
               println("\n=== Testing lmax = $lmax ===")
               
-              cfg = create_config(Float64, lmax, lmax, 1)
-              qlm = randn(ComplexF64, cfg.nlm)
-              spatial_data = randn(cfg.nlat, cfg.nphi)
+              cfg = create_gauss_config(lmax, lmax + 2; nlon=2*lmax + 1)
+              alm = randn(ComplexF64, lmax+1, lmax+1)
+              spatial_data = randn(cfg.nlat, cfg.nlon)
               
               # Synthesis benchmark
-              t_synth = @belapsed synthesize($cfg, real.($qlm))
+              t_synth = @belapsed synthesis($cfg, $alm; real_output=true)
               println("Synthesis: $(t_synth*1000)ms")
               
               # Analysis benchmark  
-              t_anal = @belapsed analyze($cfg, $spatial_data)
+              t_anal = @belapsed analysis($cfg, $spatial_data)
               println("Analysis: $(t_anal*1000)ms")
               
               # Laplacian benchmark
-              qlm_out = similar(qlm)
-              t_lapl = @belapsed apply_laplacian!($cfg, $qlm, $qlm_out)
+              alm_out = similar(alm)
+              t_lapl = @belapsed apply_laplacian!($cfg, $alm, $alm_out)
               println("Laplacian: $(t_lapl*1000)ms")
               
               # SIMD benchmark if available
               try
-                qlm_copy = copy(qlm)
-                t_simd = @belapsed simd_apply_laplacian!($cfg, $qlm_copy)
+                alm_copy = copy(alm)
+                t_simd = @belapsed simd_apply_laplacian!($cfg, $alm_copy)
                 speedup = t_lapl / t_simd
                 println("SIMD Laplacian: $(t_simd*1000)ms ($(speedup)x speedup)")
               catch
