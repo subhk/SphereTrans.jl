@@ -61,8 +61,7 @@ jobs:
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          # FFTW will be handled by Julia packages
-          echo "Windows dependencies handled by Julia packages"
+          julia --project=. -e 'using Pkg; Pkg.add("FFTW"); Pkg.build("FFTW"); using FFTW; println("FFTW version: ", FFTW.version)'
       
       - uses: julia-actions/julia-buildpkg@v1
 
