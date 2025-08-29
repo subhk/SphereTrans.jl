@@ -112,11 +112,11 @@ function _detect_pencilarray_version()
     
     # Try to determine approximate version based on API availability
     if version_info[:has_communicator] && version_info[:has_allocate] && version_info[:has_globalindices]
-        version_info[:estimated_version] = \"v0.17+\"
+        version_info[:estimated_version] = "v0.17+"
     elseif version_info[:has_comm] || version_info[:has_global_indices]
-        version_info[:estimated_version] = \"v0.15-v0.16\"
+        version_info[:estimated_version] = "v0.15-v0.16"
     else
-        version_info[:estimated_version] = \"unknown/very_old\"
+        version_info[:estimated_version] = "unknown/very_old"
     end
     
     return version_info
@@ -436,7 +436,7 @@ end
 # ===== ADVANCED COMMUNICATION PATTERNS =====
 
 """
-    adaptive_spectral_communication!(data, comm; operation=+, sparse_threshold=0.1)
+    adaptive_spectral_communication!(data, comm; operation, sparse_threshold=0.1)
 
 Adaptive communication pattern that automatically chooses the optimal strategy
 based on data sparsity and process count for spherical harmonic coefficients.
