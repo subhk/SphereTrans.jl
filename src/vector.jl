@@ -58,9 +58,9 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
     Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier coefficients for φ-component
     fill!(Fθ, 0.0 + 0.0im); fill!(Fφ, 0.0 + 0.0im)
 
-    # Working arrays for Legendre polynomial computation
-    P = Vector{Float64}(undef, lmax + 1)      # Legendre polynomials P_l^m(x)
-    dPdx = Vector{Float64}(undef, lmax + 1)   # Derivatives dP_l^m/dx
+    # Thread-local working arrays for Legendre polynomial computation
+    thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_dPdx = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     # Scale continuous Fourier coefficients to DFT bins for ifft (factor nlon)
     inv_scaleφ = phi_inv_scale(nlon)
 
@@ -96,7 +96,9 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
                     gφ += Ict * m * inv_sθ * Y * Sl + (sθ * N * tbld[l+1, i]) * Tl  # V_φ = (im/sin θ) S - ∂T/∂θ
                 end
             else
-                # Fallback path: compute Legendre polynomials on-the-fly
+                # Fallback path: compute Legendre polynomials on-the-fly (thread-local buffers)
+                P = thread_local_P[Threads.threadid()]
+                dPdx = thread_local_dPdx[Threads.threadid()]
                 Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
                 
                 @inbounds for l in m:lmax
@@ -210,8 +212,9 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
 
     Fθ = fft_phi(complex.(Vt))
     Fφ = fft_phi(complex.(Vp))
-    P = Vector{Float64}(undef, lmax + 1)
-    dPdx = Vector{Float64}(undef, lmax + 1)
+    # Thread-local working arrays for Legendre polynomial computation
+    thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_dPdx = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     scaleφ = cfg.cphi
 
     @threads for m in 0:mmax
@@ -241,6 +244,9 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
                     Tlm[l+1, col] += coeff * (Ict * m * inv_sθ * Y * Fθ_i + Fφ_i * (+sθ * N * tbld[l+1, i]))
                 end
             else
+                # Compute Legendre polynomials on-the-fly (thread-local buffers)
+                P = thread_local_P[Threads.threadid()]
+                dPdx = thread_local_dPdx[Threads.threadid()]
                 Plm_and_dPdx_row!(P, dPdx, x, lmax, m)
                 @inbounds for l in max(1,m):lmax
                     N = cfg.Nlm[l+1, col]
