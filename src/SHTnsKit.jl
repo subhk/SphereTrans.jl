@@ -34,7 +34,7 @@ include("api_compat.jl")    # API compatibility layer
 include("parallel_dense.jl")# Parallel dense matrix operations
 
 # ===== CORE CONFIGURATION AND SETUP =====
-export SHTConfig, create_gauss_config, destroy_config  # Configuration management
+export SHTConfig, create_gauss_config, create_config, destroy_config  # Configuration management
 
 # ===== BASIC TRANSFORMS =====
 export analysis, synthesis                              # Basic forward/backward transforms
