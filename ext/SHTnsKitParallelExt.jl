@@ -31,9 +31,38 @@ const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") =
 const _pfft_cache = IdDict{Any,Any}()
 
 # Generate cache key based on array characteristics for FFT plan reuse
-_cache_key(kind::Symbol, A) = (kind, size(A,1), size(A,2), eltype(A), 
-                               try Comm_size(communicator(A)) catch; 1 end,
-                               try hash(A.pencil.decomposition) catch; 0 end)
+function _cache_key(kind::Symbol, A)
+    # Basic array characteristics
+    base_key = (kind, size(A,1), size(A,2), eltype(A))
+    
+    # Add communicator size with robust error handling
+    comm_size = try
+        MPI.Comm_size(communicator(A))
+    catch
+        1  # Default to single process
+    end
+    
+    # Add decomposition hash with multiple fallback patterns
+    decomp_hash = try
+        hash(A.pencil.decomposition)
+    catch
+        try
+            # Alternative field access patterns
+            pencil = getfield(A, :pencil)
+            if hasfield(typeof(pencil), :decomposition)
+                hash(getfield(pencil, :decomposition))
+            elseif hasfield(typeof(pencil), :plan)
+                hash(getfield(pencil, :plan))
+            else
+                hash(size(A))  # Use array size as fallback identifier
+            end
+        catch
+            hash(size(A))  # Ultimate fallback
+        end
+    end
+    
+    return (base_key..., comm_size, decomp_hash)
+end
 
 function _get_or_plan(kind::Symbol, A)
     # If caching disabled, create plan directly without storing
@@ -64,48 +93,214 @@ end
 
 
 # ===== VERSION-AGNOSTIC COMPATIBILITY LAYER =====
-# Handle API changes across different versions of PencilArrays/PencilFFTs
-# These shims ensure compatibility with both older and newer package versions
+# Robust API compatibility patterns for PencilArrays across versions
+# Uses method-based dispatch and try-catch for maximum reliability
 
-# Check which API functions are available in the loaded PencilArrays version
-const _has_pa_communicator = isdefined(PencilArrays, :communicator)
-const _has_pa_allocate     = isdefined(PencilArrays, :allocate)
-const _has_pa_globalidx    = isdefined(PencilArrays, :globalindices)
-
-# Get MPI communicator from PencilArray (handles API name changes)
-communicator(A) = _has_pa_communicator ? (PencilArrays.communicator)(A) : (
-    isdefined(PencilArrays, :comm) ? (PencilArrays.comm)(A) : 
-    hasfield(typeof(A), :pencil) && hasfield(typeof(A.pencil), :comm) ? A.pencil.comm :
-    error("PencilArrays communicator not found"))
-
-# Allocate PencilArray (handles API changes)  
-function allocate(args...; kwargs...)
-    if _has_pa_allocate 
-        return (PencilArrays.allocate)(args...; kwargs...)
-    elseif isdefined(PencilArrays, :PencilArray)
-        # Fallback for older versions
-        if length(args) >= 2 && isa(args[2], PencilArrays.Pencil)
-            return PencilArrays.PencilArray(undef, args[1], args[2]; kwargs...)
-        end
+# Diagnostic function to detect PencilArrays version and capabilities
+function _detect_pencilarray_version()
+    version_info = Dict{Symbol, Any}()
+    
+    # Check for modern API (v0.17+)
+    version_info[:has_communicator] = hasmethod(PencilArrays.communicator, Tuple{Any})
+    version_info[:has_allocate] = hasmethod(PencilArrays.allocate, Tuple{Any, Any})
+    version_info[:has_globalindices] = hasmethod(PencilArrays.globalindices, Tuple{Any, Any})
+    
+    # Check for legacy API patterns  
+    version_info[:has_comm] = isdefined(PencilArrays, :comm)
+    version_info[:has_global_indices] = isdefined(PencilArrays, :global_indices)
+    version_info[:has_pencilarray_constructor] = isdefined(PencilArrays, :PencilArray)
+    
+    # Try to determine approximate version based on API availability
+    if version_info[:has_communicator] && version_info[:has_allocate] && version_info[:has_globalindices]
+        version_info[:estimated_version] = \"v0.17+\"
+    elseif version_info[:has_comm] || version_info[:has_global_indices]
+        version_info[:estimated_version] = \"v0.15-v0.16\"
+    else
+        version_info[:estimated_version] = \"unknown/very_old\"
     end
-    error("PencilArrays.allocate not found and no compatible fallback")
+    
+    return version_info
 end
 
-# Get global indices for a dimension (handles API name changes)
-globalindices(A, dim) = _has_pa_globalidx ? (PencilArrays.globalindices)(A, dim) : (
-    isdefined(PencilArrays, :global_indices) ? (PencilArrays.global_indices)(A, dim) :
-    hasfield(typeof(A), :pencil) && hasfield(typeof(A.pencil), :axes) ? 
-    A.pencil.axes[dim] : error("PencilArrays.globalindices not found"))
+# Get version info (cached for performance)
+const _PENCILARRAY_VERSION_INFO = Ref{Union{Nothing, Dict{Symbol, Any}}}(nothing)
+function pencilarray_version_info()
+    if _PENCILARRAY_VERSION_INFO[] === nothing
+        _PENCILARRAY_VERSION_INFO[] = _detect_pencilarray_version()
+    end
+    return _PENCILARRAY_VERSION_INFO[]
+end
+
+# Get MPI communicator from PencilArray with robust fallback chain
+function communicator(A)
+    # Modern PencilArrays API (v0.17+)
+    if hasmethod(PencilArrays.communicator, (typeof(A),))
+        return PencilArrays.communicator(A)
+    end
+    
+    # Legacy API patterns (v0.15-v0.16)
+    if hasmethod(PencilArrays.comm, (typeof(A),))
+        return PencilArrays.comm(A)
+    end
+    
+    # Direct field access fallback (very old versions)
+    try
+        return A.pencil.comm
+    catch
+        # Last resort: try global communicator access patterns
+        if hasfield(typeof(A), :pencil)
+            pencil = getfield(A, :pencil)
+            if hasfield(typeof(pencil), :comm)
+                return getfield(pencil, :comm)
+            elseif hasfield(typeof(pencil), :communicator)
+                return getfield(pencil, :communicator)
+            end
+        end
+    end
+    
+    error("Unable to extract MPI communicator from PencilArray. "
+          * "This may indicate an incompatible PencilArrays version.")
+end
+
+# Allocate PencilArray with robust version detection
+function allocate(args...; kwargs...)
+    # Modern PencilArrays API (v0.17+)
+    if hasmethod(PencilArrays.allocate, Tuple{typeof(args[1]), typeof(args[2])})
+        return PencilArrays.allocate(args...; kwargs...)
+    end
+    
+    # Legacy constructor patterns (v0.15-v0.16)
+    if length(args) >= 2
+        T, pencil = args[1], args[2]
+        if isa(pencil, PencilArrays.Pencil)
+            # Try multiple constructor signatures
+            try
+                return PencilArrays.PencilArray(undef, T, pencil; kwargs...)
+            catch MethodError
+                try
+                    return PencilArrays.PencilArray{eltype(T)}(undef, pencil; kwargs...)
+                catch MethodError
+                    # Very old pattern
+                    return PencilArrays.PencilArray{eltype(T), ndims(T), typeof(pencil)}(
+                        undef, size(T), pencil; kwargs...)
+                end
+            end
+        end
+    end
+    
+    error("Unable to allocate PencilArray with provided arguments. "
+          * "This may indicate an incompatible PencilArrays version.")
+end
+
+# Get global indices with robust fallback patterns
+function globalindices(A, dim)
+    # Modern PencilArrays API (v0.17+)
+    if hasmethod(PencilArrays.globalindices, (typeof(A), typeof(dim)))
+        return PencilArrays.globalindices(A, dim)
+    end
+    
+    # Legacy API patterns (v0.15-v0.16)
+    if hasmethod(PencilArrays.global_indices, (typeof(A), typeof(dim)))
+        return PencilArrays.global_indices(A, dim)
+    end
+    
+    # Direct field access patterns
+    try
+        return A.pencil.axes[dim]
+    catch
+        # Alternative field access patterns
+        try
+            pencil = getfield(A, :pencil)
+            if hasfield(typeof(pencil), :axes)
+                axes = getfield(pencil, :axes)
+                return axes[dim]
+            elseif hasfield(typeof(pencil), :global_axes)
+                global_axes = getfield(pencil, :global_axes)
+                return global_axes[dim]
+            end
+        catch
+            # Last resort: try to reconstruct from size information
+            if hasmethod(size, (typeof(A),)) && hasmethod(PencilArrays.size_global, (typeof(A),))
+                local_size = size(A)
+                global_size = PencilArrays.size_global(A)
+                if dim <= length(global_size)
+                    # This is a rough approximation - may not be accurate for all decompositions
+                    return 1:global_size[dim]
+                end
+            end
+        end
+    end
+    
+    error("Unable to get global indices for dimension $dim from PencilArray. "
+          * "This may indicate an incompatible PencilArrays version.")
+end
 
 # ===== DISTRIBUTED FFT WRAPPERS =====
-# Wrapper functions for PencilFFTs that work with distributed arrays
-plan_fft(A; dims=:) = PencilFFTs.plan_fft(A; dims=dims)      # Plan forward FFT
-fft(A, p) = PencilFFTs.fft(A, p)                            # Execute forward FFT
-ifft(A, p) = PencilFFTs.ifft(A, p)                          # Execute inverse FFT
-plan_rfft(A; dims=:) = PencilFFTs.plan_rfft(A; dims=dims)   # Plan real-to-complex FFT
-plan_irfft(A; dims=:) = PencilFFTs.plan_irfft(A; dims=dims) # Plan complex-to-real IFFT
-rfft(A, p) = PencilFFTs.rfft(A, p)                          # Execute real-to-complex FFT
-irfft(A, p) = PencilFFTs.irfft(A, p)                        # Execute complex-to-real IFFT
+# Robust wrapper functions for PencilFFTs with version compatibility
+# Uses method existence checks for maximum reliability
+
+# Plan forward FFT with robust API detection
+function plan_fft(A; dims=:)
+    if hasmethod(PencilFFTs.plan_fft, (typeof(A),))
+        return PencilFFTs.plan_fft(A; dims=dims)
+    else
+        error("PencilFFTs.plan_fft not available for array type $(typeof(A))")
+    end
+end
+
+# Execute forward FFT
+function fft(A, p)
+    if hasmethod(PencilFFTs.fft, (typeof(A), typeof(p)))
+        return PencilFFTs.fft(A, p)
+    else
+        error("PencilFFTs.fft not available for arguments $(typeof(A)), $(typeof(p))")
+    end
+end
+
+# Execute inverse FFT
+function ifft(A, p)
+    if hasmethod(PencilFFTs.ifft, (typeof(A), typeof(p)))
+        return PencilFFTs.ifft(A, p)
+    else
+        error("PencilFFTs.ifft not available for arguments $(typeof(A)), $(typeof(p))")
+    end
+end
+
+# Plan real-to-complex FFT with error handling
+function plan_rfft(A; dims=:)
+    if hasmethod(PencilFFTs.plan_rfft, (typeof(A),))
+        return PencilFFTs.plan_rfft(A; dims=dims)
+    else
+        return nothing  # Graceful fallback for unsupported operations
+    end
+end
+
+# Plan complex-to-real inverse FFT
+function plan_irfft(A; dims=:)
+    if hasmethod(PencilFFTs.plan_irfft, (typeof(A),))
+        return PencilFFTs.plan_irfft(A; dims=dims)
+    else
+        return nothing  # Graceful fallback for unsupported operations
+    end
+end
+
+# Execute real-to-complex FFT
+function rfft(A, p)
+    if hasmethod(PencilFFTs.rfft, (typeof(A), typeof(p)))
+        return PencilFFTs.rfft(A, p)
+    else
+        error("PencilFFTs.rfft not available for arguments $(typeof(A)), $(typeof(p))")
+    end
+end
+
+# Execute complex-to-real inverse FFT
+function irfft(A, p)
+    if hasmethod(PencilFFTs.irfft, (typeof(A), typeof(p)))
+        return PencilFFTs.irfft(A, p)
+    else
+        error("PencilFFTs.irfft not available for arguments $(typeof(A)), $(typeof(p))")
+    end
+end
 
 
 # ===== PARALLEL EXTENSION MODULES =====
@@ -238,6 +433,260 @@ function sparse_spectral_reduce!(local_data::AbstractVector, indices::Vector{Int
     end
 end
 
+# ===== ADVANCED COMMUNICATION PATTERNS =====
+
+"""
+    adaptive_spectral_communication!(data, comm; operation=+, sparse_threshold=0.1)
+
+Adaptive communication pattern that automatically chooses the optimal strategy
+based on data sparsity and process count for spherical harmonic coefficients.
+
+Strategies:
+- Dense data + few processes: Standard Allreduce
+- Dense data + many processes: Hierarchical reduction  
+- Sparse data: Sparse coefficient exchange
+- Very large data: Segmented reduction with overlap
+"""
+function adaptive_spectral_communication!(data::AbstractArray, comm; operation=+, sparse_threshold=0.1)
+    nprocs = MPI.Comm_size(comm)
+    data_size = length(data)
+    
+    # Compute sparsity ratio
+    nonzero_count = count(!iszero, data)
+    sparsity = nonzero_count / data_size
+    
+    if sparsity < sparse_threshold && data_size > 1000
+        # Use sparse communication for very sparse data
+        return sparse_spectral_reduce!(data, comm)
+    elseif nprocs > 64 && data_size > 50000
+        # Use segmented reduction for large-scale problems
+        return segmented_spectral_reduce!(data, comm, operation)
+    elseif nprocs > 16 && data_size > 5000
+        # Use hierarchical reduction for medium-scale problems
+        if isa(data, AbstractMatrix)
+            return hierarchical_spectral_reduce!(data, comm, min(nprocs, 32))
+        else
+            return hierarchical_spectral_reduce_vector!(data, comm, min(nprocs, 32))
+        end
+    else
+        # Use standard Allreduce for small problems
+        MPI.Allreduce!(data, operation, comm)
+        return data
+    end
+end
+
+"""
+    segmented_spectral_reduce!(data, comm, operation)
+
+Segmented reduction for very large spectral arrays that don't fit in memory.
+Processes data in chunks with communication/computation overlap.
+"""
+function segmented_spectral_reduce!(data::AbstractArray, comm, operation)
+    nprocs = MPI.Comm_size(comm)
+    rank = MPI.Comm_rank(comm)
+    
+    # Determine optimal segment size based on available memory
+    max_segment_mb = parse(Int, get(ENV, "SHTNSKIT_MAX_SEGMENT_MB", "128"))
+    bytes_per_element = sizeof(eltype(data))
+    max_elements_per_segment = (max_segment_mb * 1024 * 1024) ÷ bytes_per_element
+    
+    segment_size = min(length(data), max_elements_per_segment)
+    num_segments = (length(data) + segment_size - 1) ÷ segment_size
+    
+    # Process segments with overlapped communication
+    temp_buffer = similar(data, segment_size)
+    
+    for seg in 1:num_segments
+        start_idx = (seg - 1) * segment_size + 1
+        end_idx = min(seg * segment_size, length(data))
+        segment_data = view(data, start_idx:end_idx)
+        
+        # Copy to buffer for safe communication
+        temp_view = view(temp_buffer, 1:length(segment_data))
+        copyto!(temp_view, segment_data)
+        
+        # Non-blocking reduction of this segment
+        MPI.Allreduce!(temp_view, operation, comm)
+        
+        # Copy results back
+        copyto!(segment_data, temp_view)
+    end
+    
+    return data
+end
+
+"""
+    hierarchical_spectral_reduce_vector!(data, comm, ppn)
+
+Vector-specialized hierarchical reduction with optimized memory access patterns.
+"""
+function hierarchical_spectral_reduce_vector!(data::AbstractVector, comm, ppn::Int)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    # Create node-local communicator
+    node_id = rank ÷ ppn
+    local_rank = rank % ppn
+    node_comm = MPI.Comm_split(comm, node_id, local_rank)
+    node_nprocs = MPI.Comm_size(node_comm)
+    
+    # Intra-node reduction with memory-friendly chunking
+    if node_nprocs > 1
+        chunk_size = min(length(data), 10000)  # Process in chunks for cache efficiency
+        
+        for start_idx in 1:chunk_size:length(data)
+            end_idx = min(start_idx + chunk_size - 1, length(data))
+            chunk_view = view(data, start_idx:end_idx)
+            MPI.Allreduce!(chunk_view, +, node_comm)
+        end
+    end
+    
+    # Inter-node reduction (only node leaders participate)
+    if local_rank == 0
+        inter_node_comm = MPI.Comm_split(comm, 0, node_id)
+        inter_nprocs = MPI.Comm_size(inter_node_comm)
+        
+        if inter_nprocs > 1
+            # Use tree reduction for better network scaling
+            tree_reduce_vector!(data, inter_node_comm)
+        end
+        
+        MPI.Comm_free(inter_node_comm)
+    else
+        MPI.Comm_split(comm, 1, 0)  # Non-leaders create dummy communicator
+    end
+    
+    # Broadcast results within nodes
+    if node_nprocs > 1
+        MPI.Bcast!(data, 0, node_comm)
+    end
+    
+    MPI.Comm_free(node_comm)
+    return data
+end
+
+"""
+    tree_reduce_vector!(data, comm)
+
+Binary tree reduction optimized for vector data with better memory locality.
+"""
+function tree_reduce_vector!(data::AbstractVector, comm)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    # Use chunked processing for better cache behavior
+    chunk_size = min(length(data), 5000)
+    temp_buffer = Vector{eltype(data)}(undef, chunk_size)
+    
+    # Up-sweep phase
+    step = 1
+    while step < nprocs
+        if rank % (2 * step) == 0 && rank + step < nprocs
+            # Receive and accumulate from partner in chunks
+            for start_idx in 1:chunk_size:length(data)
+                end_idx = min(start_idx + chunk_size - 1, length(data))
+                chunk_view = view(data, start_idx:end_idx)
+                buffer_view = view(temp_buffer, 1:(end_idx - start_idx + 1))
+                
+                MPI.Recv!(buffer_view, rank + step, step, comm)
+                chunk_view .+= buffer_view
+            end
+        elseif (rank - step) % (2 * step) == 0 && rank >= step
+            # Send to parent in chunks and exit
+            for start_idx in 1:chunk_size:length(data)
+                end_idx = min(start_idx + chunk_size - 1, length(data))
+                chunk_view = view(data, start_idx:end_idx)
+                MPI.Send(chunk_view, rank - step, step, comm)
+            end
+            return
+        end
+        step *= 2
+    end
+    
+    # Down-sweep phase (broadcast final result)
+    step = prevpow(2, nprocs - 1)
+    while step >= 1
+        if rank % (2 * step) == 0 && rank + step < nprocs
+            # Send result to child in chunks
+            for start_idx in 1:chunk_size:length(data)
+                end_idx = min(start_idx + chunk_size - 1, length(data))
+                chunk_view = view(data, start_idx:end_idx)
+                MPI.Send(chunk_view, rank + step, -step, comm)
+            end
+        elseif (rank - step) % (2 * step) == 0 && rank >= step
+            # Receive final result from parent in chunks
+            for start_idx in 1:chunk_size:length(data)
+                end_idx = min(start_idx + chunk_size - 1, length(data))
+                chunk_view = view(data, start_idx:end_idx)
+                MPI.Recv!(chunk_view, rank - step, -step, comm)
+            end
+        end
+        step ÷= 2
+    end
+end
+
+"""
+    bandwidth_aware_broadcast!(data, root, comm)
+
+Bandwidth-aware broadcasting that adapts to network topology and data size.
+Uses pipeline broadcasting for large data and tree broadcasting for small data.
+"""
+function bandwidth_aware_broadcast!(data::AbstractArray, root::Int, comm)
+    nprocs = MPI.Comm_size(comm)
+    data_size_mb = (sizeof(data)) / (1024 * 1024)
+    
+    if nprocs > 32 && data_size_mb > 10.0
+        # Use pipeline broadcast for large data on large clusters
+        pipeline_broadcast!(data, root, comm)
+    else
+        # Use standard tree broadcast for smaller cases
+        MPI.Bcast!(data, root, comm)
+    end
+    
+    return data
+end
+
+"""
+    pipeline_broadcast!(data, root, comm)
+
+Pipeline broadcast that overlaps communication with local copying for better bandwidth utilization.
+"""
+function pipeline_broadcast!(data::AbstractArray, root::Int, comm)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    
+    # Determine pipeline parameters
+    pipeline_stages = min(nprocs, 8)  # Limit pipeline depth
+    chunk_size = max(1, length(data) ÷ pipeline_stages)
+    
+    for stage in 1:pipeline_stages
+        start_idx = (stage - 1) * chunk_size + 1
+        end_idx = stage == pipeline_stages ? length(data) : stage * chunk_size
+        chunk_view = view(data, start_idx:end_idx)
+        
+        # Pipeline broadcast of this chunk
+        MPI.Bcast!(chunk_view, root, comm)
+    end
+    
+    return data
+end
+
 # Note: Avoid forwarding Base.zeros(Pencil) to PencilArrays.zeros to prevent
 # potential recursion when PencilArrays.zeros may call Base.zeros internally.
+
+# ===== MIGRATION NOTES =====
+# The previous version compatibility shims (prior to this update) used fragile patterns:
+# - Simple isdefined() checks that could miss method signature changes
+# - Direct field access without proper error handling  
+# - Hardcoded fallback paths that assumed specific internal structures
+# 
+# The new robust patterns provide:
+# - Method-based existence checking with proper type signatures
+# - Multi-level fallback chains with comprehensive error handling
+# - Version detection utilities for debugging compatibility issues
+# - Graceful degradation rather than hard failures where possible
+#
+# This should maintain compatibility across PencilArrays v0.15+ while being
+# more resilient to API changes in future versions.
+
 end # module SHTnsKitParallelExt

@@ -30,13 +30,18 @@ function analysis_unfused(cfg::SHTConfig, f::AbstractMatrix)
     alm = Matrix{CT}(undef, lmax + 1, mmax + 1)  # alm[l+1, m+1] for (l,m) indexing
     fill!(alm, 0.0 + 0.0im)
 
-    # Working buffer for Legendre polynomials (when tables not used)
-    P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi  # Longitude step size: 2π / nlon
+    
+    # Thread-local storage for Legendre polynomial buffers to avoid allocations
+    # Each thread gets its own buffer to prevent race conditions
+    const thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     
     # Process each azimuthal mode m in parallel
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffer for this thread
+        P = thread_local_P[Threads.threadid()]
         
         # Integrate over colatitude θ using Gauss-Legendre quadrature
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -45,17 +50,19 @@ function analysis_unfused(cfg::SHTConfig, f::AbstractMatrix)
             for i in 1:nlat
                 Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
                 wi = cfg.w[i]         # Gauss-Legendre weight
-                @inbounds @simd ivdep for l in m:lmax  # Only l ≥ m contribute for order m
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax  # Only l ≥ m contribute for order m
                     alm[l+1, col] += (wi * tbl[l+1, i]) * Fi
                 end
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @inbounds @simd ivdep for l in m:lmax
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax
                     alm[l+1, col] += (wi * P[l+1]) * Fi
                 end
             end
@@ -98,13 +105,18 @@ function analysis_fused(cfg::SHTConfig, f::AbstractMatrix)
     alm = Matrix{CT}(undef, lmax + 1, mmax + 1)  # alm[l+1, m+1] for (l,m) indexing
     fill!(alm, 0.0 + 0.0im)
 
-    # Working buffer for Legendre polynomials (when tables not used)
-    P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi  # Longitude step size: 2π / nlon
+    
+    # Thread-local storage for Legendre polynomial buffers to avoid allocations
+    # Each thread gets its own buffer to prevent race conditions
+    const thread_local_P_fused = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     
     # FUSED LOOP: Process each azimuthal mode m with combined integration and normalization
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffer for this thread
+        P = thread_local_P_fused[Threads.threadid()]
         
         # Integrate over colatitude θ using Gauss-Legendre quadrature
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -113,19 +125,21 @@ function analysis_fused(cfg::SHTConfig, f::AbstractMatrix)
             for i in 1:nlat
                 Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
                 wi = cfg.w[i]         # Gauss-Legendre weight
-                @inbounds @simd ivdep for l in m:lmax  # Only l ≥ m contribute for order m
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations  
+                @inbounds @simd for l in m:lmax  # Only l ≥ m contribute for order m
                     # FUSION: Combine integration with normalization in single operation
                     weight_norm = wi * cfg.Nlm[l+1, col] * scaleφ
                     alm[l+1, col] += (weight_norm * tbl[l+1, i]) * Fi
                 end
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly with fused normalization
+            # Fallback: compute Legendre polynomials on-the-fly with fused normalization and thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @inbounds @simd ivdep for l in m:lmax
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax
                     # FUSION: Combine integration with normalization in single operation
                     weight_norm = wi * cfg.Nlm[l+1, col] * scaleφ
                     alm[l+1, col] += (weight_norm * P[l+1]) * Fi
@@ -174,9 +188,6 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
     Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier modes: Fφ[lat, m]
     fill!(Fφ, 0.0 + 0.0im)
 
-    # Working arrays for synthesis computation
-    P = Vector{Float64}(undef, lmax + 1)  # Legendre polynomials buffer
-    G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
     # Scale continuous Fourier coefficients to DFT bins for ifft.
     # ifft includes 1/nlon, so we multiply by nlon here to match f(φ) = Σ g_m e^{imφ}.
     inv_scaleφ = phi_inv_scale(nlon)
@@ -188,9 +199,18 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
         alm = alm_int
     end
     
+    # Thread-local storage for synthesis computation to avoid allocations
+    # Each thread gets its own buffers to prevent race conditions
+    const thread_local_P_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    const thread_local_G_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    
     # Build azimuthal Fourier spectrum from spherical harmonic coefficients
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffers for this thread
+        P = thread_local_P_synth[Threads.threadid()]
+        G = thread_local_G_synth[Threads.threadid()]
         
         # Compute latitudinal profile: G(θ_i) = Σ_l [N_lm * P_l^m(x_i) * a_lm]
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -205,7 +225,7 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
                 G[i] = g
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
@@ -255,9 +275,6 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
     Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier modes: Fφ[lat, m]
     fill!(Fφ, 0.0 + 0.0im)
 
-    # Working arrays for synthesis computation
-    P = Vector{Float64}(undef, lmax + 1)  # Legendre polynomials buffer
-    G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
     # Scale continuous Fourier coefficients to DFT bins for ifft.
     inv_scaleφ = phi_inv_scale(nlon)
 
@@ -268,9 +285,18 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
         alm = alm_int
     end
     
+    # Thread-local storage for fused synthesis computation to avoid allocations
+    # Each thread gets its own buffers to prevent race conditions
+    const thread_local_P_fused_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    const thread_local_G_fused_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    
     # FUSED LOOP: Build azimuthal Fourier spectrum with integrated Hermitian symmetry
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffers for this thread
+        P = thread_local_P_fused_synth[Threads.threadid()]
+        G = thread_local_G_fused_synth[Threads.threadid()]
         
         # Compute latitudinal profile: G(θ_i) = Σ_l [N_lm * P_l^m(x_i) * a_lm]
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -285,7 +311,7 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
                 G[i] = g
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
@@ -297,15 +323,17 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
             end
         end
         
-        # FUSION: Store positive m modes and Hermitian conjugates simultaneously
+        # Store positive m modes - SAFE to vectorize, each i writes to different Fφ[i,col]
         @inbounds @simd ivdep for i in 1:nlat
             scaled_g = inv_scaleφ * G[i]
             Fφ[i, col] = scaled_g
-            
-            # For real output, immediately apply Hermitian symmetry: F(-m) = F*(m)
-            if real_output && m > 0
-                conj_index = nlon - m + 1  # Index for negative frequency -m
-                Fφ[i, conj_index] = conj(scaled_g)
+        end
+        
+        # Apply Hermitian symmetry separately to avoid potential write conflicts
+        if real_output && m > 0
+            conj_index = nlon - m + 1  # Index for negative frequency -m
+            @inbounds @simd ivdep for i in 1:nlat
+                Fφ[i, conj_index] = conj(inv_scaleφ * G[i])
             end
         end
     end
