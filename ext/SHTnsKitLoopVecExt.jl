@@ -2,6 +2,7 @@ module SHTnsKitLoopVecExt
 
 using LoopVectorization
 using SHTnsKit
+using Base.Threads: @threads
 
 # Turbo-optimized variants live under the SHTnsKit namespace so users can call
 # SHTnsKit.analysis_turbo, synthesis_turbo, etc., when LoopVectorization is loaded.
