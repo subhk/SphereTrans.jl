@@ -34,7 +34,7 @@ function analysis_unfused(cfg::SHTConfig, f::AbstractMatrix)
     
     # Thread-local storage for Legendre polynomial buffers to avoid allocations
     # Each thread gets its own buffer to prevent race conditions
-    const thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     
     # Process each azimuthal mode m in parallel
     @threads for m in 0:mmax
@@ -109,7 +109,7 @@ function analysis_fused(cfg::SHTConfig, f::AbstractMatrix)
     
     # Thread-local storage for Legendre polynomial buffers to avoid allocations
     # Each thread gets its own buffer to prevent race conditions
-    const thread_local_P_fused = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_P_fused = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     
     # FUSED LOOP: Process each azimuthal mode m with combined integration and normalization
     @threads for m in 0:mmax
@@ -201,8 +201,8 @@ function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Boo
     
     # Thread-local storage for synthesis computation to avoid allocations
     # Each thread gets its own buffers to prevent race conditions
-    const thread_local_P_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
-    const thread_local_G_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    thread_local_P_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_G_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
     
     # Build azimuthal Fourier spectrum from spherical harmonic coefficients
     @threads for m in 0:mmax
@@ -287,8 +287,8 @@ function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=
     
     # Thread-local storage for fused synthesis computation to avoid allocations
     # Each thread gets its own buffers to prevent race conditions
-    const thread_local_P_fused_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
-    const thread_local_G_fused_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    thread_local_P_fused_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_G_fused_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
     
     # FUSED LOOP: Build azimuthal Fourier spectrum with integrated Hermitian symmetry
     @threads for m in 0:mmax
