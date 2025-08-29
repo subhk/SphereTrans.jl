@@ -3,6 +3,7 @@ module SHTnsKitLoopVecExt
 using LoopVectorization
 using SHTnsKit
 using Base.Threads: @threads
+using Random
 
 # Turbo-optimized variants live under the SHTnsKit namespace so users can call
 # SHTnsKit.analysis_turbo, synthesis_turbo, etc., when LoopVectorization is loaded.
@@ -172,7 +173,6 @@ Run a simple timing comparison between `analysis`/`synthesis` and their turbo
 variants. Returns a NamedTuple with timings and speedup estimates.
 """
 function SHTnsKit.benchmark_turbo_vs_simd(cfg::SHTnsKit.SHTConfig; trials::Integer=3)
-    using Random
     nlat, nlon = cfg.nlat, cfg.nlon
     f = randn(nlat, nlon)
     alm = randn(ComplexF64, cfg.lmax + 1, cfg.mmax + 1)
