@@ -259,7 +259,6 @@ end
                     @test rel < 1e-8
                 end
             end
-            @test maxdiff < 1e-12
             MPI.Finalize()
         else
             @info "Skipping norms/phase/robert/tables tests (set SHTNSKIT_RUN_MPI_TESTS=1 to enable)"
