@@ -103,7 +103,10 @@ function create_config(lmax::Int; mmax::Int=lmax, mres::Int=1, nlat::Int=lmax+2,
     if grid_type != :gauss
         throw(ArgumentError("only grid_type=:gauss is supported; use create_gauss_config for Gauss grids"))
     end
-    return create_gauss_config(lmax, nlat; mmax=mmax, mres=mres, nlon=nlon,
+    # Make args robust to underspecified values from older docs/snippets
+    nlat_eff = max(nlat, lmax + 1)              # Gauss exactness requires ≥ lmax+1
+    nlon_eff = max(nlon, 2*mmax + 1)            # Azimuthal resolution requires ≥ 2*mmax+1
+    return create_gauss_config(lmax, nlat_eff; mmax=mmax, mres=mres, nlon=nlon_eff,
                                norm=norm, cs_phase=cs_phase,
                                real_norm=real_norm, robert_form=robert_form)
 end
