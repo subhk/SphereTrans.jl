@@ -492,7 +492,7 @@ If you use SHTnsKit.jl in your research, please cite:
 
 ##  License
 
-SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), ensuring compatibility with the underlying SHTns library and promoting open scientific computing.
+SHTnsKit.jl is released under the GNU General Public License v3.0 (GPL-3.0), ensuring compatibility with the underlying SHTns library.
 
 ## References
 
