@@ -18,8 +18,7 @@
 
 **High-Performance Spherical Harmonic Transforms for Julia**
 
-SHTnsKit.jl provides a comprehensive, pure-Julia implementation of spherical harmonic transforms with **parallel computing support** for scalable scientific computing. From single-core laptops to large HPC clusters, this package delivers the performance you need for spectral analysis on the sphere.
-
+SHTnsKit.jl provides a comprehensive, pure-Julia implementation of spherical harmonic transforms with **parallel computing support** for scalable scientific computing. 
 ## Key Features
 
 ### **High-Performance Computing**
