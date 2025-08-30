@@ -360,19 +360,26 @@ julia --project=.
 ### Benchmarking Tools
 
 ```julia
-using SHTnsKit
+using SHTnsKit, LoopVectorization, BenchmarkTools
 
-# Built-in comprehensive benchmark suite
-run_comprehensive_benchmark(
-    lmax_small=16, lmax_medium=32, lmax_large=64,
-    include_scaling=true, include_precision=true, include_threading=true
-)
+# SIMD performance comparison (requires LoopVectorization.jl)
+cfg = create_gauss_config(64, 66; nlon=129)
+results = benchmark_turbo_vs_simd(cfg; trials=3)
+println("Analysis speedup: $(results.analysis_speedup)x")
+println("Synthesis speedup: $(results.synthesis_speedup)x")
 
-# Memory scaling analysis
-scaling_results = benchmark_memory_scaling([16, 24, 32, 40, 48])
+# Manual performance timing
+lmax = 32
+cfg = create_gauss_config(lmax, lmax+2; nlon=2*lmax+1)
+f = randn(cfg.nlat, cfg.nlon)
 
-# Vector transform performance
-vector_results = benchmark_vector_transforms(cfg, n_samples=50)
+# Time basic operations
+@btime analysis($cfg, $f)
+@btime synthesis($cfg, analysis($cfg, $f))
+
+# Memory allocation benchmarking
+allocs = @allocated analysis(cfg, f)
+println("Analysis allocations: $allocs bytes")
 ```
 
 ### Performance Tips
