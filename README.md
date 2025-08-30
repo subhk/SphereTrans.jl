@@ -168,16 +168,15 @@ destroy_config(cfg)
 using SHTnsKit
 
 # Setup for climate-scale problem
-cfg = create_gauss_config(42, 42; mres=86, nlon=128)  # ~2.8° resolution
-θ, φ = get_theta(cfg), get_phi(cfg)
+cfg = create_gauss_config(42, 44; mres=86, nlon=128)  # ~2.8° resolution
+θ, φ = cfg.θ, cfg.φ
 
 # Create realistic temperature field with seasonal variation
 summer_pattern = @. 273.15 + 40 * cos(θ - 0.4) + 10 * sin(2*φ) * sin(θ)
-coeffs = allocate_spectral(cfg)
-spat_to_sh!(cfg, summer_pattern, coeffs)
+coeffs = analysis(cfg, summer_pattern)
 
 # Analyze dominant spatial scales
-power = power_spectrum(cfg, coeffs)
+power = energy_scalar_l_spectrum(cfg, coeffs)
 dominant_scale_l = argmax(power[2:end]) + 1  # Skip l=0
 characteristic_length = 40075.0 / dominant_scale_l  # km (Earth circumference)
 
@@ -251,13 +250,12 @@ cfg = create_gauss_config(16, 16; mres=34, nlon=64)
 
 # Define optimization objective
 function reconstruction_loss(sh_coeffs, target_field)
-    spatial_field = allocate_spatial(cfg)
-    sh_to_spat!(cfg, sh_coeffs, spatial_field)
+    spatial_field = synthesis(cfg, sh_coeffs; real_output=true)
     return sum((spatial_field - target_field).^2)
 end
 
 # Create target and initial guess
-target = rand(get_nlat(cfg), get_nphi(cfg))
+target = rand(cfg.nlat, cfg.nlon)
 sh_coeffs = 0.1 * randn(ComplexF64, cfg.nlm)
 
 # Gradient-based optimization
