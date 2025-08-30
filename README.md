@@ -152,38 +152,30 @@ MPI.Finalize()
 
 ```julia
 using SHTnsKit
+using LoopVectorization
+using Printf
 
-# Check if LoopVectorization extension is available
-try
-    using LoopVectorization
-    println(" LoopVectorization.jl loaded - turbo functions available")
-    
-    # Use larger problem size where SIMD benefits outweigh overhead
-    cfg = create_gauss_config(64, 66; nlon=129)
-    
-    # Test turbo-optimized Laplacian operation
-    sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
-    for l in 0:min(cfg.lmax, 20), m in 0:min(l, cfg.mmax)
-        sh_coeffs[l+1, m+1] = (0.1 + 0.05im) * exp(-0.05*l)
-    end
-    
-    println("Testing SIMD-optimized operations...")
-    sh_copy = copy(sh_coeffs)
-    turbo_apply_laplacian!(cfg, sh_copy)
-    println("✓ Turbo Laplacian completed")
-    
-    # Benchmark analysis/synthesis transforms
-    results = benchmark_turbo_vs_simd(cfg)
-    println("Analysis speedup: $(results.analysis_speedup:.2f)x")  
-    println("Synthesis speedup: $(results.synthesis_speedup:.2f)x")
-    println("Note: SIMD benefits depend on problem size and CPU architecture")
-    
-    destroy_config(cfg)
-    
-catch e
-    println("ℹ LoopVectorization.jl not available - using standard implementations")
-    println("  Install with: using Pkg; Pkg.add(\"LoopVectorization\")")
+# Use larger problem size where SIMD benefits outweigh overhead
+cfg = create_gauss_config(64, 66; nlon=129)
+
+# Test turbo-optimized Laplacian operation
+sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+for l in 0:min(cfg.lmax, 20), m in 0:min(l, cfg.mmax)
+    sh_coeffs[l+1, m+1] = (0.1 + 0.05im) * exp(-0.05*l)
 end
+
+println("Testing SIMD-optimized operations...")
+sh_copy = copy(sh_coeffs)
+turbo_apply_laplacian!(cfg, sh_copy)
+println(" Turbo Laplacian completed")
+
+# Benchmark analysis/synthesis transforms
+results = benchmark_turbo_vs_simd(cfg)
+@printf("Analysis speedup: %.2fx\n", results.analysis_speedup)
+@printf("Synthesis speedup: %.2fx\n", results.analysis_speedup)
+
+destroy_config(cfg)
+
 ```
 
 ## Comprehensive Examples
