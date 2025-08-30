@@ -83,19 +83,18 @@ julia -e 'using Pkg; Pkg.build("MPI")'
 using SHTnsKit
 
 # Create spherical harmonic configuration
-lmax = 32              # Maximum spherical harmonic degree  
-cfg = create_gauss_config(lmax, lmax; mres=2*lmax+2, nlon=4*lmax+1)
+lmax = 32
+nlat = lmax + 2  # Must be ≥ lmax+1 for Gauss-Legendre accuracy
+cfg = create_gauss_config(lmax, nlat; mres=2*lmax+2, nlon=4*lmax+1)
 
 # Create test data on the sphere
-spatial_data = rand(get_nlat(cfg), get_nphi(cfg))
+spatial_data = rand(cfg.nlat, cfg.nlon)
 
 # Transform to spherical harmonic coefficients
-coeffs = allocate_spectral(cfg)
-spat_to_sh!(cfg, spatial_data, coeffs)
+coeffs = analysis(cfg, spatial_data)
 
-# Transform back to spatial domain  
-reconstructed = allocate_spatial(cfg)
-sh_to_spat!(cfg, coeffs, reconstructed)
+# Transform back to spatial domain
+reconstructed = synthesis(cfg, coeffs; real_output=true)
 
 # Check accuracy
 error = maximum(abs.(spatial_data - reconstructed))
