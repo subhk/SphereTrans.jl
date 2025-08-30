@@ -85,7 +85,8 @@ using SHTnsKit
 # Create spherical harmonic configuration
 lmax = 32
 nlat = lmax + 2  # Must be ≥ lmax+1 for Gauss-Legendre accuracy
-cfg = create_gauss_config(lmax, nlat; mres=2*lmax+2, nlon=4*lmax+1)
+nlon = 2 * (2*lmax + 1)  # Use double the minimum for better accuracy
+cfg = create_gauss_config(lmax, nlat; nlon=nlon)
 
 # Create test data on the sphere
 spatial_data = rand(cfg.nlat, cfg.nlon)
