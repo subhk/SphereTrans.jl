@@ -121,42 +121,83 @@ function SHTnsKit.synthesis_turbo(cfg::SHTnsKit.SHTConfig, alm::AbstractMatrix; 
         alm = alm_int
     end
 
-    @threads for m in 0:mmax
-        col = m + 1
-        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
-            tbl = cfg.plm_tables[m + 1]
-            for i in 1:nlat
-                g_re = 0.0
-                g_im = 0.0
-                @tturbo warn_check_args=false for l in m:lmax
-                    c = cfg.Nlm[l + 1, col] * tbl[l + 1, i]
-                    a = alm[l + 1, col]
-                    g_re += c * real(a)
-                    g_im += c * imag(a)
+    # Adaptive threading: use nested parallelism for better load balancing
+    n_threads = Threads.nthreads()
+    if mmax + 1 < n_threads ÷ 2 && nlat > 32
+        # Few m modes: parallelize over latitude points instead
+        for m in 0:mmax
+            col = m + 1
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
+                tbl = cfg.plm_tables[m + 1]
+                @threads for i in 1:nlat
+                    g_re = 0.0
+                    g_im = 0.0
+                    @tturbo warn_check_args=false for l in m:lmax
+                        c = cfg.Nlm[l + 1, col] * tbl[l + 1, i]
+                        a = alm[l + 1, col]
+                        g_re += c * real(a)
+                        g_im += c * imag(a)
+                    end
+                    G[i] = complex(g_re, g_im)
                 end
-                G[i] = complex(g_re, g_im)
-            end
-        else
-            for i in 1:nlat
-                SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
-                g_re = 0.0
-                g_im = 0.0
-                @tturbo warn_check_args=false for l in m:lmax
-                    c = cfg.Nlm[l + 1, col] * P[l + 1]
-                    a = alm[l + 1, col]
-                    g_re += c * real(a)
-                    g_im += c * imag(a)
+            else
+                @threads for i in 1:nlat
+                    thread_P = Vector{Float64}(undef, lmax + 1)
+                    SHTnsKit.Plm_row!(thread_P, cfg.x[i], lmax, m)
+                    g_re = 0.0
+                    g_im = 0.0
+                    @tturbo warn_check_args=false for l in m:lmax
+                        c = cfg.Nlm[l + 1, col] * thread_P[l + 1]
+                        a = alm[l + 1, col]
+                        g_re += c * real(a)
+                        g_im += c * imag(a)
+                    end
+                    G[i] = complex(g_re, g_im)
                 end
-                G[i] = complex(g_re, g_im)
             end
-        end
-        @tturbo warn_check_args=false for i in 1:nlat
-            Fφ[i, col] = inv_scaleφ * G[i]
-        end
-        if real_output && m > 0
-            conj_index = nlon - m + 1
             @tturbo warn_check_args=false for i in 1:nlat
-                Fφ[i, conj_index] = conj(Fφ[i, col])
+                Fφ[i, col] = inv_scaleφ * G[i]
+            end
+        end
+    else
+        # Standard m-parallel approach with dynamic scheduling
+        @threads :dynamic for m in 0:mmax
+            col = m + 1
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
+                tbl = cfg.plm_tables[m + 1]
+                for i in 1:nlat
+                    g_re = 0.0
+                    g_im = 0.0
+                    @tturbo warn_check_args=false for l in m:lmax
+                        c = cfg.Nlm[l + 1, col] * tbl[l + 1, i]
+                        a = alm[l + 1, col]
+                        g_re += c * real(a)
+                        g_im += c * imag(a)
+                    end
+                    G[i] = complex(g_re, g_im)
+                end
+            else
+                for i in 1:nlat
+                    SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
+                    g_re = 0.0
+                    g_im = 0.0
+                    @tturbo warn_check_args=false for l in m:lmax
+                        c = cfg.Nlm[l + 1, col] * P[l + 1]
+                        a = alm[l + 1, col]
+                        g_re += c * real(a)
+                        g_im += c * imag(a)
+                    end
+                    G[i] = complex(g_re, g_im)
+                end
+            end
+            @tturbo warn_check_args=false for i in 1:nlat
+                Fφ[i, col] = inv_scaleφ * G[i]
+            end
+            if real_output && m > 0
+                conj_index = nlon - m + 1
+                @tturbo warn_check_args=false for i in 1:nlat
+                    Fφ[i, conj_index] = conj(Fφ[i, col])
+                end
             end
         end
     end

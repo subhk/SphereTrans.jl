@@ -27,8 +27,9 @@ using SHTnsKit                           # Core spherical harmonic functionality
 # Enable via: ENV["SHTNSKIT_CACHE_PENCILFFTS"] = "1"
 const _CACHE_PENCILFFTS = Ref{Bool}(get(ENV, "SHTNSKIT_CACHE_PENCILFFTS", "0") == "1")
 
-# Cache storage for FFT plans indexed by array characteristics
+# Thread-safe cache storage for FFT plans indexed by array characteristics
 const _pfft_cache = IdDict{Any,Any}()
+const _cache_lock = Threads.ReentrantLock()
 
 # Generate cache key based on array characteristics for FFT plan reuse
 function _cache_key(kind::Symbol, A)
@@ -74,21 +75,31 @@ function _get_or_plan(kind::Symbol, A)
                error("unknown plan kind")
     end
     
-    # Check if we already have a cached plan for this array configuration
+    # Thread-safe caching with optimized lookup
     key = _cache_key(kind, A)
     
+    # Fast path: check without lock first (common case)
     if haskey(_pfft_cache, key)
         return _pfft_cache[key]  # Return cached plan
     end
-
-    # Create new plan and cache it for future use
-    plan = kind === :fft  ? plan_fft(A; dims=2) :     # Forward FFT along longitude
-           kind === :ifft ? plan_fft(A; dims=2) :     # Inverse FFT along longitude
-           kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :   # Real-to-complex FFT
-           kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) : # Complex-to-real IFFT
-           error("unknown plan kind")
-    _pfft_cache[key] = plan
-    return plan
+    
+    # Slow path: thread-safe plan creation and caching
+    return lock(_cache_lock) do
+        # Double-check pattern: another thread might have created the plan
+        if haskey(_pfft_cache, key)
+            return _pfft_cache[key]
+        end
+        
+        # Create new plan and cache it for future use
+        plan = kind === :fft  ? plan_fft(A; dims=2) :     # Forward FFT along longitude
+               kind === :ifft ? plan_fft(A; dims=2) :     # Inverse FFT along longitude
+               kind === :rfft ? (try plan_rfft(A; dims=2) catch; nothing end) :   # Real-to-complex FFT
+               kind === :irfft ? (try plan_irfft(A; dims=2) catch; nothing end) : # Complex-to-real IFFT
+               error("unknown plan kind")
+        
+        _pfft_cache[key] = plan
+        return plan
+    end
 end
 
 

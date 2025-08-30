@@ -52,19 +52,53 @@ end
 
 # Optimized conversion functions using pre-computed mappings
 function _dense_to_packed!(packed::Vector{ComplexF64}, dense::Matrix{ComplexF64}, info::PackedStorageInfo)
-    # Vectorized conversion using pre-computed mappings
-    @inbounds @simd ivdep for i in 1:info.nlm_packed
-        l, m = info.packed_to_lm[i]
-        packed[i] = dense[l+1, m+1]
+    # Block-wise vectorized conversion for better cache efficiency
+    n_packed = info.nlm_packed
+    n_threads = Threads.nthreads()
+    
+    if n_packed > 1024 && n_threads > 1
+        # Multi-threaded for large conversions
+        @threads for tid in 1:n_threads
+            start_idx = 1 + (tid - 1) * n_packed ÷ n_threads
+            end_idx = min(tid * n_packed ÷ n_threads, n_packed)
+            
+            @inbounds @simd ivdep for i in start_idx:end_idx
+                l, m = info.packed_to_lm[i]
+                packed[i] = dense[l+1, m+1]
+            end
+        end
+    else
+        # Single-threaded SIMD for small conversions
+        @inbounds @simd ivdep for i in 1:n_packed
+            l, m = info.packed_to_lm[i]
+            packed[i] = dense[l+1, m+1]
+        end
     end
     return packed
 end
 
 function _packed_to_dense!(dense::Matrix{ComplexF64}, packed::Vector{ComplexF64}, info::PackedStorageInfo)
     fill!(dense, 0.0 + 0.0im)
-    @inbounds @simd ivdep for i in 1:info.nlm_packed
-        l, m = info.packed_to_lm[i]
-        dense[l+1, m+1] = packed[i]
+    n_packed = info.nlm_packed
+    n_threads = Threads.nthreads()
+    
+    if n_packed > 1024 && n_threads > 1
+        # Multi-threaded for large conversions
+        @threads for tid in 1:n_threads
+            start_idx = 1 + (tid - 1) * n_packed ÷ n_threads
+            end_idx = min(tid * n_packed ÷ n_threads, n_packed)
+            
+            @inbounds @simd ivdep for i in start_idx:end_idx
+                l, m = info.packed_to_lm[i]
+                dense[l+1, m+1] = packed[i]
+            end
+        end
+    else
+        # Single-threaded SIMD for small conversions
+        @inbounds @simd ivdep for i in 1:n_packed
+            l, m = info.packed_to_lm[i]
+            dense[l+1, m+1] = packed[i]
+        end
     end
     return dense
 end

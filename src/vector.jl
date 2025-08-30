@@ -64,8 +64,8 @@ function SHsphtor_to_spat(cfg::SHTConfig, Slm::AbstractMatrix, Tlm::AbstractMatr
     # Scale continuous Fourier coefficients to DFT bins for ifft (factor nlon)
     inv_scaleφ = phi_inv_scale(nlon)
 
-    # Process each azimuthal mode m in parallel
-    @threads for m in 0:mmax
+    # Process each azimuthal mode m in parallel with dynamic scheduling
+    @threads :dynamic for m in 0:mmax
         col = m + 1  # 1-based indexing for Julia arrays
         
         # Compute vector components at each latitude
@@ -217,7 +217,7 @@ function spat_to_SHsphtor(cfg::SHTConfig, Vt::AbstractMatrix, Vp::AbstractMatrix
     thread_local_dPdx = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     scaleφ = cfg.cphi
 
-    @threads for m in 0:mmax
+    @threads :dynamic for m in 0:mmax
         col = m + 1
         for i in 1:nlat
             x = cfg.x[i]
