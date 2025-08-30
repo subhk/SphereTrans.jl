@@ -217,23 +217,24 @@ println("  Rotational flow: $(100*rotational_energy/total_energy:.1f)%")
 destroy_config(cfg)
 ```
 
-### 3. Parallel Performance Analysis
+### 3. Performance Analysis
 
 ```julia
 using SHTnsKit
 
 # Problem size scaling analysis
 for lmax in [16, 32, 48, 64]
-    cfg = create_gauss_config(lmax, lmax; mres=2*lmax+2, nlon=4*lmax+1)
+    cfg = create_gauss_config(lmax, lmax+2; mres=2*lmax+2, nlon=4*lmax+1)
     
-    # Get performance recommendations
-    optimal_procs = optimal_process_count(cfg)
-    perf_model = parallel_performance_model(cfg, optimal_procs)
-    
+    # Basic configuration information
     println("lmax=$lmax ($(cfg.nlm) coefficients):")
-    println("  Recommended processes: $optimal_procs")
-    println("  Expected speedup: $(perf_model.speedup:.1f)x")
-    println("  Parallel efficiency: $(perf_model.efficiency*100:.1f)%")
+    println("  Grid size: $(cfg.nlat) × $(cfg.nlon)")
+    println("  Total spatial points: $(cfg.nspat)")
+    
+    # Simple timing test
+    test_data = rand(cfg.nlat, cfg.nlon)
+    @time coeffs = analysis(cfg, test_data)
+    @time reconstructed = synthesis(cfg, coeffs)
     
     destroy_config(cfg)
 end
