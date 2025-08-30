@@ -88,8 +88,14 @@ nlat = lmax + 2  # Must be ≥ lmax+1 for Gauss-Legendre accuracy
 nlon = 2 * (2*lmax + 1)  # Use double the minimum for better accuracy
 cfg = create_gauss_config(lmax, nlat; nlon=nlon)
 
-# Create test data on the sphere
-spatial_data = rand(cfg.nlat, cfg.nlon)
+# Create bandlimited test data (representable by chosen lmax)
+# Note: Random data contains high frequencies beyond lmax and won't roundtrip perfectly
+θ, φ = cfg.θ, cfg.φ
+spatial_data = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    # Simple bandlimited function: Y_0^0 + Y_2^0 + Y_4^1 components
+    spatial_data[i,j] = 1.0 + 0.5 * (3*cos(θ[i])^2 - 1) + 0.3 * sin(θ[i]) * cos(φ[j])
+end
 
 # Transform to spherical harmonic coefficients
 coeffs = analysis(cfg, spatial_data)
@@ -97,9 +103,9 @@ coeffs = analysis(cfg, spatial_data)
 # Transform back to spatial domain
 reconstructed = synthesis(cfg, coeffs; real_output=true)
 
-# Check accuracy
+# Check accuracy (should be ~1e-14 for bandlimited data)
 max_error = maximum(abs.(spatial_data - reconstructed))
-println("Roundtrip error: $max_error")  # Should be ~1e-14
+println("Roundtrip error: $max_error")
 
 destroy_config(cfg)
 ```
