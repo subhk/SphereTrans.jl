@@ -406,7 +406,7 @@ if rank == 0
 end
 
 # Create configuration (same on all processes)
-cfg = create_gauss_config(Float64, 30, 24, 64, 96)
+cfg = create_gauss_config(30, 24; mres=64, nlon=96)
 pcfg = create_parallel_config(cfg, comm)
 
 if rank == 0
@@ -480,7 +480,7 @@ mpiexec -n 2 julia --project=. examples/parallel_fft_roundtrip.jl
 ```julia
 using SHTnsKit, LoopVectorization, BenchmarkTools
 
-cfg = create_gauss_config(Float64, 64, 64)
+cfg = create_gauss_config(64, 64)
 sh_coeffs = randn(Complex{Float64}, cfg.nlm)
 
 println("SIMD Optimization Comparison")
@@ -539,7 +539,7 @@ rank = Comm_rank(comm)
 size = Comm_size(comm)
 
 # Large problem that benefits from both MPI and SIMD
-cfg = create_gauss_config(Float64, 128, 128, 256, 512)
+cfg = create_gauss_config(128, 128; mres=256, nlon=512)
 pcfg = create_parallel_config(cfg, comm)
 
 if rank == 0
@@ -610,7 +610,7 @@ comm = COMM_WORLD
 rank = Comm_rank(comm)
 size = Comm_size(comm)
 
-cfg = create_gauss_config(Float64, 64, 48, 128, 192)
+cfg = create_gauss_config(64, 48; mres=128, nlon=192)
 pcfg = create_parallel_config(cfg, comm)
 
 if rank == 0

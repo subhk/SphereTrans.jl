@@ -56,7 +56,7 @@ For large problems, MPI parallelization provides significant speedup:
 using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
-cfg = create_gauss_config(Float64, 30, 24, 64, 96)
+cfg = create_gauss_config(30, 24; mres=64, nlon=96)
 pcfg = create_parallel_config(cfg, MPI.COMM_WORLD)
 
 function benchmark_parallel_performance()
