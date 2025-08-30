@@ -297,7 +297,7 @@ sh_coeffs = 0.01 * (randn(ComplexF64, cfg.lmax+1, cfg.mmax+1))
 
 # Gradient-based optimization
 learning_rate = 0.01  # Increased learning rate
-for i in 1:200
+for i in 1:400
     loss_val, grads = Zygote.withgradient(
         sh -> reconstruction_loss(sh, target), sh_coeffs)
     
