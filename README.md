@@ -154,20 +154,22 @@ MPI.Finalize()
 using SHTnsKit
 using LoopVectorization  # Enables turbo optimizations
 
-cfg = create_gauss_config(48, 48; mres=98, nlon=192)
-# Create simple test coefficients
-sh_coeffs = zeros(ComplexF64, cfg.nlm)
-sh_coeffs[1] = 1.0 + 0.0im  # Y_0^0 coefficient
-if cfg.nlm > 3
-    sh_coeffs[3] = 0.5 + 0.0im  # Y_2^0 coefficient
+# Use larger problem size to see SIMD benefits
+cfg = create_gauss_config(48, 50; nlon=98)
+
+# Create realistic coefficient matrix with many non-zero entries
+sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+for l in 0:min(cfg.lmax, 20), m in 0:min(l, cfg.mmax)
+    sh_coeffs[l+1, m+1] = (0.1 + 0.05im) * exp(-0.1*l) * (1 + 0.5*sin(l+m))
 end
 
 # Turbo-optimized operations (when LoopVectorization is available)
-turbo_apply_laplacian!(cfg, sh_coeffs)
+sh_coeffs_copy = copy(sh_coeffs)
+turbo_apply_laplacian!(cfg, sh_coeffs_copy)
 
-# Benchmark SIMD vs regular implementations
+# Benchmark SIMD vs regular implementations with meaningful data
 results = benchmark_turbo_vs_simd(cfg)
-println("SIMD speedup: $(results.speedup)x")
+println("SIMD speedup: $(results.speedup)x")  # Should be > 1.0
 
 destroy_config(cfg)
 ```
