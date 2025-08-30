@@ -154,22 +154,25 @@ MPI.Finalize()
 using SHTnsKit
 using LoopVectorization  # Enables turbo optimizations
 
-# Use larger problem size to see SIMD benefits
-cfg = create_gauss_config(48, 50; nlon=98)
+# Use larger problem size where SIMD benefits outweigh overhead
+cfg = create_gauss_config(128, 130; nlon=257)
 
-# Create realistic coefficient matrix with many non-zero entries
+# Test turbo-optimized Laplacian operation
 sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
-for l in 0:min(cfg.lmax, 20), m in 0:min(l, cfg.mmax)
-    sh_coeffs[l+1, m+1] = (0.1 + 0.05im) * exp(-0.1*l) * (1 + 0.5*sin(l+m))
+for l in 0:min(cfg.lmax, 30), m in 0:min(l, cfg.mmax)
+    sh_coeffs[l+1, m+1] = (0.1 + 0.05im) * exp(-0.05*l)
 end
 
-# Turbo-optimized operations (when LoopVectorization is available)
-sh_coeffs_copy = copy(sh_coeffs)
-turbo_apply_laplacian!(cfg, sh_coeffs_copy)
+println("Testing SIMD-optimized operations...")
+sh_copy = copy(sh_coeffs)
+turbo_apply_laplacian!(cfg, sh_copy)
+println("✓ Turbo Laplacian completed")
 
-# Benchmark SIMD vs regular implementations with meaningful data
+# Benchmark analysis/synthesis transforms (SIMD may or may not help depending on problem size)
 results = benchmark_turbo_vs_simd(cfg)
-println("SIMD speedup: $(results.speedup)x")  # Should be > 1.0
+println("Analysis speedup: $(results.analysis_speedup:.2f)x")  
+println("Synthesis speedup: $(results.synthesis_speedup:.2f)x")
+println("Note: SIMD benefits depend on problem size, data patterns, and CPU architecture")
 
 destroy_config(cfg)
 ```
