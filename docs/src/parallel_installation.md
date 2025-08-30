@@ -136,7 +136,7 @@ try
     println("All parallel packages loaded successfully")
     
     # Test configuration
-    cfg = create_gauss_config(Float64, 16, 12, 36, 48)
+    cfg = create_gauss_config(16, 12; mres=36, nlon=48)
     
     # Test serial fallback
     auto_cfg = auto_parallel_config(cfg)
@@ -377,7 +377,7 @@ using SHTnsKit
 
 @testset "Complete Parallel Setup" begin
     # Test basic functionality
-    cfg = create_gauss_config(Float64, 12, 10, 26, 32)
+    cfg = create_gauss_config(12, 10; mres=26, nlon=32)
     @test cfg.nlm > 0
     
     # Test parallel packages availability
@@ -441,7 +441,7 @@ function run_benchmarks()
     
     # Test different problem sizes
     for lmax in [16, 32, 64]
-        cfg = create_gauss_config(Float64, lmax, lmax)
+        cfg = create_gauss_config(lmax, lmax)
         sh_coeffs = randn(Complex{Float64}, cfg.nlm)
         
         println("\nlmax = $lmax ($(cfg.nlm) coefficients)")
