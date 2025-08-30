@@ -276,7 +276,7 @@ end
 ```julia
 using SHTnsKit, Zygote
 
-cfg = create_gauss_config(16, 16; mres=34, nlon=64)
+cfg = create_gauss_config(16, 18; nlon=33)
 
 # Define optimization objective
 function reconstruction_loss(sh_coeffs, target_field)
