@@ -279,10 +279,8 @@ using SHTnsKit, Zygote
 cfg = create_gauss_config(16, 18; nlon=33)
 
 # Define optimization objective
-function reconstruction_loss(sh_coeffs, target_field)
-    # Reshape 1D coeffs to 2D matrix format for synthesis
-    alm = reshape(sh_coeffs, cfg.lmax+1, cfg.mmax+1)
-    spatial_field = synthesis(cfg, alm; real_output=true)
+function reconstruction_loss(sh_coeffs_matrix, target_field)
+    spatial_field = synthesis(cfg, sh_coeffs_matrix; real_output=true)
     return sum((spatial_field - target_field).^2)
 end
 
@@ -293,9 +291,10 @@ for i in 1:cfg.nlat, j in 1:cfg.nlon
     θ, φ = cfg.θ[i], cfg.φ[j]
     target[i,j] = sin(θ)^2 * cos(2*φ)
 end
-# Initialize with simple coefficients (1D vector for AD)
-sh_coeffs = zeros(ComplexF64, cfg.nlm)
-sh_coeffs[1] = 0.1  # Small initial guess
+
+# Initialize with simple coefficients (2D matrix format)
+sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+sh_coeffs[1, 1] = 0.1  # Y_0^0 coefficient (small initial guess)
 
 # Gradient-based optimization
 learning_rate = 0.001
