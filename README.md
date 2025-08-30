@@ -194,17 +194,15 @@ destroy_config(cfg)
 ```julia
 using SHTnsKit
 
-cfg = create_gauss_config(32, 32; mres=66, nlon=128)
-θ_grid, φ_grid = get_theta(cfg), get_phi(cfg)
+cfg = create_gauss_config(32, 34; mres=66, nlon=128)
+θ_grid, φ_grid = cfg.θ, cfg.φ
 
 # Create realistic wind field: jet stream + wave pattern
 u_wind = @. 30 * sin(2*θ_grid) + 15 * cos(3*φ_grid) * sin(θ_grid)  # Zonal
 v_wind = @. 10 * cos(θ_grid) * sin(2*φ_grid)                        # Meridional
 
 # Decompose into spheroidal (divergent) and toroidal (rotational) components
-sph_coeffs = allocate_spectral(cfg)
-tor_coeffs = allocate_spectral(cfg)
-spat_to_sphtor!(cfg, u_wind, v_wind, sph_coeffs, tor_coeffs)
+sph_coeffs, tor_coeffs = spat_to_SHsphtor(cfg, u_wind, v_wind)
 
 # Analyze flow characteristics
 divergent_energy = sum(abs2, sph_coeffs)
@@ -429,16 +427,15 @@ cfg = create_gauss_config(64, 64; mres=130, nlon=256)
 gravity_field = load_gravity_data()  # Your data loading function
 
 # Transform to spherical harmonics  
-gravity_coeffs = allocate_spectral(cfg)
-spat_to_sh!(cfg, gravity_field, gravity_coeffs)
+gravity_coeffs = analysis(cfg, gravity_field)
 
 # Extract specific harmonic coefficients (e.g., J2 oblateness)
-j2_index = lmidx(cfg, 2, 0)
+j2_index = LM_index(cfg, 2, 0)
 j2_coefficient = gravity_coeffs[j2_index]
 println("Earth's J2 coefficient: $j2_coefficient")
 
 # Compute power spectrum to analyze dominant spatial scales
-power = power_spectrum(cfg, gravity_coeffs)
+power = energy_scalar_l_spectrum(cfg, gravity_coeffs)
 ```
 
 ### Atmospheric Data Processing
@@ -451,13 +448,10 @@ cfg = create_gauss_config(85, 85; mres=172, nlon=256)  # ~1.4° resolution
 u_wind, v_wind = load_atmospheric_data()  # Your data
 
 # Decompose into divergent and rotational components
-div_coeffs, rot_coeffs = allocate_spectral(cfg), allocate_spectral(cfg)
-spat_to_sphtor!(cfg, u_wind, v_wind, div_coeffs, rot_coeffs)
+div_coeffs, rot_coeffs = spat_to_SHsphtor(cfg, u_wind, v_wind)
 
 # Compute vorticity and divergence fields
-vorticity = allocate_spatial(cfg)
-divergence = allocate_spatial(cfg)
-sphtor_to_spat!(cfg, rot_coeffs, div_coeffs, vorticity, divergence)
+vorticity, divergence = SHsphtor_to_spat(cfg, rot_coeffs, div_coeffs)
 ```
 
 ##  Testing and Validation
