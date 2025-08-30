@@ -35,7 +35,7 @@ function SHTnsKit.analysis_turbo(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
             for i in 1:nlat
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @tturbo for l in m:lmax
+                @tturbo warn_check_args=false for l in m:lmax
                     alm[l + 1, col] += (wi * tbl[l + 1, i]) * Fi
                 end
             end
@@ -44,12 +44,12 @@ function SHTnsKit.analysis_turbo(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
                 SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @tturbo for l in m:lmax
+                @tturbo warn_check_args=false for l in m:lmax
                     alm[l + 1, col] += (wi * P[l + 1]) * Fi
                 end
             end
         end
-        @tturbo for l in m:lmax
+        @tturbo warn_check_args=false for l in m:lmax
             alm[l + 1, col] *= cfg.Nlm[l + 1, col] * scaleφ
         end
     end
@@ -95,7 +95,7 @@ function SHTnsKit.synthesis_turbo(cfg::SHTnsKit.SHTConfig, alm::AbstractMatrix; 
             for i in 1:nlat
                 g_re = 0.0
                 g_im = 0.0
-                @tturbo for l in m:lmax
+                @tturbo warn_check_args=false for l in m:lmax
                     c = cfg.Nlm[l + 1, col] * tbl[l + 1, i]
                     a = alm[l + 1, col]
                     g_re += c * real(a)
@@ -108,7 +108,7 @@ function SHTnsKit.synthesis_turbo(cfg::SHTnsKit.SHTConfig, alm::AbstractMatrix; 
                 SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
                 g_re = 0.0
                 g_im = 0.0
-                @tturbo for l in m:lmax
+                @tturbo warn_check_args=false for l in m:lmax
                     c = cfg.Nlm[l + 1, col] * P[l + 1]
                     a = alm[l + 1, col]
                     g_re += c * real(a)
@@ -117,12 +117,12 @@ function SHTnsKit.synthesis_turbo(cfg::SHTnsKit.SHTConfig, alm::AbstractMatrix; 
                 G[i] = complex(g_re, g_im)
             end
         end
-        @tturbo for i in 1:nlat
+        @tturbo warn_check_args=false for i in 1:nlat
             Fφ[i, col] = inv_scaleφ * G[i]
         end
         if real_output && m > 0
             conj_index = nlon - m + 1
-            @tturbo for i in 1:nlat
+            @tturbo warn_check_args=false for i in 1:nlat
                 Fφ[i, conj_index] = conj(Fφ[i, col])
             end
         end
@@ -144,7 +144,7 @@ function SHTnsKit.turbo_apply_laplacian!(cfg::SHTnsKit.SHTConfig, alm::AbstractM
     size(alm, 2) == mmax + 1 || throw(DimensionMismatch("second dim must be mmax+1=$(mmax+1)"))
     @threads for m in 0:mmax
         col = m + 1
-        @tturbo for l in m:lmax
+        @tturbo warn_check_args=false for l in m:lmax
             alm[l + 1, col] *= l * (l + 1)
         end
     end
@@ -158,7 +158,7 @@ In-place Laplacian factor application for packed coefficients (SHTns LM order).
 """
 function SHTnsKit.turbo_apply_laplacian!(cfg::SHTnsKit.SHTConfig, Qlm::AbstractVector{<:Complex})
     length(Qlm) == cfg.nlm || throw(DimensionMismatch("Qlm length must be nlm=$(cfg.nlm)"))
-    @tturbo for lm0 in 0:(cfg.nlm-1)
+    @tturbo warn_check_args=false for lm0 in 0:(cfg.nlm-1)
         l = cfg.li[lm0 + 1]
         Qlm[lm0 + 1] *= l * (l + 1)
     end
