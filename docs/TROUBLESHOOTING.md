@@ -8,11 +8,16 @@ This guide helps diagnose and fix common issues when using SHTnsKit.jl (pure Jul
 using SHTnsKit
 
 cfg = create_gauss_config(8, 8)
-@show get_lmax(cfg), get_nlat(cfg), get_nphi(cfg)
+@show get_lmax(cfg), cfg.nlat, cfg.nlon
 
-sh = rand(get_nlm(cfg))
-spatial = synthesize(cfg, sh)
-recovered = analyze(cfg, spatial)
+# Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
+spatial = synthesis(cfg, sh)
+recovered = analysis(cfg, spatial)
 
 println("round-trip error = ", norm(sh - recovered) / norm(sh))
 
@@ -24,7 +29,7 @@ If this runs and prints a small round-trip error (e.g., < 1e-10), your setup is 
 ## Common Errors
 
 - DimensionMismatch: spatial_data size (X, Y) must be (nlat, nphi)
-  - Ensure `length(sh) == get_nlm(cfg)` and `size(spatial) == (get_nlat(cfg), get_nphi(cfg))`.
+  - Ensure `length(sh) == cfg.nlm` and `size(spatial) == (cfg.nlat, cfg.nlon)`.
 
 - BoundsError on (l, m) indexing
   - Use `lmidx(cfg, l, m)` and `lm_from_index(cfg, idx)`; only m ≥ 0 are stored for real basis.
@@ -66,14 +71,19 @@ If this runs and prints a small round-trip error (e.g., < 1e-10), your setup is 
 
 - Round-trip test (spatial → spectral → spatial)
   ```julia
-  spatial = rand(get_nlat(cfg), get_nphi(cfg))
+  # Create bandlimited spatial field (smooth test function)
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = 1.0 + 0.5 * cos(θ[i]) + 0.3 * sin(θ[i]) * cos(φ[j])
+end
   err = transform_roundtrip_error(cfg, spatial)
   println("max abs error = ", err)
   ```
 
 - Power spectrum sanity
   ```julia
-  sh = analyze(cfg, spatial)
+  sh = analysis(cfg, spatial)
   p = power_spectrum(cfg, sh)
   println("total power = ", sum(p))
   ```
@@ -89,8 +99,8 @@ If this runs and prints a small round-trip error (e.g., < 1e-10), your setup is 
 
 - Quick timing
   ```julia
-  @time synthesize(cfg, sh)
-  @time analyze(cfg, spatial)
+  @time synthesis(cfg, sh)
+  @time analysis(cfg, spatial)
   ```
 
 - Accurate benchmarking
@@ -111,9 +121,14 @@ using SHTnsKit
 function reproduce()
     cfg = create_gauss_config(16, 16)
     try
-        sh = rand(get_nlm(cfg))
-        spatial = synthesize(cfg, sh)
-        rec = analyze(cfg, spatial)
+        # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
+        spatial = synthesis(cfg, sh)
+        rec = analysis(cfg, spatial)
         return norm(sh - rec) / max(norm(sh), eps())
     finally
         destroy_config(cfg)

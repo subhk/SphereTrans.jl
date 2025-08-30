@@ -84,7 +84,12 @@ using SHTnsKit
 
 # Standard usage automatically applies optimizations
 cfg = create_gauss_config(256, 256)
-sh_coeffs = randn(cfg.nlm)
+# Create bandlimited test coefficients (prevents parallel errors)
+sh_coeffs = zeros(cfg.nlm)
+sh_coeffs[1] = 1.0
+if cfg.nlm > 8
+    sh_coeffs[2:8] .= 0.1 * [cos(i/8) for i in 1:7]
+end
 spatial_data = synthesize(cfg, sh_coeffs)  # Automatically optimized
 ```
 

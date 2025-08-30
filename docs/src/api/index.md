@@ -36,7 +36,7 @@ Create configuration with Gauss–Legendre grid. Requires `nlat ≥ lmax+1` and 
 **Example:**
 ```julia
 cfg = create_gauss_config(32, 34; nlon=65)
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)  # 34 × 65
+nlat, nphi = cfg.nlat, cfg.nlon  # 34 × 65
 ```
 
 ---
@@ -55,7 +55,7 @@ Create configuration with regular equiangular grid.
 **Example:**
 ```julia
 cfg = create_regular_config(32, 32)
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)  # 65 × 65
+nlat, nphi = cfg.nlat, cfg.nlon  # 65 × 65
 ```
 
 ---
@@ -151,7 +151,7 @@ allocate_spectral(cfg::SHTnsConfig) → Vector{Float64}
 ```
 Allocate array for spectral coefficients.
 
-**Returns:** Zero-initialized vector of length `get_nlm(cfg)`
+**Returns:** Zero-initialized vector of length `cfg.nlm`
 
 ---
 
@@ -160,7 +160,7 @@ allocate_spatial(cfg::SHTnsConfig) → Matrix{Float64}
 ```
 Allocate array for spatial field values.
 
-**Returns:** Zero-initialized matrix of size `(get_nlat(cfg), get_nphi(cfg))`
+**Returns:** Zero-initialized matrix of size `(cfg.nlat, cfg.nlon)`
 
 ### Forward Transform (Synthesis)
 
@@ -170,15 +170,20 @@ synthesize(cfg::SHTnsConfig, sh::Vector) → Matrix{Float64}
 Transform from spectral to spatial domain (spherical harmonic synthesis).
 
 **Arguments:**
-- `sh::Vector{Float64}`: Spectral coefficients of length `get_nlm(cfg)`
+- `sh::Vector{Float64}`: Spectral coefficients of length `cfg.nlm`
 
 **Returns:** Spatial field matrix `(nlat × nphi)`
 
 **Example:**
 ```julia
 cfg = create_gauss_config(16, 16)
-sh = rand(get_nlm(cfg))
-spatial = synthesize(cfg, sh)  # 17×33 matrix
+# Create bandlimited test coefficients (avoids high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
+spatial = synthesis(cfg, sh)  # 17×33 matrix
 ```
 
 ---
@@ -202,13 +207,18 @@ Transform from spatial to spectral domain (spherical harmonic analysis).
 **Arguments:**
 - `spatial::Matrix{Float64}`: Spatial field `(nlat × nphi)`
 
-**Returns:** Spectral coefficients vector of length `get_nlm(cfg)`
+**Returns:** Spectral coefficients vector of length `cfg.nlm`
 
 **Example:**
 ```julia
 cfg = create_gauss_config(16, 16)
-spatial = rand(get_nlat(cfg), get_nphi(cfg))
-sh = analyze(cfg, spatial)
+# Create bandlimited spatial field (smooth test function)
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = 1.0 + 0.5 * cos(θ[i]) + 0.3 * sin(θ[i]) * cos(φ[j])
+end
+sh = analysis(cfg, spatial)
 ```
 
 ---
@@ -248,7 +258,7 @@ Complex field synthesis.
 **Example:**
 ```julia
 cfg = create_gauss_config(16, 16)
-sh_complex = rand(ComplexF64, get_nlm(cfg))
+sh_complex = rand(ComplexF64, cfg.nlm)
 spatial_complex = synthesize_complex(cfg, sh_complex)
 ```
 
@@ -283,8 +293,13 @@ Synthesize vector field from spheroidal and toroidal coefficients.
 **Example:**
 ```julia
 cfg = create_gauss_config(20, 20)
-S_lm = rand(get_nlm(cfg))  # Spheroidal
-T_lm = rand(get_nlm(cfg))  # Toroidal
+# Create bandlimited vector field coefficients
+S_lm = zeros(cfg.nlm)  # Spheroidal
+T_lm = zeros(cfg.nlm)  # Toroidal
+S_lm[1] = 1.0  # Basic spheroidal mode
+if cfg.nlm > 3
+    T_lm[3] = 0.5  # Basic toroidal mode
+end
 Vθ, Vφ = synthesize_vector(cfg, S_lm, T_lm)
 ```
 
@@ -339,7 +354,12 @@ Compute spherical harmonic power spectrum.
 **Example:**
 ```julia
 cfg = create_gauss_config(32, 32)
-sh = rand(get_nlm(cfg))
+# Create bandlimited test coefficients (avoids high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
 power = power_spectrum(cfg, sh)  # Length lmax+1
 # power[1] = l=0 power, power[2] = l=1 power, etc.
 ```
@@ -378,8 +398,8 @@ println(get_fft_threads())
 
 ```julia
 # Always check array sizes
-@assert length(sh) == get_nlm(cfg) "Wrong spectral array size"
-@assert size(spatial) == (get_nlat(cfg), get_nphi(cfg)) "Wrong spatial array size"
+@assert length(sh) == cfg.nlm "Wrong spectral array size"
+@assert size(spatial) == (cfg.nlat, cfg.nlon) "Wrong spatial array size"
 
 # Always destroy configurations
 cfg = create_gauss_config(32, 32)

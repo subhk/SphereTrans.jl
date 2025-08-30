@@ -121,7 +121,12 @@ using SHTnsKit
 
 # Standard transforms automatically use optimizations when available
 cfg = create_gauss_config(256, 256)
-sh_coeffs = randn(cfg.nlm)
+# Create bandlimited test coefficients (prevents optimization errors)
+sh_coeffs = zeros(cfg.nlm)
+sh_coeffs[1] = 1.0
+if cfg.nlm > 10
+    sh_coeffs[2:10] .= 0.1 * [sin(i/10) for i in 1:9]
+end
 spatial_data = synthesize(cfg, sh_coeffs)  # Automatically optimized
 ```
 

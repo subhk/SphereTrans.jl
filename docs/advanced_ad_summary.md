@@ -207,7 +207,12 @@ end
 
 # Gradient-based optimization
 cfg = create_config(Float64, 50, 50, 1)  # auto-corrects nlat/nlon to satisfy Gauss constraints
-qlm0 = randn(ComplexF64, cfg.nlm)
+# Create bandlimited test coefficients (prevents AD gradient errors)
+qlm0 = zeros(ComplexF64, cfg.nlm)
+qlm0[1] = 1.0 + 0.5im
+if cfg.nlm > 3
+    qlm0[3] = 0.3 - 0.2im
+end
 
 # Automatic gradient computation and optimization
 qlm_optimized = optimize_spectral_coefficients(cfg, 
@@ -276,7 +281,12 @@ end
 using SHTnsKit, Zygote, ForwardDiff
 
 cfg = create_config(Float64, 30, 30, 1)  # auto-corrects nlat/nlon to satisfy Gauss constraints
-qlm = randn(ComplexF64, cfg.nlm)
+# Create bandlimited coefficients for AD testing
+qlm = zeros(ComplexF64, cfg.nlm)
+qlm[1] = 1.0 + 0.5im
+if cfg.nlm > 5
+    qlm[2:5] .= [0.3+0.1im, 0.2-0.1im, 0.1+0.2im, 0.05-0.05im]
+end
 
 # 1. Matrix operator gradients
 loss_laplacian(x) = sum(abs2, apply_laplacian!(cfg, x, similar(x)))

@@ -155,7 +155,12 @@ using SHTnsKit
 using LoopVectorization  # Enables turbo optimizations
 
 cfg = create_gauss_config(48, 48; mres=98, nlon=192)
-sh_coeffs = randn(ComplexF64, cfg.nlm)
+# Create simple test coefficients
+sh_coeffs = zeros(ComplexF64, cfg.nlm)
+sh_coeffs[1] = 1.0 + 0.0im  # Y_0^0 coefficient
+if cfg.nlm > 3
+    sh_coeffs[3] = 0.5 + 0.0im  # Y_2^0 coefficient
+end
 
 # Turbo-optimized operations (when LoopVectorization is available)
 turbo_apply_laplacian!(cfg, sh_coeffs)
@@ -239,7 +244,12 @@ for lmax in [16, 32, 48, 64]
     println("  Total spatial points: $(cfg.nspat)")
     
     # Simple timing test
-    test_data = rand(cfg.nlat, cfg.nlon)
+    # Create simple bandlimited test function
+    θ, φ = cfg.θ, cfg.φ
+    test_data = zeros(cfg.nlat, cfg.nlon)
+    for i in 1:cfg.nlat, j in 1:cfg.nlon
+        test_data[i,j] = 1.0 + 0.3 * cos(θ[i]) + 0.2 * sin(θ[i]) * cos(φ[j])
+    end
     @time coeffs = analysis(cfg, test_data)
     @time reconstructed = synthesis(cfg, coeffs)
     
@@ -261,8 +271,15 @@ function reconstruction_loss(sh_coeffs, target_field)
 end
 
 # Create target and initial guess
-target = rand(cfg.nlat, cfg.nlon)
-sh_coeffs = 0.1 * randn(ComplexF64, cfg.nlm)
+# Create a simple target pattern
+θ, φ = cfg.θ, cfg.φ
+target = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    target[i,j] = sin(θ[i])^2 * cos(2*φ[j])
+end
+# Initialize with simple coefficients
+sh_coeffs = zeros(ComplexF64, cfg.nlm)
+sh_coeffs[1] = 0.1  # Small initial guess
 
 # Gradient-based optimization
 learning_rate = 0.001

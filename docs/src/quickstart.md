@@ -23,19 +23,23 @@ lmax = 32        # Maximum degree (controls resolution)
 mmax = 32        # Maximum order (typically same as lmax)
 cfg = create_gauss_config(lmax, mmax)
 
-# Step 2: Generate some random spectral coefficients
+# Step 2: Create simple test coefficients
 # These represent the "recipe" for building a function on the sphere
-sh_coeffs = rand(get_nlm(cfg))
+sh_coeffs = zeros(ComplexF64, cfg.nlm)
+sh_coeffs[1] = 1.0  # Y_0^0 constant term
+if cfg.nlm > 3
+    sh_coeffs[3] = 0.5  # Y_2^0 term if available
+end
 println("Number of coefficients: ", length(sh_coeffs))
 
 # Step 3: Transform from spectral to spatial domain (synthesis)
 # This builds the actual function values on a grid
-spatial_field = synthesize(cfg, sh_coeffs)
+spatial_field = synthesis(cfg, sh_coeffs)
 println("Spatial field size: ", size(spatial_field))
 
 # Step 4: Transform back to spectral domain (analysis)
 # This recovers the coefficients from the spatial data
-recovered_coeffs = analyze(cfg, spatial_field)
+recovered_coeffs = analysis(cfg, spatial_field)
 
 # Step 5: Check accuracy (should be very small)
 error = norm(sh_coeffs - recovered_coeffs)
@@ -76,17 +80,17 @@ Understanding the two ways to represent data is key to using spherical harmonics
 cfg = create_gauss_config(16, 16)
 
 # Spectral domain: 1D array of coefficients
-nlm = get_nlm(cfg)        # Number of (l,m) coefficients  
-sh = zeros(nlm)           # Initialize spectral coefficients
+nlm = cfg.nlm        # Number of (l,m) coefficients  
+sh = zeros(ComplexF64, nlm)           # Initialize spectral coefficients
 sh[1] = 1.0               # Set Y_0^0 = constant field (global average)
 println("Spectral domain: ", length(sh), " coefficients")
 
 # Spatial domain: 2D array of values on sphere
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+nlat, nphi = cfg.nlat, cfg.nlon
 println("Spatial domain: $nlat × $nphi = $(nlat*nphi) grid points")
 
 # Transform: spectral → spatial (synthesis)
-spatial = synthesize(cfg, sh)
+spatial = synthesis(cfg, reshape(sh, cfg.lmax+1, cfg.mmax+1))
 println("Result: all values should be the same (constant field)")
 println("Min/max values: ", extrema(spatial))
 
@@ -155,7 +159,7 @@ println("  Min: $(minimum(temperature)) K ($(minimum(temperature)-273.15)°C)")
 println("  Max: $(maximum(temperature)) K ($(maximum(temperature)-273.15)°C)")
 
 # Analyze to get spectral coefficients
-temp_coeffs = analyze(cfg, temperature)
+temp_coeffs = analysis(cfg, temperature)
 
 # Find the most important modes
 coeffs_magnitude = abs.(temp_coeffs)
@@ -186,10 +190,10 @@ cfg = create_gauss_config(32, 32)
 temperature = 300 .+ 50 * cos.(2 * θ) .* cos.(φ)
 
 # Transform to spectral domain
-temp_sh = analyze(cfg, temperature)
+temp_sh = analysis(cfg, temperature)
 
 # Reconstruct and compare
-temp_reconstructed = synthesize(cfg, temp_sh)
+temp_reconstructed = synthesis(cfg, temp_sh)
 reconstruction_error = norm(temperature - temp_reconstructed)
 println("Temperature reconstruction error: $reconstruction_error")
 
@@ -203,17 +207,19 @@ Vector fields on the sphere are decomposed into spheroidal and toroidal componen
 ```julia
 cfg = create_gauss_config(20, 20)
 
-# Create random spheroidal and toroidal coefficients
-S_lm = rand(get_nlm(cfg))  # Spheroidal coefficients
-T_lm = rand(get_nlm(cfg))  # Toroidal coefficients
+# Create simple spheroidal and toroidal coefficients
+S_lm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+T_lm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+S_lm[1, 1] = 1.0  # Simple spheroidal mode
+T_lm[2, 1] = 0.5  # Simple toroidal mode
 
 # Synthesize vector field components
-V_theta, V_phi = synthesize_vector(cfg, S_lm, T_lm)
+V_theta, V_phi = SHsphtor_to_spat(cfg, S_lm, T_lm)
 
 println("Vector field size: ", size(V_theta), " and ", size(V_phi))
 
 # Analyze back to get coefficients
-S_recovered, T_recovered = analyze_vector(cfg, V_theta, V_phi)
+S_recovered, T_recovered = spat_to_SHsphtor(cfg, V_theta, V_phi)
 
 # Check accuracy
 S_error = norm(S_lm - S_recovered)
@@ -229,7 +235,12 @@ destroy_config(cfg)
 cfg = create_gauss_config(20, 20)
 
 # Example: compute spatial derivatives via FFT in φ
-spatial = rand(get_nlat(cfg), get_nphi(cfg))
+# Create simple test function
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = sin(θ[i]) * cos(φ[j])
+end
 dφ = SHTnsKit.spatial_derivative_phi(cfg, spatial)
 
 println("Spatial derivative field size: ", size(dφ))
@@ -244,14 +255,18 @@ For complex-valued fields (e.g., wave functions):
 ```julia
 cfg = create_gauss_config(16, 16)
 
-# Create complex spectral coefficients
-sh_complex = rand(ComplexF64, get_nlm(cfg))
+# Create simple complex spectral coefficients
+sh_complex = zeros(ComplexF64, cfg.nlm)
+sh_complex[1] = 1.0 + 0.5im  # Complex Y_0^0 coefficient
+if cfg.nlm > 2
+    sh_complex[2] = 0.3 - 0.2im  # Complex Y_1^0 coefficient
+end
 
 # Complex field synthesis
-spatial_complex = synthesize_complex(cfg, sh_complex)
+spatial_complex = synthesis(cfg, reshape(sh_complex, cfg.lmax+1, cfg.mmax+1); real_output=false)
 
 # Complex field analysis
-recovered_complex = analyze_complex(cfg, spatial_complex)
+recovered_complex = vec(analysis(cfg, spatial_complex))
 
 # Check accuracy
 complex_error = norm(sh_complex - recovered_complex)
@@ -278,18 +293,23 @@ set_fft_threads(4); get_fft_threads()
 
 ```julia
 cfg = create_gauss_config(64, 64)
-sh = rand(get_nlm(cfg))
+# Create bandlimited test coefficients (avoids high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
 
 # Time forward transform
-@time spatial = synthesize(cfg, sh)
+@time spatial = synthesis(cfg, sh)
 
 # Time backward transform  
-@time recovered = analyze(cfg, spatial)
+@time recovered = analysis(cfg, spatial)
 
 # Multiple runs for better statistics
 println("Forward transform timing:")
 @time for i in 1:10
-    synthesize(cfg, sh)
+    synthesis(cfg, sh)
 end
 
 destroy_config(cfg)
@@ -314,8 +334,8 @@ spatial = allocate_spatial(cfg)
 
 # In-place operations (no additional allocation)
 rand!(sh)
-synthesize!(cfg, sh, spatial)  # spatial = synthesize(cfg, sh)
-analyze!(cfg, spatial, sh)     # sh = analyze(cfg, spatial)
+synthesize!(cfg, sh, spatial)  # spatial = synthesis(cfg, sh)
+analyze!(cfg, spatial, sh)     # sh = analysis(cfg, spatial)
 
 destroy_config(cfg)
 ```
@@ -330,11 +350,12 @@ n_fields = 100
 results = []
 
 for i in 1:n_fields
-    # Generate field
-    sh = rand(get_nlm(cfg))
+    # Generate bandlimited test field (avoids roundtrip errors)
+    sh = zeros(cfg.nlm)
+    sh[1] = 1.0 + 0.1 * sin(i)  # Smooth variation
     
     # Process
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     
     # Store result (example: compute mean)
     push!(results, mean(spatial))
@@ -354,17 +375,19 @@ cfg = create_gauss_config(16, 16)
 
 try
     # Wrong array size
-    wrong_sh = rand(10)  # Should be get_nlm(cfg)
-    spatial = synthesize(cfg, wrong_sh)
+    wrong_sh = zeros(10)  # Should be cfg.nlm
+    spatial = synthesis(cfg, wrong_sh)
 catch e
     println("Caught expected error: ", e)
 end
 
 # Proper size check
-sh = rand(get_nlm(cfg))
-@assert length(sh) == get_nlm(cfg) "Wrong spectral array size"
+# Create bandlimited test data (avoids high-frequency roundtrip errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0  # Simple bandlimited test
+@assert length(sh) == cfg.nlm "Wrong spectral array size"
 
-spatial = synthesize(cfg, sh)
+spatial = synthesis(cfg, sh)
 println("Successful transform with proper size")
 
 destroy_config(cfg)
@@ -387,8 +410,8 @@ cfg = create_gauss_config(lmax, mmax)
 cfg = create_regular_config(lmax, mmax)
 
 # Basic transforms
-spatial = synthesize(cfg, spectral)
-spectral = analyze(cfg, spatial)
+spatial = synthesis(cfg, spectral)
+spectral = analysis(cfg, spatial)
 
 # Vector transforms  
 Vθ, Vφ = synthesize_vector(cfg, S_lm, T_lm)

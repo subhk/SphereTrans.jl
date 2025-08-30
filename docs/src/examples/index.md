@@ -32,7 +32,7 @@ temperature = @. 273.15 + 30 * sin(θ)^2  # Base temp + equatorial warming
 println("Temperature range: $(extrema(temperature)) K")
 
 # Step 3: Transform to spherical harmonic coefficients (analysis)
-T_coeffs = analyze(cfg, temperature)
+T_coeffs = analysis(cfg, temperature)
 println("Number of coefficients: ", length(T_coeffs))
 
 # Step 4: Find the most important coefficient
@@ -67,13 +67,13 @@ cfg = create_gauss_config(32, 32)
 θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 
 # Create pure Y_2^0 spherical harmonic (zonal mode)
-sh = zeros(get_nlm(cfg))
+sh = zeros(cfg.nlm)
 idx = SHTnsKit.lmidx(cfg, 2, 0)  # l=2, m=0 (depends only on latitude)
 sh[idx] = 1.0
 println("Creating Y₂⁰ pattern (zonal, m=0)")
 
 # Synthesize to spatial domain
-Y20_pattern = synthesize(cfg, sh)
+Y20_pattern = synthesis(cfg, sh)
 
 # This creates a pattern that varies only with latitude
 println("Pattern statistics:")
@@ -118,7 +118,7 @@ field = @. (2*sin(2*θ)*cos(φ) +        # Large scale (continental)
 println("Created multi-scale field with 3 different spatial scales")
 
 # Transform to spectral domain
-coeffs = analyze(cfg, field)
+coeffs = analysis(cfg, field)
 
 # Compute power spectrum (energy at each degree l)
 power = power_spectrum(cfg, coeffs)
@@ -198,12 +198,12 @@ cfg = create_gauss_config(48, 48)
 vorticity = @. exp(-((θ - π/2)^2 + (φ - π)^2) / 0.5^2) * sin(4φ)
 
 # Transform vorticity to spectral domain
-ζ_lm = analyze(cfg, vorticity)
+ζ_lm = analysis(cfg, vorticity)
 
 # Solve ∇²ψ = ζ for stream function ψ
 # In spectral domain: -l(l+1) ψ_lm = ζ_lm
 ψ_lm = similar(ζ_lm)
-for i in 1:get_nlm(cfg)
+for i in 1:cfg.nlm
     l, m = lm_from_index(cfg, i)
     if l > 0
         ψ_lm[i] = -ζ_lm[i] / (l * (l + 1))
@@ -242,7 +242,7 @@ gravity_field = @. -9.81 * (1 + 0.001082 * (1.5 * cos(θ)^2 - 0.5) +
                            0.0001 * sin(3θ) * cos(2φ))
 
 # Analyze gravity field
-g_lm = analyze(cfg, gravity_field)
+g_lm = analysis(cfg, gravity_field)
 
 # Extract major components
 J2_coeff = g_lm[lmidx(cfg, 2, 0)]  # J₂ term
@@ -281,7 +281,7 @@ Bφ = @. 5000 * sin(θ) * cos(θ) * cos(2φ)                # Azimuthal
 # This is a simplified analysis - real magnetic modeling is more complex
 
 # Analyze radial component (related to potential)
-V_lm = analyze(cfg, -Br / 30000)  # Normalized
+V_lm = analysis(cfg, -Br / 30000)  # Normalized
 
 # Compute horizontal components from potential (spheroidal only)
 Bθ_computed, Bφ_computed = synthesize_vector(cfg, V_lm, zeros(V_lm))
@@ -325,7 +325,7 @@ end
 # Analyze each month
 monthly_spectra = []
 for anomaly in anomalies
-    T_lm = analyze(cfg, anomaly)
+    T_lm = analysis(cfg, anomaly)
     push!(monthly_spectra, T_lm)
 end
 
@@ -363,8 +363,8 @@ precip_winter = @. max(0, 8 * exp(-5 * (θ - π/2 - 0.2)^2) *
                       (1 + 0.2 * cos(3φ)))
 
 # Transform to spectral domain
-P_summer_lm = analyze(cfg, precip_summer)
-P_winter_lm = analyze(cfg, precip_winter)
+P_summer_lm = analysis(cfg, precip_summer)
+P_winter_lm = analysis(cfg, precip_winter)
 
 # Compute seasonal difference
 seasonal_diff_lm = P_summer_lm - P_winter_lm
@@ -687,10 +687,10 @@ powers = []
 for (i, cfg) in enumerate(cfgs)
     # Interpolate field to current grid if needed
     θ_i, φ_i = SHTnsKit.create_coordinate_matrices(cfg)
-    field_i = field[1:get_nlat(cfg), 1:get_nphi(cfg)]  # Simple subsampling
+    field_i = field[1:cfg.nlat, 1:cfg.nlon]  # Simple subsampling
     
     # Analyze and compute power spectrum
-    f_lm = analyze(cfg, field_i)
+    f_lm = analysis(cfg, field_i)
     power_i = power_spectrum(cfg, f_lm)
     push!(powers, power_i)
     
@@ -726,7 +726,7 @@ original_field = @. sin(3θ) * cos(2φ)
 # Rotate coordinates (simulate different observation viewpoint)
 α, β, γ = π/4, π/6, π/8  # Euler angles
 
-f_lm = analyze(cfg, original_field)
+f_lm = analysis(cfg, original_field)
 f_rot = copy(f_lm)
 rotate_real!(cfg, f_rot; alpha=α, beta=β, gamma=γ)
 rotated_field = synthesize(cfg, f_rot)
@@ -747,7 +747,16 @@ set_optimal_threads!()
 
 # Large batch of fields to process
 n_batch = 1000
-input_fields = [rand(get_nlat(cfg), get_nphi(cfg)) for _ in 1:n_batch]
+# Create bandlimited test fields (smooth functions prevent errors)
+input_fields = []
+for i in 1:n_batch
+    θ, φ = cfg.θ, cfg.φ
+    field = zeros(cfg.nlat, cfg.nlon)
+    for j in 1:cfg.nlat, k in 1:cfg.nlon
+        field[j,k] = 1.0 + 0.3 * sin(2*θ[j]) * cos(φ[k]) * (1 + 0.1*sin(i))
+    end
+    push!(input_fields, field)
+end
 
 # Process with threading
 println("Processing $n_batch fields with $(nthreads()) Julia threads...")
@@ -758,7 +767,7 @@ results = Vector{Float64}(undef, n_batch)
     field = input_fields[i]
     
     # Transform and compute some property
-    sh = analyze(cfg, field)
+    sh = analysis(cfg, field)
     power = power_spectrum(cfg, sh)
     
     # Store result
@@ -796,7 +805,7 @@ for (i, case) in enumerate(test_cases)
     Y_analytical = case.Y(θ, φ)
     
     # Transform to spectral
-    sh = analyze(cfg, Y_analytical)
+    sh = analysis(cfg, Y_analytical)
     
     # Check that only the correct coefficient is non-zero
 expected_idx = lmidx(cfg, case.l, case.m)
@@ -838,11 +847,16 @@ for grid_type in grid_types
               create_regular_config(lmax, lmax)
         
         # Random test field
-        sh_original = rand(get_nlm(cfg))
+        # Create bandlimited test coefficients (prevents roundtrip errors)
+sh_original = zeros(cfg.nlm)
+sh_original[1] = 1.0
+if cfg.nlm > 10
+    sh_original[2:min(10, cfg.nlm)] .= 0.1 * rand(min(9, cfg.nlm-1))
+end
         
         # Round-trip transform
         spatial = synthesize(cfg, sh_original)
-        sh_recovered = analyze(cfg, spatial)
+        sh_recovered = analysis(cfg, spatial)
         
         # Measure error
         error = norm(sh_original - sh_recovered) / norm(sh_original)

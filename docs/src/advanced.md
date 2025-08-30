@@ -76,7 +76,7 @@ function adaptive_analyze(transform::AdaptiveSpectralTransform, field::Matrix{Fl
         field_resized = resize_spatial_field(field, cfg)
         
         # Analyze
-        sh = analyze(cfg, field_resized)
+        sh = analysis(cfg, field_resized)
         
         # Check convergence by looking at high-degree coefficients
         high_degree_power = sum(abs2, sh[end-min(10, div(length(sh), 4)):end])
@@ -93,7 +93,7 @@ function adaptive_analyze(transform::AdaptiveSpectralTransform, field::Matrix{Fl
     # Maximum resolution reached
     cfg = get_config!(transform, transform.max_lmax)
     field_resized = resize_spatial_field(field, cfg)
-    sh = analyze(cfg, field_resized)
+    sh = analysis(cfg, field_resized)
     transform.current_lmax = transform.max_lmax
     
     return sh, transform.max_lmax
@@ -150,13 +150,18 @@ end
 
 # Example: Smooth a noisy field
 cfg = create_gauss_config(64, 64)
-noisy_field = rand(get_nlat(cfg), get_nphi(cfg))
+# Create bandlimited test field (smooth function suitable for SHT)
+θ, φ = cfg.θ, cfg.φ
+noisy_field = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    noisy_field[i,j] = 1.0 + 0.3 * sin(3*θ[i]) * cos(2*φ[j]) + 0.1 * cos(5*θ[i])
+end
 
 # Low-pass filter (keep only l ≤ 20)
-sh = analyze(cfg, noisy_field)
+sh = analysis(cfg, noisy_field)
 lowpass_filter = create_spectral_filter(64, low_pass=20)
 apply_spectral_filter!(sh, lowpass_filter)
-smooth_field = synthesize(cfg, sh)
+smooth_field = synthesis(cfg, sh)
 
 destroy_config(cfg)
 ```
@@ -186,7 +191,7 @@ function spectral_horizontal_gradient(cfg::SHTnsConfig, sh::Vector{Float64})
     # Implementation depends on SHTns internal representation
     # For now, use spatial domain computation
     
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
     
     # Finite differences (not optimal, but illustrative)
@@ -212,7 +217,7 @@ cfg = create_gauss_config(32, 32)
 θ, φ = SHTnsKit.create_coordinate_matrices(cfg)
 test_field = @. sin(3θ) * cos(2φ)
 
-sh = analyze(cfg, test_field)
+sh = analysis(cfg, test_field)
 ∂f_∂θ, ∂f_∂φ = spectral_horizontal_gradient(cfg, sh)
 
 println("Gradient magnitudes:")
@@ -356,7 +361,7 @@ function batch_process(manager::BatchTransformManager,
         
         # Resize field if necessary
         field = fields[i]
-        if size(field) != (get_nlat(cfg), get_nphi(cfg))
+        if size(field) != (cfg.nlat, cfg.nlon)
             field = resize_spatial_field(field, cfg)
         end
         
@@ -795,7 +800,7 @@ struct MemoryMappedSpectralData
 end
 
 function create_mmap_spectral_data(file_path::String, cfg::SHTnsConfig, n_snapshots::Int)
-    nlm = get_nlm(cfg)
+    nlm = cfg.nlm
     
     # Create memory-mapped file
     file_size = nlm * n_snapshots * sizeof(Float64)
@@ -926,7 +931,7 @@ function climate_model_to_shtns(data::Matrix{Float64}, target_lmax::Int)
     
     # Create appropriate configuration
     cfg = create_regular_config(target_lmax, target_lmax)
-    target_nlat, target_nlon = get_nlat(cfg), get_nphi(cfg)
+    target_nlat, target_nlon = cfg.nlat, cfg.nlon
     
     # Interpolate to target grid (simplified)
     if (input_nlat, input_nlon) != (target_nlat, target_nlon)
@@ -937,7 +942,7 @@ function climate_model_to_shtns(data::Matrix{Float64}, target_lmax::Int)
     end
     
     # Analyze
-    sh = analyze(cfg, data_interpolated)
+    sh = analysis(cfg, data_interpolated)
     
     return cfg, sh
 end
@@ -1000,11 +1005,11 @@ cfg = create_gauss_config(16, 16)
 # Example: Parameter estimation for spherical harmonic coefficients
 function objective(params)
     # Create spherical harmonic field from parameters
-    sh = zeros(get_nlm(cfg))
+    sh = zeros(cfg.nlm)
     sh[1:length(params)] = params
     
     # Transform to spatial domain
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     
     # Compute some objective (e.g., match target pattern)
     target = rand(size(spatial))
@@ -1036,7 +1041,7 @@ cfg = create_gauss_config(16, 16)
 # Example: Optimizing spatial field patterns
 function loss_function(spatial_field)
     # Transform to spectral domain
-    sh = analyze(cfg, spatial_field)
+    sh = analysis(cfg, spatial_field)
     
     # Regularize high-frequency components
     high_freq_penalty = sum(sh[end-20:end].^2)
@@ -1048,7 +1053,7 @@ function loss_function(spatial_field)
 end
 
 # Initial spatial field
-spatial₀ = randn(get_nlat(cfg), get_nphi(cfg))
+spatial₀ = randn(cfg.nlat, cfg.nlon)
 
 # Compute gradient using Zygote
 ∇L = Zygote.gradient(loss_function, spatial₀)[1]
@@ -1088,7 +1093,7 @@ function vector_field_energy(params)
 end
 
 # Optimize vector field parameters
-nlm = get_nlm(cfg)
+nlm = cfg.nlm
 vector_params = randn(2 * nlm)
 
 # Gradient descent
@@ -1116,14 +1121,19 @@ function rotation_objective(angles)
     α, β, γ = angles
     
     # Original field
-    sh_original = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients
+sh_original = zeros(cfg.nlm)
+sh_original[1] = 1.0
+if cfg.nlm > 10
+    sh_original[2:5] = [0.5, 0.3, 0.2, 0.1]
+end
     
     # Rotate field (in-place helper for real-basis coefficients)
     sh_rotated = copy(sh_original)
     rotate_real!(cfg, sh_rotated; alpha=α, beta=β, gamma=γ)
     
     # Target field (e.g., aligned with some axis)
-    sh_target = zeros(get_nlm(cfg))
+    sh_target = zeros(cfg.nlm)
     sh_target[1] = 1.0  # Y₀⁰ mode only
     
     return sum((sh_rotated - sh_target).^2)
@@ -1166,7 +1176,7 @@ function sphere_neural_ode!(du, u, p, t)
     transformed = tanh.(W .* spatial .+ b[1:size(spatial, 1), 1:size(spatial, 2)])
     
     # Transform back to spectral domain for time derivative
-    du .= analyze(cfg, transformed)
+    du .= analysis(cfg, transformed)
 end
 
 # Example usage would involve solving the ODE and differentiating through the solution
@@ -1193,7 +1203,7 @@ function create_ad_buffers(cfg)
     ADBuffers(
         allocate_spectral(cfg),
         allocate_spatial(cfg),
-        zeros(get_nlm(cfg))
+        zeros(cfg.nlm)
     )
 end
 
@@ -1228,14 +1238,14 @@ using BenchmarkTools
 
 cfg = create_gauss_config(16, 16)
 n_params = 50
-n_spatial = get_nlat(cfg) * get_nphi(cfg)
+n_spatial = cfg.nlat * cfg.nlon
 
 println("Parameters: $n_params, Spatial points: $n_spatial")
 
 function test_objective(params)
-    sh = zeros(get_nlm(cfg))
+    sh = zeros(cfg.nlm)
     sh[1:n_params] = params
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     return sum(abs2, spatial)  # Single output
 end
 
@@ -1265,7 +1275,7 @@ function solve_inverse_problem(observations, initial_guess, cfg)
     function forward_model(params)
         # Convert parameters to spherical harmonic field
         sh = param_to_sh(params, cfg)
-        return synthesize(cfg, sh)
+        return synthesis(cfg, sh)
     end
     
     function objective(params)

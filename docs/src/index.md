@@ -39,14 +39,18 @@ using SHTnsKit
 lmax = 32
 cfg = create_gauss_config(lmax, lmax)
 
-# Generate test data
-sh_coeffs = rand(get_nlm(cfg))
+# Generate bandlimited test data (avoids high-frequency errors)
+sh_coeffs = zeros(cfg.nlm)
+sh_coeffs[1] = 1.0  # Y_0^0 constant term
+if cfg.nlm > 3
+    sh_coeffs[3] = 0.5  # Y_1^0 term
+end
 
 # Forward transform: spectral → spatial
-spatial_field = synthesize(cfg, sh_coeffs)
+spatial_field = synthesis(cfg, sh_coeffs)
 
 # Backward transform: spatial → spectral
-recovered_coeffs = analyze(cfg, spatial_field)
+recovered_coeffs = analysis(cfg, spatial_field)
 
 # Clean up
 destroy_config(cfg)

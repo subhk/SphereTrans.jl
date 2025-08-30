@@ -21,13 +21,18 @@ function benchmark_transforms(lmax_values)
     
     for lmax in lmax_values
         cfg = create_gauss_config(lmax, lmax)
-        sh = rand(get_nlm(cfg))
+        # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
         
         # Benchmark forward transform
         forward_time = @belapsed synthesize($cfg, $sh)
         
         # Benchmark backward transform
-        spatial = synthesize(cfg, sh)
+        spatial = synthesis(cfg, sh)
         backward_time = @belapsed analyze($cfg, $spatial)
         
         push!(results, (lmax=lmax, forward=forward_time, backward=backward_time))
@@ -113,7 +118,12 @@ println("Thread config: ", summary)
 # Manual thread control
 function benchmark_threading(lmax=64)
     cfg = create_gauss_config(lmax, lmax)
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
     
     thread_counts = [1, 2, 4, 8, min(16, Sys.CPU_THREADS)]
     
@@ -122,7 +132,7 @@ function benchmark_threading(lmax=64)
         set_fft_threads(nthreads)
         time = @elapsed begin
             for i in 1:10
-                synthesize(cfg, sh)
+                synthesis(cfg, sh)
             end
         end
         
@@ -209,10 +219,10 @@ cfg = create_gauss_config(32, 32)
 n_fields = 1000
 
 # Layout 1: Array of arrays (better for random access)
-spectral_data_aoa = [rand(get_nlm(cfg)) for _ in 1:n_fields]
+spectral_data_aoa = [rand(cfg.nlm) for _ in 1:n_fields]
 
 # Layout 2: Single large array (better for streaming)
-nlm = get_nlm(cfg)
+nlm = cfg.nlm
 spectral_data_flat = rand(nlm, n_fields)
 
 # Process with different layouts
@@ -251,8 +261,13 @@ function process_large_dataset(lmax=256, n_fields=10000)
         
         for i in 1:chunk_size
             # Generate field (don't store all at once)
-            sh = rand(get_nlm(cfg))
-            spatial = synthesize(cfg, sh)
+            # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
+            spatial = synthesis(cfg, sh)
             
             # Compute result
             result = mean(spatial)
@@ -288,20 +303,30 @@ cfg = create_gauss_config(64, 64)
 # Plan your algorithm to minimize analysis operations
 
 function optimize_transform_direction()
-    sh = rand(get_nlm(cfg))
-    spatial = rand(get_nlat(cfg), get_nphi(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
+    # Create bandlimited spatial data (smooth test function)
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = 1.0 + 0.5 * cos(θ[i]) + 0.3 * sin(θ[i]) * cos(φ[j])
+end
     
     # Forward transform timing
     forward_time = @elapsed begin
         for i in 1:100
-            synthesize(cfg, sh)
+            synthesis(cfg, sh)
         end
     end
     
     # Backward transform timing
     backward_time = @elapsed begin
         for i in 1:100
-            analyze(cfg, spatial)
+            analysis(cfg, spatial)
         end
     end
     
@@ -366,14 +391,25 @@ cfg = create_gauss_config(48, 48)
 # Vector transforms are more expensive than scalar
 function benchmark_vector_vs_scalar()
     # Scalar data
-    sh_scalar = rand(get_nlm(cfg))
-    spatial_scalar = rand(get_nlat(cfg), get_nphi(cfg))
+    sh_scalar = rand(cfg.nlm)
+    # Create bandlimited spatial scalar field
+    θ, φ = cfg.θ, cfg.φ
+    spatial_scalar = zeros(cfg.nlat, cfg.nlon)
+    for i in 1:cfg.nlat, j in 1:cfg.nlon
+        spatial_scalar[i,j] = 1.0 + 0.4 * sin(2*θ[i]) * cos(φ[j])
+    end
     
     # Vector data  
-    S_lm = rand(get_nlm(cfg))
-    T_lm = rand(get_nlm(cfg))
-    Vθ = rand(get_nlat(cfg), get_nphi(cfg))
-    Vφ = rand(get_nlat(cfg), get_nphi(cfg))
+    S_lm = rand(cfg.nlm)
+    T_lm = rand(cfg.nlm)
+    # Create bandlimited vector field components
+    θ, φ = cfg.θ, cfg.φ
+    Vθ = zeros(cfg.nlat, cfg.nlon)
+    Vφ = zeros(cfg.nlat, cfg.nlon)
+    for i in 1:cfg.nlat, j in 1:cfg.nlon
+        Vθ[i,j] = 0.8 * cos(θ[i]) * sin(φ[j])
+        Vφ[i,j] = 0.6 * sin(θ[i]) * cos(2*φ[j])
+    end
     
     # Scalar benchmarks
     scalar_synth = @elapsed begin
@@ -426,7 +462,12 @@ using BenchmarkTools
 cfg = create_gauss_config(64, 64)
 
 function profile_transforms()
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
     
     # Detailed benchmarking
     forward_bench = @benchmark synthesize($cfg, $sh)
@@ -436,7 +477,7 @@ function profile_transforms()
     println("  Std: $(std(forward_bench.times))ns")
     
     # Memory allocation tracking
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     backward_bench = @benchmark analyze($cfg, $spatial)
     
     println("Backward transform statistics:")
@@ -448,12 +489,17 @@ profile_transforms()
 
 # Julia profiling
 function profile_detailed()
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
     
     Profile.clear()
     @profile begin
         for i in 1:100
-            spatial = synthesize(cfg, sh)
+            spatial = synthesis(cfg, sh)
         end
     end
     
@@ -470,7 +516,7 @@ using SHTnsKit
 
 function performance_report(cfg, n_runs=100)
     # Warm up
-    sh_test = rand(get_nlm(cfg))
+    sh_test = rand(cfg.nlm)
     for i in 1:5
         synthesize(cfg, sh_test)
     end
@@ -479,10 +525,15 @@ function performance_report(cfg, n_runs=100)
     times = Float64[]
     
     for i in 1:n_runs
-        sh = rand(get_nlm(cfg))
+        # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm > 3
+    sh[3] = 0.5
+end
         
         time = @elapsed begin
-            spatial = synthesize(cfg, sh)
+            spatial = synthesis(cfg, sh)
         end
         
         push!(times, time)
@@ -497,14 +548,14 @@ function performance_report(cfg, n_runs=100)
     # Compute derived metrics
     lmax = get_lmax(cfg)
     operations_per_sec = 1.0 / mean_time
-    points_per_sec = (get_nlat(cfg) * get_nphi(cfg)) / mean_time
+    points_per_sec = (cfg.nlat * cfg.nlon) / mean_time
     
     println("Performance Report (lmax=$lmax, $n_runs runs):")
     println("  Mean time: $(mean_time*1000)ms (±$(std_time*1000)ms)")
     println("  Min/Max: $(min_time*1000)ms / $(max_time*1000)ms")
     println("  Transforms/sec: $(operations_per_sec)")
     println("  Points/sec: $(points_per_sec)")
-    println("  Grid efficiency: $(get_nlm(cfg)/(get_nlat(cfg)*get_nphi(cfg)))")
+    println("  Grid efficiency: $(cfg.nlm/(cfg.nlat*cfg.nlon))")
 end
 
 cfg = create_gauss_config(32, 32)
