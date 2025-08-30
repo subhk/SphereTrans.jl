@@ -187,10 +187,12 @@ using SHTnsKit
 
 # Setup for climate-scale problem
 cfg = create_gauss_config(42, 44; mres=86, nlon=128)  # ~2.8° resolution
-θ, φ = cfg.θ, cfg.φ
-
 # Create realistic temperature field with seasonal variation
-summer_pattern = @. 273.15 + 40 * cos(θ - 0.4) + 10 * sin(2*φ) * sin(θ)
+summer_pattern = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    θ, φ = cfg.θ[i], cfg.φ[j]
+    summer_pattern[i,j] = 273.15 + 40 * cos(θ - 0.4) + 10 * sin(2*φ) * sin(θ)
+end
 coeffs = analysis(cfg, summer_pattern)
 
 # Analyze dominant spatial scales
@@ -213,11 +215,17 @@ destroy_config(cfg)
 using SHTnsKit
 
 cfg = create_gauss_config(32, 34; mres=66, nlon=128)
-θ_grid, φ_grid = cfg.θ, cfg.φ
+
+# Create 2D coordinate grids for broadcasting
+u_wind = zeros(cfg.nlat, cfg.nlon)
+v_wind = zeros(cfg.nlat, cfg.nlon)
 
 # Create realistic wind field: jet stream + wave pattern
-u_wind = @. 30 * sin(2*θ_grid) + 15 * cos(3*φ_grid) * sin(θ_grid)  # Zonal
-v_wind = @. 10 * cos(θ_grid) * sin(2*φ_grid)                        # Meridional
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    θ, φ = cfg.θ[i], cfg.φ[j]
+    u_wind[i,j] = 30 * sin(2*θ) + 15 * cos(3*φ) * sin(θ)  # Zonal
+    v_wind[i,j] = 10 * cos(θ) * sin(2*φ)                   # Meridional
+end
 
 # Decompose into spheroidal (divergent) and toroidal (rotational) components
 sph_coeffs, tor_coeffs = spat_to_SHsphtor(cfg, u_wind, v_wind)
@@ -278,10 +286,10 @@ end
 
 # Create target and initial guess
 # Create a simple target pattern
-θ, φ = cfg.θ, cfg.φ
 target = zeros(cfg.nlat, cfg.nlon)
 for i in 1:cfg.nlat, j in 1:cfg.nlon
-    target[i,j] = sin(θ[i])^2 * cos(2*φ[j])
+    θ, φ = cfg.θ[i], cfg.φ[j]
+    target[i,j] = sin(θ)^2 * cos(2*φ)
 end
 # Initialize with simple coefficients
 sh_coeffs = zeros(ComplexF64, cfg.nlm)
