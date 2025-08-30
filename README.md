@@ -327,29 +327,32 @@ destroy_config(cfg)
 ### Threading Configuration
 
 ```julia
-using SHTnsKit
+using SHTnsKit, FFTW
 
-# Automatic optimal threading setup
-set_optimal_threads!()
+# Manual FFTW thread control
+FFTW.set_num_threads(8)    # Set FFTW thread count
 
-# Manual control
-set_threading!(true)        # Enable Julia thread parallelization  
-set_fft_threads(8)         # Set FFTW thread count
+# SHTnsKit threading (for internal calculations)
+shtns_use_threads(8)       # Set number of threads for SHTnsKit operations
 
 # Check current settings
-println("Julia threads: $(get_threading())")
-println("FFTW threads: $(get_fft_threads())")
+println("Julia threads: $(Threads.nthreads())")
+println("FFTW threads: $(FFTW.get_num_threads())")
 ```
 
 ### Environment Variables
 
-Control threading at startup:
+Control behavior at startup:
 
 ```bash
+# Julia threading
 export JULIA_NUM_THREADS=8
-export SHTNSKIT_THREADS=on
-export SHTNSKIT_FFT_THREADS=8  
-export SHTNSKIT_AUTO_THREADS=on
+
+# SHTnsKit configuration
+export SHTNSKIT_FORCE_FFTW=1           # Force FFTW usage over DFT fallback
+export SHTNSKIT_PHI_SCALE=quad         # Use φ quadrature scaling (default: dft)
+export SHTNSKIT_CACHE_SIZE=64          # L1 cache size in KB for optimization
+export SHTNSKIT_CACHE_PENCILFFTS=1     # Cache PencilFFTs plans for MPI
 
 julia --project=.
 ```
