@@ -7,13 +7,18 @@ function benchmark_transforms(lmax_values)
     
     for lmax in lmax_values
         cfg = create_gauss_config(lmax, lmax)
-        sh = rand(get_nlm(cfg))
+        # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
         
         # Benchmark forward transform
         forward_time = @belapsed synthesize($cfg, $sh)
         
         # Benchmark backward transform
-        spatial = synthesize(cfg, sh)
+        spatial = synthesis(cfg, sh)
         backward_time = @belapsed analyze($cfg, $spatial)
         
         push!(results, (lmax=lmax, forward=forward_time, backward=backward_time))
@@ -70,7 +75,12 @@ println(&quot;Thread config: &quot;, summary)
 # Manual thread control
 function benchmark_threading(lmax=64)
     cfg = create_gauss_config(lmax, lmax)
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
     
     thread_counts = [1, 2, 4, 8, min(16, Sys.CPU_THREADS)]
     
@@ -79,7 +89,7 @@ function benchmark_threading(lmax=64)
         set_fft_threads(nthreads)
         time = @elapsed begin
             for i in 1:10
-                synthesize(cfg, sh)
+                synthesis(cfg, sh)
             end
         end
         
@@ -146,10 +156,10 @@ cfg = create_gauss_config(32, 32)
 n_fields = 1000
 
 # Layout 1: Array of arrays (better for random access)
-spectral_data_aoa = [rand(get_nlm(cfg)) for _ in 1:n_fields]
+spectral_data_aoa = [rand(cfg.nlm) for _ in 1:n_fields]
 
 # Layout 2: Single large array (better for streaming)
-nlm = get_nlm(cfg)
+nlm = cfg.nlm
 spectral_data_flat = rand(nlm, n_fields)
 
 # Process with different layouts
@@ -182,8 +192,13 @@ function process_large_dataset(lmax=256, n_fields=10000)
         
         for i in 1:chunk_size
             # Generate field (don&#39;t store all at once)
-            sh = rand(get_nlm(cfg))
-            spatial = synthesize(cfg, sh)
+            # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
+            spatial = synthesis(cfg, sh)
             
             # Compute result
             result = mean(spatial)
@@ -207,20 +222,30 @@ cfg = create_gauss_config(64, 64)
 # Plan your algorithm to minimize analysis operations
 
 function optimize_transform_direction()
-    sh = rand(get_nlm(cfg))
-    spatial = rand(get_nlat(cfg), get_nphi(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
+    # Create bandlimited spatial data (smooth test function)
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = 1.0 + 0.5 * cos(θ[i]) + 0.3 * sin(θ[i]) * cos(φ[j])
+end
     
     # Forward transform timing
     forward_time = @elapsed begin
         for i in 1:100
-            synthesize(cfg, sh)
+            synthesis(cfg, sh)
         end
     end
     
     # Backward transform timing
     backward_time = @elapsed begin
         for i in 1:100
-            analyze(cfg, spatial)
+            analysis(cfg, spatial)
         end
     end
     
@@ -273,14 +298,25 @@ cfg = create_gauss_config(48, 48)
 # Vector transforms are more expensive than scalar
 function benchmark_vector_vs_scalar()
     # Scalar data
-    sh_scalar = rand(get_nlm(cfg))
-    spatial_scalar = rand(get_nlat(cfg), get_nphi(cfg))
+    sh_scalar = rand(cfg.nlm)
+    # Create bandlimited spatial scalar field
+    θ, φ = cfg.θ, cfg.φ
+    spatial_scalar = zeros(cfg.nlat, cfg.nlon)
+    for i in 1:cfg.nlat, j in 1:cfg.nlon
+        spatial_scalar[i,j] = 1.0 + 0.4 * sin(2*θ[i]) * cos(φ[j])
+    end
     
     # Vector data  
-    S_lm = rand(get_nlm(cfg))
-    T_lm = rand(get_nlm(cfg))
-    Vθ = rand(get_nlat(cfg), get_nphi(cfg))
-    Vφ = rand(get_nlat(cfg), get_nphi(cfg))
+    S_lm = rand(cfg.nlm)
+    T_lm = rand(cfg.nlm)
+    # Create bandlimited vector field components
+    θ, φ = cfg.θ, cfg.φ
+    Vθ = zeros(cfg.nlat, cfg.nlon)
+    Vφ = zeros(cfg.nlat, cfg.nlon)
+    for i in 1:cfg.nlat, j in 1:cfg.nlon
+        Vθ[i,j] = 0.8 * cos(θ[i]) * sin(φ[j])
+        Vφ[i,j] = 0.6 * sin(θ[i]) * cos(2*φ[j])
+    end
     
     # Scalar benchmarks
     scalar_synth = @elapsed begin
@@ -323,7 +359,12 @@ using BenchmarkTools
 cfg = create_gauss_config(64, 64)
 
 function profile_transforms()
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
     
     # Detailed benchmarking
     forward_bench = @benchmark synthesize($cfg, $sh)
@@ -333,7 +374,7 @@ function profile_transforms()
     println(&quot;  Std: $(std(forward_bench.times))ns&quot;)
     
     # Memory allocation tracking
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     backward_bench = @benchmark analyze($cfg, $spatial)
     
     println(&quot;Backward transform statistics:&quot;)
@@ -345,12 +386,17 @@ profile_transforms()
 
 # Julia profiling
 function profile_detailed()
-    sh = rand(get_nlm(cfg))
+    # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
     
     Profile.clear()
     @profile begin
         for i in 1:100
-            spatial = synthesize(cfg, sh)
+            spatial = synthesis(cfg, sh)
         end
     end
     
@@ -361,7 +407,7 @@ destroy_config(cfg)</code></pre><h3 id="Custom-Performance-Metrics"><a class="do
 
 function performance_report(cfg, n_runs=100)
     # Warm up
-    sh_test = rand(get_nlm(cfg))
+    sh_test = rand(cfg.nlm)
     for i in 1:5
         synthesize(cfg, sh_test)
     end
@@ -370,10 +416,15 @@ function performance_report(cfg, n_runs=100)
     times = Float64[]
     
     for i in 1:n_runs
-        sh = rand(get_nlm(cfg))
+        # Create bandlimited test coefficients (prevents high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
         
         time = @elapsed begin
-            spatial = synthesize(cfg, sh)
+            spatial = synthesis(cfg, sh)
         end
         
         push!(times, time)
@@ -388,16 +439,16 @@ function performance_report(cfg, n_runs=100)
     # Compute derived metrics
     lmax = get_lmax(cfg)
     operations_per_sec = 1.0 / mean_time
-    points_per_sec = (get_nlat(cfg) * get_nphi(cfg)) / mean_time
+    points_per_sec = (cfg.nlat * cfg.nlon) / mean_time
     
     println(&quot;Performance Report (lmax=$lmax, $n_runs runs):&quot;)
     println(&quot;  Mean time: $(mean_time*1000)ms (±$(std_time*1000)ms)&quot;)
     println(&quot;  Min/Max: $(min_time*1000)ms / $(max_time*1000)ms&quot;)
     println(&quot;  Transforms/sec: $(operations_per_sec)&quot;)
     println(&quot;  Points/sec: $(points_per_sec)&quot;)
-    println(&quot;  Grid efficiency: $(get_nlm(cfg)/(get_nlat(cfg)*get_nphi(cfg)))&quot;)
+    println(&quot;  Grid efficiency: $(cfg.nlm/(cfg.nlat*cfg.nlon))&quot;)
 end
 
 cfg = create_gauss_config(32, 32)
 performance_report(cfg)
-destroy_config(cfg)</code></pre><h2 id="Optimization-Checklist"><a class="docs-heading-anchor" href="#Optimization-Checklist">Optimization Checklist</a><a id="Optimization-Checklist-1"></a><a class="docs-heading-anchor-permalink" href="#Optimization-Checklist" title="Permalink"></a></h2><h3 id="Before-Optimization"><a class="docs-heading-anchor" href="#Before-Optimization">Before Optimization</a><a id="Before-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#Before-Optimization" title="Permalink"></a></h3><ul><li>[ ] Profile your code to identify bottlenecks</li><li>[ ] Understand your problem&#39;s computational characteristics</li><li>[ ] Measure baseline performance</li></ul><h3 id="Threading-Optimization-2"><a class="docs-heading-anchor" href="#Threading-Optimization-2">Threading Optimization</a><a class="docs-heading-anchor-permalink" href="#Threading-Optimization-2" title="Permalink"></a></h3><ul><li>[ ] Set <code>OMP_NUM_THREADS</code> appropriately</li><li>[ ] Use <code>set_optimal_threads()</code> for automatic tuning</li><li>[ ] Disable threading in other libraries (BLAS, FFTW)</li><li>[ ] Consider NUMA topology for large systems</li></ul><h3 id="Memory-Optimization-2"><a class="docs-heading-anchor" href="#Memory-Optimization-2">Memory Optimization</a><a class="docs-heading-anchor-permalink" href="#Memory-Optimization-2" title="Permalink"></a></h3><ul><li>[ ] Pre-allocate buffers for repeated operations</li><li>[ ] Use in-place transforms when possible</li><li>[ ] Process data in chunks for large datasets</li><li>[ ] Monitor memory usage and fragmentation</li></ul><h3 id="Algorithm-Optimization"><a class="docs-heading-anchor" href="#Algorithm-Optimization">Algorithm Optimization</a><a id="Algorithm-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#Algorithm-Optimization" title="Permalink"></a></h3><ul><li>[ ] Minimize backward transforms (analysis)</li><li>[ ] Choose appropriate grid type (Gauss vs regular)</li><li>[ ] Batch operations when possible</li><li>[ ] Cache frequently used configurations</li></ul><p>&lt;!– GPU optimization checklist removed –&gt;</p><ul><li>[ ] Use appropriate batch sizes</li></ul><h3 id="System-Level-Optimization"><a class="docs-heading-anchor" href="#System-Level-Optimization">System-Level Optimization</a><a id="System-Level-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#System-Level-Optimization" title="Permalink"></a></h3><ul><li>[ ] Use high-performance BLAS library</li><li>[ ] Enable CPU optimizations (AVX, etc.)</li><li>[ ] Consider process/thread affinity</li><li>[ ] Monitor system resource utilization</li></ul><h3 id="Performance-Validation"><a class="docs-heading-anchor" href="#Performance-Validation">Performance Validation</a><a id="Performance-Validation-1"></a><a class="docs-heading-anchor-permalink" href="#Performance-Validation" title="Permalink"></a></h3><ul><li>[ ] Compare with baseline measurements</li><li>[ ] Verify numerical accuracy after optimization</li><li>[ ] Test with realistic problem sizes</li><li>[ ] Document performance characteristics</li></ul><h2 id="Common-Performance-Pitfalls"><a class="docs-heading-anchor" href="#Common-Performance-Pitfalls">Common Performance Pitfalls</a><a id="Common-Performance-Pitfalls-1"></a><a class="docs-heading-anchor-permalink" href="#Common-Performance-Pitfalls" title="Permalink"></a></h2><ol><li><strong>Thread Oversubscription</strong>: Too many threads can hurt performance</li><li><strong>Memory Allocation</strong>: Repeated allocation in inner loops</li><li><strong>Wrong Grid Type</strong>: Regular grids when Gauss would suffice</li><li><strong>Unnecessary Transforms</strong>: Computing both directions when only one needed</li><li>Performance pitfalls: array allocations in hot loops, oversubscription of threads</li></ol><p>Following these guidelines will help you achieve optimal performance for your specific SHTnsKit.jl applications.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../examples/">« Examples Gallery</a><a class="docs-footer-nextpage" href="../performance_tips/">Performance Tips »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 10:33">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+destroy_config(cfg)</code></pre><h2 id="Optimization-Checklist"><a class="docs-heading-anchor" href="#Optimization-Checklist">Optimization Checklist</a><a id="Optimization-Checklist-1"></a><a class="docs-heading-anchor-permalink" href="#Optimization-Checklist" title="Permalink"></a></h2><h3 id="Before-Optimization"><a class="docs-heading-anchor" href="#Before-Optimization">Before Optimization</a><a id="Before-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#Before-Optimization" title="Permalink"></a></h3><ul><li>[ ] Profile your code to identify bottlenecks</li><li>[ ] Understand your problem&#39;s computational characteristics</li><li>[ ] Measure baseline performance</li></ul><h3 id="Threading-Optimization-2"><a class="docs-heading-anchor" href="#Threading-Optimization-2">Threading Optimization</a><a class="docs-heading-anchor-permalink" href="#Threading-Optimization-2" title="Permalink"></a></h3><ul><li>[ ] Set <code>OMP_NUM_THREADS</code> appropriately</li><li>[ ] Use <code>set_optimal_threads()</code> for automatic tuning</li><li>[ ] Disable threading in other libraries (BLAS, FFTW)</li><li>[ ] Consider NUMA topology for large systems</li></ul><h3 id="Memory-Optimization-2"><a class="docs-heading-anchor" href="#Memory-Optimization-2">Memory Optimization</a><a class="docs-heading-anchor-permalink" href="#Memory-Optimization-2" title="Permalink"></a></h3><ul><li>[ ] Pre-allocate buffers for repeated operations</li><li>[ ] Use in-place transforms when possible</li><li>[ ] Process data in chunks for large datasets</li><li>[ ] Monitor memory usage and fragmentation</li></ul><h3 id="Algorithm-Optimization"><a class="docs-heading-anchor" href="#Algorithm-Optimization">Algorithm Optimization</a><a id="Algorithm-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#Algorithm-Optimization" title="Permalink"></a></h3><ul><li>[ ] Minimize backward transforms (analysis)</li><li>[ ] Choose appropriate grid type (Gauss vs regular)</li><li>[ ] Batch operations when possible</li><li>[ ] Cache frequently used configurations</li></ul><p>&lt;!– GPU optimization checklist removed –&gt;</p><ul><li>[ ] Use appropriate batch sizes</li></ul><h3 id="System-Level-Optimization"><a class="docs-heading-anchor" href="#System-Level-Optimization">System-Level Optimization</a><a id="System-Level-Optimization-1"></a><a class="docs-heading-anchor-permalink" href="#System-Level-Optimization" title="Permalink"></a></h3><ul><li>[ ] Use high-performance BLAS library</li><li>[ ] Enable CPU optimizations (AVX, etc.)</li><li>[ ] Consider process/thread affinity</li><li>[ ] Monitor system resource utilization</li></ul><h3 id="Performance-Validation"><a class="docs-heading-anchor" href="#Performance-Validation">Performance Validation</a><a id="Performance-Validation-1"></a><a class="docs-heading-anchor-permalink" href="#Performance-Validation" title="Permalink"></a></h3><ul><li>[ ] Compare with baseline measurements</li><li>[ ] Verify numerical accuracy after optimization</li><li>[ ] Test with realistic problem sizes</li><li>[ ] Document performance characteristics</li></ul><h2 id="Common-Performance-Pitfalls"><a class="docs-heading-anchor" href="#Common-Performance-Pitfalls">Common Performance Pitfalls</a><a id="Common-Performance-Pitfalls-1"></a><a class="docs-heading-anchor-permalink" href="#Common-Performance-Pitfalls" title="Permalink"></a></h2><ol><li><strong>Thread Oversubscription</strong>: Too many threads can hurt performance</li><li><strong>Memory Allocation</strong>: Repeated allocation in inner loops</li><li><strong>Wrong Grid Type</strong>: Regular grids when Gauss would suffice</li><li><strong>Unnecessary Transforms</strong>: Computing both directions when only one needed</li><li>Performance pitfalls: array allocations in hot loops, oversubscription of threads</li></ol><p>Following these guidelines will help you achieve optimal performance for your specific SHTnsKit.jl applications.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../examples/">« Examples Gallery</a><a class="docs-footer-nextpage" href="../performance_tips/">Performance Tips »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 10:43">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

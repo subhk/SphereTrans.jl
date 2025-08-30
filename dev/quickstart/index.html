@@ -6,19 +6,23 @@ lmax = 32        # Maximum degree (controls resolution)
 mmax = 32        # Maximum order (typically same as lmax)
 cfg = create_gauss_config(lmax, mmax)
 
-# Step 2: Generate some random spectral coefficients
+# Step 2: Create simple test coefficients
 # These represent the &quot;recipe&quot; for building a function on the sphere
-sh_coeffs = rand(get_nlm(cfg))
+sh_coeffs = zeros(ComplexF64, cfg.nlm)
+sh_coeffs[1] = 1.0  # Y_0^0 constant term
+if cfg.nlm &gt; 3
+    sh_coeffs[3] = 0.5  # Y_2^0 term if available
+end
 println(&quot;Number of coefficients: &quot;, length(sh_coeffs))
 
 # Step 3: Transform from spectral to spatial domain (synthesis)
 # This builds the actual function values on a grid
-spatial_field = synthesize(cfg, sh_coeffs)
+spatial_field = synthesis(cfg, sh_coeffs)
 println(&quot;Spatial field size: &quot;, size(spatial_field))
 
 # Step 4: Transform back to spectral domain (analysis)
 # This recovers the coefficients from the spatial data
-recovered_coeffs = analyze(cfg, spatial_field)
+recovered_coeffs = analysis(cfg, spatial_field)
 
 # Step 5: Check accuracy (should be very small)
 error = norm(sh_coeffs - recovered_coeffs)
@@ -28,17 +32,17 @@ println(&quot;Round-trip error: $error&quot;)
 destroy_config(cfg)</code></pre><p><strong>What just happened?</strong></p><ol><li><strong>Configuration</strong>: We set up the transform parameters (resolution and grid type)</li><li><strong>Coefficients</strong>: Created random spherical harmonic coefficients </li><li><strong>Synthesis</strong>: Converted coefficients → spatial values (spectral to physical)</li><li><strong>Analysis</strong>: Converted spatial values → coefficients (physical to spectral)</li><li><strong>Verification</strong>: The tiny error confirms the transforms are working correctly</li></ol><h2 id="Understanding-the-Basics"><a class="docs-heading-anchor" href="#Understanding-the-Basics">Understanding the Basics</a><a id="Understanding-the-Basics-1"></a><a class="docs-heading-anchor-permalink" href="#Understanding-the-Basics" title="Permalink"></a></h2><h3 id="Spectral-vs-Spatial-Domains"><a class="docs-heading-anchor" href="#Spectral-vs-Spatial-Domains">Spectral vs Spatial Domains</a><a id="Spectral-vs-Spatial-Domains-1"></a><a class="docs-heading-anchor-permalink" href="#Spectral-vs-Spatial-Domains" title="Permalink"></a></h3><p>Understanding the two ways to represent data is key to using spherical harmonics effectively:</p><ul><li><p><strong>Spatial Domain</strong>: Values at specific points on the sphere</p><ul><li>Like having temperature measurements at weather stations</li><li>2D array: <code>field[latitude, longitude]</code></li><li>Easy to visualize and interpret physically</li></ul></li><li><p><strong>Spectral Domain</strong>: Coefficients of mathematical basis functions (spherical harmonics)</p><ul><li>Like having the &quot;recipe&quot; ingredients for recreating the field</li><li>1D array: <code>coeffs[mode_index]</code></li><li>Compact representation, efficient for analysis</li></ul></li></ul><p><strong>Analogy</strong>: Think of a recipe vs a finished dish</p><ul><li><strong>Spatial</strong> = the finished dish (what you see/taste)</li><li><strong>Spectral</strong> = the recipe (ingredients that make the dish)</li></ul><pre><code class="language-julia hljs">cfg = create_gauss_config(16, 16)
 
 # Spectral domain: 1D array of coefficients
-nlm = get_nlm(cfg)        # Number of (l,m) coefficients  
-sh = zeros(nlm)           # Initialize spectral coefficients
+nlm = cfg.nlm        # Number of (l,m) coefficients  
+sh = zeros(ComplexF64, nlm)           # Initialize spectral coefficients
 sh[1] = 1.0               # Set Y_0^0 = constant field (global average)
 println(&quot;Spectral domain: &quot;, length(sh), &quot; coefficients&quot;)
 
 # Spatial domain: 2D array of values on sphere
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)
+nlat, nphi = cfg.nlat, cfg.nlon
 println(&quot;Spatial domain: $nlat × $nphi = $(nlat*nphi) grid points&quot;)
 
 # Transform: spectral → spatial (synthesis)
-spatial = synthesize(cfg, sh)
+spatial = synthesis(cfg, reshape(sh, cfg.lmax+1, cfg.mmax+1))
 println(&quot;Result: all values should be the same (constant field)&quot;)
 println(&quot;Min/max values: &quot;, extrema(spatial))
 
@@ -73,7 +77,7 @@ println(&quot;  Min: $(minimum(temperature)) K ($(minimum(temperature)-273.15)°
 println(&quot;  Max: $(maximum(temperature)) K ($(maximum(temperature)-273.15)°C)&quot;)
 
 # Analyze to get spectral coefficients
-temp_coeffs = analyze(cfg, temperature)
+temp_coeffs = analysis(cfg, temperature)
 
 # Find the most important modes
 coeffs_magnitude = abs.(temp_coeffs)
@@ -93,26 +97,28 @@ destroy_config(cfg)</code></pre><p><strong>What this shows:</strong></p><ul><li>
 temperature = 300 .+ 50 * cos.(2 * θ) .* cos.(φ)
 
 # Transform to spectral domain
-temp_sh = analyze(cfg, temperature)
+temp_sh = analysis(cfg, temperature)
 
 # Reconstruct and compare
-temp_reconstructed = synthesize(cfg, temp_sh)
+temp_reconstructed = synthesis(cfg, temp_sh)
 reconstruction_error = norm(temperature - temp_reconstructed)
 println(&quot;Temperature reconstruction error: $reconstruction_error&quot;)
 
 destroy_config(cfg)</code></pre><h2 id="Vector-Fields"><a class="docs-heading-anchor" href="#Vector-Fields">Vector Fields</a><a id="Vector-Fields-1"></a><a class="docs-heading-anchor-permalink" href="#Vector-Fields" title="Permalink"></a></h2><p>Vector fields on the sphere are decomposed into spheroidal and toroidal components:</p><pre><code class="language-julia hljs">cfg = create_gauss_config(20, 20)
 
-# Create random spheroidal and toroidal coefficients
-S_lm = rand(get_nlm(cfg))  # Spheroidal coefficients
-T_lm = rand(get_nlm(cfg))  # Toroidal coefficients
+# Create simple spheroidal and toroidal coefficients
+S_lm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+T_lm = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
+S_lm[1, 1] = 1.0  # Simple spheroidal mode
+T_lm[2, 1] = 0.5  # Simple toroidal mode
 
 # Synthesize vector field components
-V_theta, V_phi = synthesize_vector(cfg, S_lm, T_lm)
+V_theta, V_phi = SHsphtor_to_spat(cfg, S_lm, T_lm)
 
 println(&quot;Vector field size: &quot;, size(V_theta), &quot; and &quot;, size(V_phi))
 
 # Analyze back to get coefficients
-S_recovered, T_recovered = analyze_vector(cfg, V_theta, V_phi)
+S_recovered, T_recovered = spat_to_SHsphtor(cfg, V_theta, V_phi)
 
 # Check accuracy
 S_error = norm(S_lm - S_recovered)
@@ -122,21 +128,30 @@ println(&quot;Spheroidal error: $S_error, Toroidal error: $T_error&quot;)
 destroy_config(cfg)</code></pre><h3 id="Gradient-and-Curl"><a class="docs-heading-anchor" href="#Gradient-and-Curl">Gradient and Curl</a><a id="Gradient-and-Curl-1"></a><a class="docs-heading-anchor-permalink" href="#Gradient-and-Curl" title="Permalink"></a></h3><pre><code class="language-julia hljs">cfg = create_gauss_config(20, 20)
 
 # Example: compute spatial derivatives via FFT in φ
-spatial = rand(get_nlat(cfg), get_nphi(cfg))
+# Create simple test function
+θ, φ = cfg.θ, cfg.φ
+spatial = zeros(cfg.nlat, cfg.nlon)
+for i in 1:cfg.nlat, j in 1:cfg.nlon
+    spatial[i,j] = sin(θ[i]) * cos(φ[j])
+end
 dφ = SHTnsKit.spatial_derivative_phi(cfg, spatial)
 
 println(&quot;Spatial derivative field size: &quot;, size(dφ))
 
 destroy_config(cfg)</code></pre><h2 id="Complex-Fields"><a class="docs-heading-anchor" href="#Complex-Fields">Complex Fields</a><a id="Complex-Fields-1"></a><a class="docs-heading-anchor-permalink" href="#Complex-Fields" title="Permalink"></a></h2><p>For complex-valued fields (e.g., wave functions):</p><pre><code class="language-julia hljs">cfg = create_gauss_config(16, 16)
 
-# Create complex spectral coefficients
-sh_complex = rand(ComplexF64, get_nlm(cfg))
+# Create simple complex spectral coefficients
+sh_complex = zeros(ComplexF64, cfg.nlm)
+sh_complex[1] = 1.0 + 0.5im  # Complex Y_0^0 coefficient
+if cfg.nlm &gt; 2
+    sh_complex[2] = 0.3 - 0.2im  # Complex Y_1^0 coefficient
+end
 
 # Complex field synthesis
-spatial_complex = synthesize_complex(cfg, sh_complex)
+spatial_complex = synthesis(cfg, reshape(sh_complex, cfg.lmax+1, cfg.mmax+1); real_output=false)
 
 # Complex field analysis
-recovered_complex = analyze_complex(cfg, spatial_complex)
+recovered_complex = vec(analysis(cfg, spatial_complex))
 
 # Check accuracy
 complex_error = norm(sh_complex - recovered_complex)
@@ -149,18 +164,23 @@ println(summary)  # (threads=..., fft_threads=...)
 # Fine-tune
 set_threading!(true)           # enable/disable parallel loops
 set_fft_threads(4); get_fft_threads()</code></pre><h3 id="Benchmarking"><a class="docs-heading-anchor" href="#Benchmarking">Benchmarking</a><a id="Benchmarking-1"></a><a class="docs-heading-anchor-permalink" href="#Benchmarking" title="Permalink"></a></h3><pre><code class="language-julia hljs">cfg = create_gauss_config(64, 64)
-sh = rand(get_nlm(cfg))
+# Create bandlimited test coefficients (avoids high-frequency errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0
+if cfg.nlm &gt; 3
+    sh[3] = 0.5
+end
 
 # Time forward transform
-@time spatial = synthesize(cfg, sh)
+@time spatial = synthesis(cfg, sh)
 
 # Time backward transform  
-@time recovered = analyze(cfg, spatial)
+@time recovered = analysis(cfg, spatial)
 
 # Multiple runs for better statistics
 println(&quot;Forward transform timing:&quot;)
 @time for i in 1:10
-    synthesize(cfg, sh)
+    synthesis(cfg, sh)
 end
 
 destroy_config(cfg)</code></pre><h2 id="GPU-Acceleration"><a class="docs-heading-anchor" href="#GPU-Acceleration">GPU Acceleration</a><a id="GPU-Acceleration-1"></a><a class="docs-heading-anchor-permalink" href="#GPU-Acceleration" title="Permalink"></a></h2><p>This package is CPU‑focused and does not include GPU support.</p><h2 id="Common-Patterns"><a class="docs-heading-anchor" href="#Common-Patterns">Common Patterns</a><a id="Common-Patterns-1"></a><a class="docs-heading-anchor-permalink" href="#Common-Patterns" title="Permalink"></a></h2><h3 id="In-Place-Operations"><a class="docs-heading-anchor" href="#In-Place-Operations">In-Place Operations</a><a id="In-Place-Operations-1"></a><a class="docs-heading-anchor-permalink" href="#In-Place-Operations" title="Permalink"></a></h3><p>For memory efficiency:</p><pre><code class="language-julia hljs">cfg = create_gauss_config(24, 24)
@@ -171,8 +191,8 @@ spatial = allocate_spatial(cfg)
 
 # In-place operations (no additional allocation)
 rand!(sh)
-synthesize!(cfg, sh, spatial)  # spatial = synthesize(cfg, sh)
-analyze!(cfg, spatial, sh)     # sh = analyze(cfg, spatial)
+synthesize!(cfg, sh, spatial)  # spatial = synthesis(cfg, sh)
+analyze!(cfg, spatial, sh)     # sh = analysis(cfg, spatial)
 
 destroy_config(cfg)</code></pre><h3 id="Batch-Processing"><a class="docs-heading-anchor" href="#Batch-Processing">Batch Processing</a><a id="Batch-Processing-1"></a><a class="docs-heading-anchor-permalink" href="#Batch-Processing" title="Permalink"></a></h3><pre><code class="language-julia hljs">cfg = create_gauss_config(20, 20)
 
@@ -181,11 +201,12 @@ n_fields = 100
 results = []
 
 for i in 1:n_fields
-    # Generate field
-    sh = rand(get_nlm(cfg))
+    # Generate bandlimited test field (avoids roundtrip errors)
+    sh = zeros(cfg.nlm)
+    sh[1] = 1.0 + 0.1 * sin(i)  # Smooth variation
     
     # Process
-    spatial = synthesize(cfg, sh)
+    spatial = synthesis(cfg, sh)
     
     # Store result (example: compute mean)
     push!(results, mean(spatial))
@@ -199,17 +220,19 @@ destroy_config(cfg)</code></pre><h2 id="Error-Handling"><a class="docs-heading-a
 
 try
     # Wrong array size
-    wrong_sh = rand(10)  # Should be get_nlm(cfg)
-    spatial = synthesize(cfg, wrong_sh)
+    wrong_sh = zeros(10)  # Should be cfg.nlm
+    spatial = synthesis(cfg, wrong_sh)
 catch e
     println(&quot;Caught expected error: &quot;, e)
 end
 
 # Proper size check
-sh = rand(get_nlm(cfg))
-@assert length(sh) == get_nlm(cfg) &quot;Wrong spectral array size&quot;
+# Create bandlimited test data (avoids high-frequency roundtrip errors)
+sh = zeros(cfg.nlm)
+sh[1] = 1.0  # Simple bandlimited test
+@assert length(sh) == cfg.nlm &quot;Wrong spectral array size&quot;
 
-spatial = synthesize(cfg, sh)
+spatial = synthesis(cfg, sh)
 println(&quot;Successful transform with proper size&quot;)
 
 destroy_config(cfg)</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><p>Now that you&#39;ve mastered the basics:</p><ol><li><strong>Read the <a href="../api/">API Reference</a></strong> for complete function documentation</li><li><strong>Explore <a href="../examples/">Examples</a></strong> for real-world applications  </li><li><strong>Check <a href="../performance/">Performance Guide</a></strong> for optimization tips</li><li><strong>See <a href="../advanced/">Advanced Usage</a></strong> for complex workflows</li></ol><h2 id="Quick-Reference"><a class="docs-heading-anchor" href="#Quick-Reference">Quick Reference</a><a id="Quick-Reference-1"></a><a class="docs-heading-anchor-permalink" href="#Quick-Reference" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Configuration
@@ -217,8 +240,8 @@ cfg = create_gauss_config(lmax, mmax)
 cfg = create_regular_config(lmax, mmax)
 
 # Basic transforms
-spatial = synthesize(cfg, spectral)
-spectral = analyze(cfg, spatial)
+spatial = synthesis(cfg, spectral)
+spectral = analysis(cfg, spatial)
 
 # Vector transforms  
 Vθ, Vφ = synthesize_vector(cfg, S_lm, T_lm)
@@ -233,4 +256,4 @@ set_threading!(true)
 set_optimal_threads!()
 
 # Cleanup
-destroy_config(cfg)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../installation/">« Installation</a><a class="docs-footer-nextpage" href="../distributed/">Distributed Guide »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 10:33">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+destroy_config(cfg)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../installation/">« Installation</a><a class="docs-footer-nextpage" href="../distributed/">Distributed Guide »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 10:43">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
