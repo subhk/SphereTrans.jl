@@ -61,7 +61,7 @@ try
     println(&quot;All parallel packages loaded successfully&quot;)
     
     # Test configuration
-    cfg = create_gauss_config(Float64, 16, 12, 36, 48)
+    cfg = create_gauss_config(16, 12; mres=36, nlon=48)
     
     # Test serial fallback
     auto_cfg = auto_parallel_config(cfg)
@@ -180,7 +180,7 @@ using SHTnsKit
 
 @testset &quot;Complete Parallel Setup&quot; begin
     # Test basic functionality
-    cfg = create_gauss_config(Float64, 12, 10, 26, 32)
+    cfg = create_gauss_config(12, 10; mres=26, nlon=32)
     @test cfg.nlm &gt; 0
     
     # Test parallel packages availability
@@ -234,7 +234,7 @@ function run_benchmarks()
     
     # Test different problem sizes
     for lmax in [16, 32, 64]
-        cfg = create_gauss_config(Float64, lmax, lmax)
+        cfg = create_gauss_config(lmax, lmax)
         sh_coeffs = randn(Complex{Float64}, cfg.nlm)
         
         println(&quot;\nlmax = $lmax ($(cfg.nlm) coefficients)&quot;)
@@ -262,4 +262,4 @@ function run_benchmarks()
     end
 end
 
-run_benchmarks()</code></pre><p>Your parallel SHTnsKit.jl installation is now complete and optimized for high-performance computing!</p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 09:07">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+run_benchmarks()</code></pre><p>Your parallel SHTnsKit.jl installation is now complete and optimized for high-performance computing!</p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 30 August 2025 09:11">Saturday 30 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
