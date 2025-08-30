@@ -83,7 +83,7 @@ The parallel optimization is implemented through five main modules:
 using SHTnsKit
 
 # Standard usage automatically applies optimizations
-cfg = create_gauss_config(Float64, 256, 256)
+cfg = create_gauss_config(256, 256)
 sh_coeffs = randn(cfg.nlm)
 spatial_data = synthesize(cfg, sh_coeffs)  # Automatically optimized
 ```
@@ -96,7 +96,7 @@ include("src/advanced/hybrid_algorithms.jl")
 include("src/advanced/performance_tuning.jl")
 
 # Create advanced configurations
-base_cfg = create_gauss_config(Float64, 512, 512)
+base_cfg = create_gauss_config(512, 512)
 advanced_cfg = advanced_hybrid_create_config(base_cfg)
 tuning_cfg = advanced_tuning_create_config(Float64)
 
@@ -118,7 +118,7 @@ include("src/advanced/communication_patterns.jl")
 
 # Create parallel configurations
 mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
-base_cfg = create_gauss_config(Float64, 1024, 1024)
+base_cfg = create_gauss_config(1024, 1024)
 parallel_cfg = advanced_parallel_create_config(mpi_size, base_cfg)
 comm_cfg = advanced_comm_create_config(mpi_size)
 

@@ -120,7 +120,7 @@ advanced_tuning_optimize_transform!(cfg, sh_coeffs, spatial_data, tuning_config)
 using SHTnsKit
 
 # Standard transforms automatically use optimizations when available
-cfg = create_gauss_config(Float64, 256, 256)
+cfg = create_gauss_config(256, 256)
 sh_coeffs = randn(cfg.nlm)
 spatial_data = synthesize(cfg, sh_coeffs)  # Automatically optimized
 ```
