@@ -213,6 +213,7 @@ destroy_config(cfg)
 
 ```julia
 using SHTnsKit
+using Printf
 
 cfg = create_gauss_config(32, 34; mres=66, nlon=128)
 
@@ -235,11 +236,10 @@ divergent_energy = sum(abs2, sph_coeffs)
 rotational_energy = sum(abs2, tor_coeffs)
 total_energy = divergent_energy + rotational_energy
 
-println("Flow decomposition:")
-println("  Divergent flow: $(100*divergent_energy/total_energy:.1f)%") 
-println("  Rotational flow: $(100*rotational_energy/total_energy:.1f)%")
+@printf("Flow decomposition: \n")
+@printf("Divergent flow:  %.2fx\n", 100*divergent_energy/total_energy)
+@printf("Rotational flow: %.2fx\n", 100*rotational_energy/total_energy)
 
-# Atmospheric flows are typically dominated by rotation
 destroy_config(cfg)
 ```
 
