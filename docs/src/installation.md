@@ -123,7 +123,7 @@ println("SHTnsKit.jl installation verified!")
 # Test serial mode (no MPI required)
 using SHTnsKit
 
-cfg = create_gauss_config(Float64, 10, 8, 24, 32)
+cfg = create_gauss_config(10, 8; mres=24, nlon=32)
 sh_coeffs = randn(Complex{Float64}, cfg.nlm)
 
 # This should work without MPI packages

@@ -84,7 +84,7 @@ using SHTnsKit
 
 # Create spherical harmonic configuration
 lmax = 32              # Maximum spherical harmonic degree  
-cfg = create_gauss_config(Float64, lmax, lmax, 2*lmax+2, 4*lmax+1)
+cfg = create_gauss_config(lmax, lmax; mres=2*lmax+2, nlon=4*lmax+1)
 
 # Create test data on the sphere
 spatial_data = rand(get_nlat(cfg), get_nphi(cfg))
@@ -148,7 +148,7 @@ MPI.Finalize()
 using SHTnsKit
 using LoopVectorization  # Enables turbo optimizations
 
-cfg = create_gauss_config(Float64, 48, 48, 98, 192)
+cfg = create_gauss_config(48, 48; mres=98, nlon=192)
 sh_coeffs = randn(ComplexF64, cfg.nlm)
 
 # Turbo-optimized operations (when LoopVectorization is available)
@@ -169,7 +169,7 @@ destroy_config(cfg)
 using SHTnsKit
 
 # Setup for climate-scale problem
-cfg = create_gauss_config(Float64, 42, 42, 86, 128)  # ~2.8° resolution
+cfg = create_gauss_config(42, 42; mres=86, nlon=128)  # ~2.8° resolution
 θ, φ = get_theta(cfg), get_phi(cfg)
 
 # Create realistic temperature field with seasonal variation
@@ -196,7 +196,7 @@ destroy_config(cfg)
 ```julia
 using SHTnsKit
 
-cfg = create_gauss_config(Float64, 32, 32, 66, 128)
+cfg = create_gauss_config(32, 32; mres=66, nlon=128)
 θ_grid, φ_grid = get_theta(cfg), get_phi(cfg)
 
 # Create realistic wind field: jet stream + wave pattern
@@ -228,7 +228,7 @@ using SHTnsKit
 
 # Problem size scaling analysis
 for lmax in [16, 32, 48, 64]
-    cfg = create_gauss_config(Float64, lmax, lmax, 2*lmax+2, 4*lmax+1)
+    cfg = create_gauss_config(lmax, lmax; mres=2*lmax+2, nlon=4*lmax+1)
     
     # Get performance recommendations
     optimal_procs = optimal_process_count(cfg)
@@ -248,7 +248,7 @@ end
 ```julia
 using SHTnsKit, Zygote
 
-cfg = create_gauss_config(Float64, 16, 16, 34, 64)
+cfg = create_gauss_config(16, 16; mres=34, nlon=64)
 
 # Define optimization objective
 function reconstruction_loss(sh_coeffs, target_field)
@@ -394,7 +394,7 @@ Full support for gradient-based optimization:
 using SHTnsKit, ForwardDiff, Zygote
 
 # Forward-mode differentiation
-cfg = create_gauss_config(Float64, 12, 12, 26, 48)
+cfg = create_gauss_config(12, 12; mres=26, nlon=48)
 objective(sh) = sum(abs2, sh_to_spat(cfg, sh))
 gradient = ForwardDiff.gradient(objective, sh_coeffs)
 
@@ -426,7 +426,7 @@ result = apply_matrix_operator(cfg, matrix, sh_coeffs)
 
 ```julia
 # Earth's gravitational field analysis
-cfg = create_gauss_config(Float64, 64, 64, 130, 256)
+cfg = create_gauss_config(64, 64; mres=130, nlon=256)
 
 # Load/create gravitational potential data
 gravity_field = load_gravity_data()  # Your data loading function
@@ -448,7 +448,7 @@ power = power_spectrum(cfg, gravity_coeffs)
 
 ```julia
 # High-resolution atmospheric analysis
-cfg = create_gauss_config(Float64, 85, 85, 172, 256)  # ~1.4° resolution
+cfg = create_gauss_config(85, 85; mres=172, nlon=256)  # ~1.4° resolution
 
 # Process wind field data
 u_wind, v_wind = load_atmospheric_data()  # Your data
