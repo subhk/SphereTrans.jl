@@ -87,6 +87,41 @@ function create_gauss_config(lmax::Int, nlat::Int; mmax::Int=lmax, mres::Int=1, 
 end
 
 """
+    create_config(lmax::Int; mmax=lmax, mres=1, nlat=lmax+2, nlon=max(2*lmax+1,4),
+                   norm::Symbol=:orthonormal, cs_phase::Bool=true,
+                   real_norm::Bool=false, robert_form::Bool=false,
+                   grid_type::Symbol=:gauss) -> SHTConfig
+
+Compatibility wrapper for configuration creation used in some docs/snippets.
+Currently supports only `grid_type = :gauss`, and forwards to `create_gauss_config`.
+`nlat`/`nlon` default to typical exactness choices for Gauss grids.
+"""
+function create_config(lmax::Int; mmax::Int=lmax, mres::Int=1, nlat::Int=lmax+2,
+                       nlon::Int=max(2*lmax+1, 4), norm::Symbol=:orthonormal,
+                       cs_phase::Bool=true, real_norm::Bool=false,
+                       robert_form::Bool=false, grid_type::Symbol=:gauss)
+    if grid_type != :gauss
+        throw(ArgumentError("only grid_type=:gauss is supported; use create_gauss_config for Gauss grids"))
+    end
+    # Make args robust to underspecified values from older docs/snippets
+    nlat_eff = max(nlat, lmax + 1)              # Gauss exactness requires ≥ lmax+1
+    nlon_eff = max(nlon, 2*mmax + 1)            # Azimuthal resolution requires ≥ 2*mmax+1
+    return create_gauss_config(lmax, nlat_eff; mmax=mmax, mres=mres, nlon=nlon_eff,
+                               norm=norm, cs_phase=cs_phase,
+                               real_norm=real_norm, robert_form=robert_form)
+end
+
+"""
+    create_config(::Type{T}, lmax::Int, nlat::Int, mres::Int=1; kwargs...) -> SHTConfig
+
+Compatibility method that ignores the element type `T` and calls `create_config`.
+Provided to match older example signatures like `create_config(Float64, 20, 22, 1)`.
+"""
+function create_config(::Type{T}, lmax::Int, nlat::Int, mres::Int=1; kwargs...) where {T}
+    return create_config(lmax; nlat=nlat, mres=mres, kwargs...)
+end
+
+"""
     prepare_plm_tables!(cfg::SHTConfig)
 
 Precompute associated Legendre tables P_l^m(x_i) for all i and m, stored as

@@ -112,7 +112,7 @@ sint = sin(π/3)
 p_5_2 = _compute_single_legendre_basic(5, 2, cost, sint)
 
 # Point evaluation with configuration
-cfg = create_config(Float64, 20, 20, 1)
+cfg = create_config(Float64, 20, 20, 1)  # nlat auto-adjusts to ≥ lmax+1 if needed
 p_10_3 = _evaluate_legendre_at_point(cfg, 10, 3, cost, sint)
 
 # Derivative computation

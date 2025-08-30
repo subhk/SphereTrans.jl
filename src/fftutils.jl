@@ -42,14 +42,15 @@ function _dft_phi(A::AbstractMatrix, dir::Int)
     nlat, nlon = size(A)
     Y = similar(complex.(A))  # Ensure output is complex-valued
     
-    # Compute DFT for each latitude band independently
+    # Compute DFT for each latitude band independently with SIMD optimization
     @inbounds for i in 1:nlat
         # For each output frequency k
         for k in 0:(nlon-1)
             s = zero(eltype(Y))  # Accumulator for this frequency
             
-            # Sum over all input points j
-            for j in 0:(nlon-1)
+            # Sum over all input points j - USE REDUCTION, NOT ivdep!
+            # Multiple j iterations accumulate into same 's', so this is a reduction operation
+            @simd for j in 0:(nlon-1)
                 # DFT kernel: exp(dir * 2πi * k * j / N)
                 s += A[i, j+1] * cis(dir * _TWO_PI * k * j / nlon)
             end

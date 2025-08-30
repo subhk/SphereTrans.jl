@@ -70,7 +70,7 @@ Where N_{lm} is the normalization constant depending on the convention:
 
 ```julia
 # Create configuration with orthonormal harmonics
-cfg = create_config(Float64, 10, 10, 1; norm=SHT_ORTHONORMAL)
+cfg = create_config(Float64, 10, 10, 1; norm=SHT_ORTHONORMAL)  # nlat auto-adjusted if < lmax+1
 
 # Analysis normalization for l=5, m=3
 analysis_norm = _get_analysis_normalization(cfg, 5, 3)

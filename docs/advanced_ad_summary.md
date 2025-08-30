@@ -206,7 +206,7 @@ function pinn_loss(qlm, cfg, measurement_points, target_values)
 end
 
 # Gradient-based optimization
-cfg = create_config(Float64, 50, 50, 1)
+cfg = create_config(Float64, 50, 50, 1)  # auto-corrects nlat/nlon to satisfy Gauss constraints
 qlm0 = randn(ComplexF64, cfg.nlm)
 
 # Automatic gradient computation and optimization
@@ -275,7 +275,7 @@ end
 ```julia
 using SHTnsKit, Zygote, ForwardDiff
 
-cfg = create_config(Float64, 30, 30, 1)
+cfg = create_config(Float64, 30, 30, 1)  # auto-corrects nlat/nlon to satisfy Gauss constraints
 qlm = randn(ComplexF64, cfg.nlm)
 
 # 1. Matrix operator gradients

@@ -6,7 +6,15 @@ Input grid `f` must be sized `(cfg.nlat, cfg.nlon)` and may be real or complex.
 Returns coefficients `alm` of size `(cfg.lmax+1, cfg.mmax+1)` with indices `(l+1, m+1)`.
 Normalization uses orthonormal spherical harmonics with Condon–Shortley phase.
 """
-function analysis(cfg::SHTConfig, f::AbstractMatrix)
+function analysis(cfg::SHTConfig, f::AbstractMatrix; use_fused_loops::Bool=true)
+    if use_fused_loops
+        return analysis_fused(cfg, f)
+    else
+        return analysis_unfused(cfg, f)
+    end
+end
+
+function analysis_unfused(cfg::SHTConfig, f::AbstractMatrix)
     # Validate input dimensions match the configured grid
     nlat, nlon = cfg.nlat, cfg.nlon
     size(f, 1) == nlat || throw(DimensionMismatch("first dim must be nlat=$(nlat)"))
@@ -22,13 +30,18 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
     alm = Matrix{CT}(undef, lmax + 1, mmax + 1)  # alm[l+1, m+1] for (l,m) indexing
     fill!(alm, 0.0 + 0.0im)
 
-    # Working buffer for Legendre polynomials (when tables not used)
-    P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi  # Longitude step size: 2π / nlon
+    
+    # Thread-local storage for Legendre polynomial buffers to avoid allocations
+    # Each thread gets its own buffer to prevent race conditions
+    thread_local_P = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
     
     # Process each azimuthal mode m in parallel
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffer for this thread
+        P = thread_local_P[Threads.threadid()]
         
         # Integrate over colatitude θ using Gauss-Legendre quadrature
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -37,27 +50,106 @@ function analysis(cfg::SHTConfig, f::AbstractMatrix)
             for i in 1:nlat
                 Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
                 wi = cfg.w[i]         # Gauss-Legendre weight
-                @inbounds for l in m:lmax  # Only l ≥ m contribute for order m
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax  # Only l ≥ m contribute for order m
                     alm[l+1, col] += (wi * tbl[l+1, i]) * Fi
                 end
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 Fi = Fφ[i, col]
                 wi = cfg.w[i]
-                @inbounds for l in m:lmax
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax
                     alm[l+1, col] += (wi * P[l+1]) * Fi
                 end
             end
         end
         
-        # Apply spherical harmonic normalization and longitude scaling
-        @inbounds for l in m:lmax
+        # Apply spherical harmonic normalization and longitude scaling with SIMD
+        @inbounds @simd ivdep for l in m:lmax
             alm[l+1, col] *= cfg.Nlm[l+1, col] * scaleφ
         end
     end
+    # Convert to user's requested normalization/phase convention if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        alm2 = similar(alm)
+        convert_alm_norm!(alm2, alm, cfg; to_internal=false)  # Convert from internal to user format
+        return alm2
+    else
+        return alm  # Already in the desired orthonormal format
+    end
+end
+
+"""
+    analysis_fused(cfg::SHTConfig, f::AbstractMatrix) -> Matrix{ComplexF64}
+
+Cache-optimized fused analysis that combines FFT, Legendre integration, and normalization
+in a single pass through memory for better cache locality and reduced memory bandwidth.
+"""
+function analysis_fused(cfg::SHTConfig, f::AbstractMatrix)
+    # Validate input dimensions match the configured grid
+    nlat, nlon = cfg.nlat, cfg.nlon
+    size(f, 1) == nlat || throw(DimensionMismatch("first dim must be nlat=$(nlat)"))
+    size(f, 2) == nlon || throw(DimensionMismatch("second dim must be nlon=$(nlon)"))
+    
+    # Convert input to complex and perform FFT along longitude (φ) direction
+    fC = complex.(f)
+    Fφ = fft_phi(fC)  # Now Fφ[lat, m] contains Fourier modes
+
+    # Allocate output array for spherical harmonic coefficients
+    lmax, mmax = cfg.lmax, cfg.mmax
+    CT = eltype(Fφ)
+    alm = Matrix{CT}(undef, lmax + 1, mmax + 1)  # alm[l+1, m+1] for (l,m) indexing
+    fill!(alm, 0.0 + 0.0im)
+
+    scaleφ = cfg.cphi  # Longitude step size: 2π / nlon
+    
+    # Thread-local storage for Legendre polynomial buffers to avoid allocations
+    # Each thread gets its own buffer to prevent race conditions
+    thread_local_P_fused = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    
+    # FUSED LOOP: Process each azimuthal mode m with combined integration and normalization
+    @threads for m in 0:mmax
+        col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffer for this thread
+        P = thread_local_P_fused[Threads.threadid()]
+        
+        # Integrate over colatitude θ using Gauss-Legendre quadrature
+        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
+            # Fast path: use precomputed Legendre polynomial tables with fused normalization
+            tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
+            for i in 1:nlat
+                Fi = Fφ[i, col]       # Fourier coefficient for this (lat, m)
+                wi = cfg.w[i]         # Gauss-Legendre weight
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations  
+                @inbounds @simd for l in m:lmax  # Only l ≥ m contribute for order m
+                    # FUSION: Combine integration with normalization in single operation
+                    weight_norm = wi * cfg.Nlm[l+1, col] * scaleφ
+                    alm[l+1, col] += (weight_norm * tbl[l+1, i]) * Fi
+                end
+            end
+        else
+            # Fallback: compute Legendre polynomials on-the-fly with fused normalization and thread-local buffer
+            for i in 1:nlat
+                Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
+                Fi = Fφ[i, col]
+                wi = cfg.w[i]
+                # CANNOT use @simd ivdep - accumulating into same alm[l+1, col] across iterations
+                @inbounds @simd for l in m:lmax
+                    # FUSION: Combine integration with normalization in single operation
+                    weight_norm = wi * cfg.Nlm[l+1, col] * scaleφ
+                    alm[l+1, col] += (weight_norm * P[l+1]) * Fi
+                end
+            end
+        end
+        
+        # Note: Normalization is now fused into the integration loop above
+    end
+    
     # Convert to user's requested normalization/phase convention if needed
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
         alm2 = similar(alm)
@@ -76,7 +168,15 @@ Input `alm` sized `(cfg.lmax+1, cfg.mmax+1)` with indices `(l+1, m+1)`.
 Returns a grid `f` of shape `(cfg.nlat, cfg.nlon)`. If `real_output=true`,
 enforces Hermitian symmetry to produce real-valued output.
 """
-function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
+function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true, use_fused_loops::Bool=true)
+    if use_fused_loops
+        return synthesis_fused(cfg, alm; real_output)
+    else
+        return synthesis_unfused(cfg, alm; real_output)
+    end
+end
+
+function synthesis_unfused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     # Validate input coefficient array dimensions
     lmax, mmax = cfg.lmax, cfg.mmax
     size(alm, 1) == lmax + 1 || throw(DimensionMismatch("first dim must be lmax+1=$(lmax+1)"))
@@ -88,9 +188,6 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
     Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier modes: Fφ[lat, m]
     fill!(Fφ, 0.0 + 0.0im)
 
-    # Working arrays for synthesis computation
-    P = Vector{Float64}(undef, lmax + 1)  # Legendre polynomials buffer
-    G = Vector{CT}(undef, nlat)          # Latitudinal profile for fixed m
     # Scale continuous Fourier coefficients to DFT bins for ifft.
     # ifft includes 1/nlon, so we multiply by nlon here to match f(φ) = Σ g_m e^{imφ}.
     inv_scaleφ = phi_inv_scale(nlon)
@@ -102,9 +199,18 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
         alm = alm_int
     end
     
+    # Thread-local storage for synthesis computation to avoid allocations
+    # Each thread gets its own buffers to prevent race conditions
+    thread_local_P_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_G_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    
     # Build azimuthal Fourier spectrum from spherical harmonic coefficients
     @threads for m in 0:mmax
         col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffers for this thread
+        P = thread_local_P_synth[Threads.threadid()]
+        G = thread_local_G_synth[Threads.threadid()]
         
         # Compute latitudinal profile: G(θ_i) = Σ_l [N_lm * P_l^m(x_i) * a_lm]
         if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
@@ -112,17 +218,19 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
             tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
             for i in 1:nlat
                 g = 0.0 + 0.0im
-                @inbounds for l in m:lmax  # Sum over degrees l ≥ m
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax  # Sum over degrees l ≥ m
                     g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
                 end
                 G[i] = g
             end
         else
-            # Fallback: compute Legendre polynomials on-the-fly
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
             for i in 1:nlat
                 Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
                 g = 0.0 + 0.0im
-                @inbounds for l in m:lmax
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax
                     g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
                 end
                 G[i] = g
@@ -139,6 +247,93 @@ function synthesis(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
             conj_index = nlon - m + 1  # Index for negative frequency -m
             @inbounds for i in 1:nlat
                 Fφ[i, conj_index] = conj(Fφ[i, col])
+            end
+        end
+    end
+
+    # Inverse FFT along longitude (φ) to get spatial field
+    f = ifft_phi(Fφ)
+    return real_output ? real.(f) : f  # Return real part if real output requested
+end
+
+"""
+    synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true) -> Matrix
+
+Cache-optimized fused synthesis that combines spherical harmonic reconstruction, 
+Hermitian symmetry application, and IFFT preparation in optimized loops for
+better cache locality and reduced memory passes.
+"""
+function synthesis_fused(cfg::SHTConfig, alm::AbstractMatrix; real_output::Bool=true)
+    # Validate input coefficient array dimensions
+    lmax, mmax = cfg.lmax, cfg.mmax
+    size(alm, 1) == lmax + 1 || throw(DimensionMismatch("first dim must be lmax+1=$(lmax+1)"))
+    size(alm, 2) == mmax + 1 || throw(DimensionMismatch("second dim must be mmax+1=$(mmax+1)"))
+
+    # Allocate output array for spatial grid
+    nlat, nlon = cfg.nlat, cfg.nlon
+    CT = eltype(alm)
+    Fφ = Matrix{CT}(undef, nlat, nlon)  # Fourier modes: Fφ[lat, m]
+    fill!(Fφ, 0.0 + 0.0im)
+
+    # Scale continuous Fourier coefficients to DFT bins for ifft.
+    inv_scaleφ = phi_inv_scale(nlon)
+
+    # Convert incoming coefficients to internal normalization if needed
+    if cfg.norm !== :orthonormal || cfg.cs_phase == false
+        alm_int = similar(alm)
+        convert_alm_norm!(alm_int, alm, cfg; to_internal=true)  # Convert to internal format
+        alm = alm_int
+    end
+    
+    # Thread-local storage for fused synthesis computation to avoid allocations
+    # Each thread gets its own buffers to prevent race conditions
+    thread_local_P_fused_synth = [Vector{Float64}(undef, lmax + 1) for _ in 1:Threads.nthreads()]
+    thread_local_G_fused_synth = [Vector{CT}(undef, nlat) for _ in 1:Threads.nthreads()]
+    
+    # FUSED LOOP: Build azimuthal Fourier spectrum with integrated Hermitian symmetry
+    @threads for m in 0:mmax
+        col = m + 1  # Julia 1-based indexing
+        
+        # Get thread-local buffers for this thread
+        P = thread_local_P_fused_synth[Threads.threadid()]
+        G = thread_local_G_fused_synth[Threads.threadid()]
+        
+        # Compute latitudinal profile: G(θ_i) = Σ_l [N_lm * P_l^m(x_i) * a_lm]
+        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax+1
+            # Fast path: use precomputed Legendre polynomial tables
+            tbl = cfg.plm_tables[m+1]  # P_l^m(x_i) values
+            for i in 1:nlat
+                g = 0.0 + 0.0im
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax  # Sum over degrees l ≥ m
+                    g += (cfg.Nlm[l+1, col] * tbl[l+1, i]) * alm[l+1, col]
+                end
+                G[i] = g
+            end
+        else
+            # Fallback: compute Legendre polynomials on-the-fly with thread-local buffer
+            for i in 1:nlat
+                Plm_row!(P, cfg.x[i], lmax, m)  # Compute P_l^m(cos(θ_i)) for all l
+                g = 0.0 + 0.0im
+                # This is a REDUCTION - multiple l accumulate into same g variable
+                @inbounds @simd for l in m:lmax
+                    g += (cfg.Nlm[l+1, col] * P[l+1]) * alm[l+1, col]
+                end
+                G[i] = g
+            end
+        end
+        
+        # Store positive m modes - SAFE to vectorize, each i writes to different Fφ[i,col]
+        @inbounds @simd ivdep for i in 1:nlat
+            scaled_g = inv_scaleφ * G[i]
+            Fφ[i, col] = scaled_g
+        end
+        
+        # Apply Hermitian symmetry separately to avoid potential write conflicts
+        if real_output && m > 0
+            conj_index = nlon - m + 1  # Index for negative frequency -m
+            @inbounds @simd ivdep for i in 1:nlat
+                Fφ[i, conj_index] = conj(inv_scaleφ * G[i])
             end
         end
     end

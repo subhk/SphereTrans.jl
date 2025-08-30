@@ -61,8 +61,7 @@ jobs:
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          # FFTW will be handled by Julia packages
-          echo "Windows dependencies handled by Julia packages"
+          julia --project=. -e 'using Pkg; Pkg.add("FFTW"); Pkg.build("FFTW"); using FFTW; println("FFTW version: ", FFTW.version)'
       
       - uses: julia-actions/julia-buildpkg@v1
 
@@ -211,6 +210,7 @@ jobs:
           julia --project=. -e '
             using SHTnsKit
             using BenchmarkTools
+            using LoopVectorization  # Load extension for turbo benchmarks
             
             println(" Running performance benchmarks...")
             
@@ -220,31 +220,36 @@ jobs:
             for lmax in test_sizes
               println("\n=== Testing lmax = $lmax ===")
               
-              cfg = create_config(Float64, lmax, lmax, 1)
-              qlm = randn(ComplexF64, cfg.nlm)
-              spatial_data = randn(cfg.nlat, cfg.nphi)
+              cfg = create_gauss_config(lmax, lmax + 2; nlon=2*lmax + 1)
+              alm = randn(ComplexF64, lmax+1, lmax+1)
+              spatial_data = randn(cfg.nlat, cfg.nlon)
               
               # Synthesis benchmark
-              t_synth = @belapsed synthesize($cfg, real.($qlm))
+              t_synth = @belapsed synthesis($cfg, $alm; real_output=true)
               println("Synthesis: $(t_synth*1000)ms")
               
               # Analysis benchmark  
-              t_anal = @belapsed analyze($cfg, $spatial_data)
+              t_anal = @belapsed analysis($cfg, $spatial_data)
               println("Analysis: $(t_anal*1000)ms")
               
-              # Laplacian benchmark
-              qlm_out = similar(qlm)
-              t_lapl = @belapsed apply_laplacian!($cfg, $qlm, $qlm_out)
-              println("Laplacian: $(t_lapl*1000)ms")
-              
-              # SIMD benchmark if available
+              # Matrix operator benchmark (using cos(θ) operator)
               try
-                qlm_copy = copy(qlm)
-                t_simd = @belapsed simd_apply_laplacian!($cfg, $qlm_copy)
-                speedup = t_lapl / t_simd
-                println("SIMD Laplacian: $(t_simd*1000)ms ($(speedup)x speedup)")
+                mx = zeros(Float64, 2*cfg.nlm)
+                mul_ct_matrix(cfg, mx)
+                alm_out = similar(alm)
+                t_op = @belapsed SH_mul_mx($cfg, $mx, $alm, $alm_out)
+                println("Matrix operator: $(t_op*1000)ms")
               catch
-                println("SIMD Laplacian: not available")
+                println("Matrix operator: not available")
+              end
+              
+              # Turbo benchmark if LoopVectorization is available
+              try
+                alm_copy = copy(alm)
+                t_turbo = @belapsed turbo_apply_laplacian!($cfg, $alm_copy)
+                println("Turbo Laplacian: $(t_turbo*1000)ms")
+              catch
+                println("Turbo Laplacian: not available (LoopVectorization extension not loaded)")
               end
             end
             

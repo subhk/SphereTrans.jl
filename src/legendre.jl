@@ -28,7 +28,8 @@ function Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
             P[2] = x                  # P_1^0(x) = x
         end
         
-        # Three-term recurrence for P_l^0(x)
+        # Three-term recurrence for P_l^0(x) - CANNOT vectorize due to dependencies!
+        # P[l+1] depends on P[l] and P[l-1], so each iteration depends on previous ones
         for l in 2:lmax
             # Bonnet's recurrence: (l+1)P_{l+1} = (2l+1)x P_l - l P_{l-1}
             # Rearranged: P_l^0(x) = ((2l-1)x P_{l-1}^0 - (l-1) P_{l-2}^0)/l
@@ -45,6 +46,7 @@ function Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
     sx2 = max(zero(T), 1 - x*x)  # (1-x²), guarded against roundoff for |x|≈1
     fact = one(T)                  # Tracks (2k-1) in double factorial
     
+    # CANNOT vectorize: pmm depends on previous iteration, fact is updated each iteration
     for k in 1:m
         pmm *= -fact * sqrt(sx2)   # Build up (-1)^m (2m-1)!! (1-x²)^{m/2}
         fact += 2                  # Next odd number: 1, 3, 5, ...
@@ -60,7 +62,8 @@ function Plm_row!(P::AbstractVector{T}, x::T, lmax::Int, m::Int) where {T<:Real}
     # P_{m+1}^m(x) = x (2m+1) P_m^m(x)
     P[m+2] = x * (2m + 1) * pmm
 
-    # Use three-term recurrence for remaining degrees l ≥ m+2
+    # Three-term recurrence for remaining degrees l ≥ m+2 - CANNOT vectorize!
+    # P[l+1] depends on P[l] and P[l-1], so each iteration depends on previous ones
     for l in (m+2):lmax
         # Recurrence relation for associated Legendre polynomials:
         # P_l^m(x) = ((2l-1)x P_{l-1}^m - (l+m-1) P_{l-2}^m)/(l-m)
@@ -104,8 +107,9 @@ function Plm_and_dPdx_row!(P::AbstractVector{T}, dPdx::AbstractVector{T}, x::T, 
         l = m
         dPdx[l+1] = (l == 0) ? zero(T) : (m * x * P[l+1]) / x2m1
         
-        # Compute derivatives for l ≥ m+1 using recurrence relation
-        for l in (m+1):lmax
+        # Compute derivatives for l ≥ m+1 using recurrence relation - SAFE to vectorize!
+        # Each dPdx[l+1] depends only on already-computed P[l+1] and P[l], no iteration dependencies
+        @simd ivdep for l in (m+1):lmax
             # Standard derivative recurrence: 
             # dP_l^m/dx = [l*x*P_l^m - (l+m)*P_{l-1}^m] / (x²-1)
             dPdx[l+1] = (l * x * P[l+1] - (l + m) * P[l]) / x2m1

@@ -7,37 +7,36 @@ Complete reference for all SHTnsKit.jl functions and types.
 ### Configuration Creation
 
 ```julia
-create_config(lmax; mmax=lmax, mres=1, grid_type=SHT_GAUSS, norm=SHT_ORTHONORMAL, T=Float64) → SHTnsConfig
+create_config(lmax; mmax=lmax, mres=1, nlat=lmax+2, nlon=max(2*lmax+1,4),
+              norm=:orthonormal, cs_phase=true, real_norm=false, robert_form=false,
+              grid_type=:gauss) → SHTConfig
 ```
-Create a new SHTns configuration with specified parameters. After creation, call `set_grid!(cfg, nlat, nphi)`.
+Create a configuration with specified parameters. Currently `grid_type = :gauss` is supported and forwards to `create_gauss_config`.
 
-**Arguments:**
-- `lmax::Int`: Maximum spherical harmonic degree
-- `mmax::Int`: Maximum spherical harmonic order (default: lmax)
-- `mres::Int`: Azimuthal resolution (default: 1)
-- `grid_type::SHTnsGrid`: `SHT_GAUSS` or `SHT_REGULAR`
-- `norm::SHTnsNorm`: Normalization convention
-- `T::Type`: Floating point precision (default: Float64)
+Notes:
+- Auto-corrects undersized grids to satisfy accuracy constraints:
+  - Ensures `nlat ≥ lmax+1` (Gauss–Legendre quadrature exactness)
+  - Ensures `nlon ≥ 2*mmax+1` (resolve azimuthal orders up to `mmax`)
+- A legacy form `create_config(::Type{T}, lmax, nlat, mres; ...)` is also accepted; the type is ignored.
 
-**Returns:** `SHTnsConfig` object
+**Example:**
+```julia
+cfg = create_config(32; nlat=30, nlon=60)  # adjusted to nlat=33, nlon=65
+```
 
 ---
 
 ```julia
-create_gauss_config(lmax, mmax) → SHTnsConfig
+create_gauss_config(lmax, nlat; mmax=lmax, mres=1, nlon=max(2*lmax+1,4),
+                    norm=:orthonormal, cs_phase=true, real_norm=false,
+                    robert_form=false) → SHTConfig
 ```
-Create configuration with optimal Gauss-Legendre grid.
-
-**Arguments:**
-- `lmax::Int`: Maximum degree
-- `mmax::Int`: Maximum order
-
-**Returns:** `SHTnsConfig` with Gauss grid setup
+Create configuration with Gauss–Legendre grid. Requires `nlat ≥ lmax+1` and `nlon ≥ 2*mmax+1`.
 
 **Example:**
 ```julia
-cfg = create_gauss_config(32, 32)
-nlat, nphi = get_nlat(cfg), get_nphi(cfg)  # 33 × 65
+cfg = create_gauss_config(32, 34; nlon=65)
+nlat, nphi = get_nlat(cfg), get_nphi(cfg)  # 34 × 65
 ```
 
 ---
