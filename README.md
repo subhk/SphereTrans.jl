@@ -97,8 +97,8 @@ coeffs = analysis(cfg, spatial_data)
 reconstructed = synthesis(cfg, coeffs; real_output=true)
 
 # Check accuracy
-error = maximum(abs.(spatial_data - reconstructed))
-println("Roundtrip error: $error")  # Should be ~1e-14
+max_error = maximum(abs.(spatial_data - reconstructed))
+println("Roundtrip error: $max_error")  # Should be ~1e-14
 
 destroy_config(cfg)
 ```
