@@ -28,29 +28,62 @@ function SHTnsKit.analysis_turbo(cfg::SHTnsKit.SHTConfig, f::AbstractMatrix)
 
     P = Vector{Float64}(undef, lmax + 1)
     scaleφ = cfg.cphi
-    @threads for m in 0:mmax
-        col = m + 1
-        if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
-            tbl = cfg.plm_tables[m + 1]
-            for i in 1:nlat
-                Fi = Fφ[i, col]
-                wi = cfg.w[i]
-                @tturbo warn_check_args=false for l in m:lmax
-                    alm[l + 1, col] += (wi * tbl[l + 1, i]) * Fi
+    # Adaptive threading: use nested parallelism for better load balancing
+    n_threads = Threads.nthreads()
+    if mmax + 1 < n_threads ÷ 2 && nlat > 32
+        # Few m modes: parallelize over latitude points instead
+        for m in 0:mmax
+            col = m + 1
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
+                tbl = cfg.plm_tables[m + 1]
+                @threads for i in 1:nlat
+                    Fi = Fφ[i, col]
+                    wi = cfg.w[i]
+                    @tturbo warn_check_args=false for l in m:lmax
+                        alm[l + 1, col] += (wi * tbl[l + 1, i]) * Fi
+                    end
+                end
+            else
+                @threads for i in 1:nlat
+                    thread_P = Vector{Float64}(undef, lmax + 1)
+                    SHTnsKit.Plm_row!(thread_P, cfg.x[i], lmax, m)
+                    Fi = Fφ[i, col]
+                    wi = cfg.w[i]
+                    @tturbo warn_check_args=false for l in m:lmax
+                        alm[l + 1, col] += (wi * thread_P[l + 1]) * Fi
+                    end
                 end
             end
-        else
-            for i in 1:nlat
-                SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
-                Fi = Fφ[i, col]
-                wi = cfg.w[i]
-                @tturbo warn_check_args=false for l in m:lmax
-                    alm[l + 1, col] += (wi * P[l + 1]) * Fi
-                end
+            @tturbo warn_check_args=false for l in m:lmax
+                alm[l + 1, col] *= cfg.Nlm[l + 1, col] * scaleφ
             end
         end
-        @tturbo warn_check_args=false for l in m:lmax
-            alm[l + 1, col] *= cfg.Nlm[l + 1, col] * scaleφ
+    else
+        # Standard m-parallel approach with dynamic scheduling
+        @threads :dynamic for m in 0:mmax
+            col = m + 1
+            if cfg.use_plm_tables && length(cfg.plm_tables) == mmax + 1
+                tbl = cfg.plm_tables[m + 1]
+                for i in 1:nlat
+                    Fi = Fφ[i, col]
+                    wi = cfg.w[i]
+                    @tturbo warn_check_args=false for l in m:lmax
+                        alm[l + 1, col] += (wi * tbl[l + 1, i]) * Fi
+                    end
+                end
+            else
+                for i in 1:nlat
+                    SHTnsKit.Plm_row!(P, cfg.x[i], lmax, m)
+                    Fi = Fφ[i, col]
+                    wi = cfg.w[i]
+                    @tturbo warn_check_args=false for l in m:lmax
+                        alm[l + 1, col] += (wi * P[l + 1]) * Fi
+                    end
+                end
+            end
+            @tturbo warn_check_args=false for l in m:lmax
+                alm[l + 1, col] *= cfg.Nlm[l + 1, col] * scaleφ
+            end
         end
     end
     if cfg.norm !== :orthonormal || cfg.cs_phase == false
