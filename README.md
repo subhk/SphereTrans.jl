@@ -284,29 +284,40 @@ function reconstruction_loss(sh_coeffs_matrix, target_field)
 end
 
 # Create target and initial guess
-# Create a simple target pattern
+# Create a simple bandlimited target pattern that can be exactly represented
 target = zeros(cfg.nlat, cfg.nlon)
 for i in 1:cfg.nlat, j in 1:cfg.nlon
     θ, φ = cfg.θ[i], cfg.φ[j]
-    target[i,j] = sin(θ)^2 * cos(2*φ)
+    # Simple combination of low-order harmonics: Y_0^0 + Y_2^0 + Y_2^2
+    target[i,j] = 1.0 + 0.5*(3*cos(θ)^2 - 1) + 0.3*sin(θ)^2*cos(2*φ)
 end
 
-# Initialize with simple coefficients (2D matrix format)
-sh_coeffs = zeros(ComplexF64, cfg.lmax+1, cfg.mmax+1)
-sh_coeffs[1, 1] = 0.1  # Y_0^0 coefficient (small initial guess)
+# Initialize with random small coefficients (2D matrix format)
+sh_coeffs = 0.01 * (randn(ComplexF64, cfg.lmax+1, cfg.mmax+1))
 
 # Gradient-based optimization
-learning_rate = 0.001
-for i in 1:100
+learning_rate = 0.01  # Increased learning rate
+for i in 1:200
     loss_val, grads = Zygote.withgradient(
         sh -> reconstruction_loss(sh, target), sh_coeffs)
     
     sh_coeffs .-= learning_rate .* grads[1]
     
-    if i % 20 == 0
+    if i % 40 == 0
         println("Iteration $i: Loss = $loss_val")
     end
+    
+    # Early stopping if we reach good convergence
+    if loss_val < 1e-20
+        println("Converged at iteration $i: Loss = $loss_val")
+        break
+    end
 end
+
+# Final verification
+final_spatial = synthesis(cfg, sh_coeffs; real_output=true)
+final_error = maximum(abs.(target - final_spatial))
+println("Final reconstruction error: $final_error")
 
 destroy_config(cfg)
 ```
