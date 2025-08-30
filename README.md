@@ -172,7 +172,7 @@ println(" Turbo Laplacian completed")
 # Benchmark analysis/synthesis transforms
 results = benchmark_turbo_vs_simd(cfg)
 @printf("Analysis speedup: %.2fx\n", results.analysis_speedup)
-@printf("Synthesis speedup: %.2fx\n", results.analysis_speedup)
+@printf("Synthesis speedup: %.2fx\n", results.synthesis_speedup)
 
 destroy_config(cfg)
 
@@ -280,7 +280,9 @@ cfg = create_gauss_config(16, 16; mres=34, nlon=64)
 
 # Define optimization objective
 function reconstruction_loss(sh_coeffs, target_field)
-    spatial_field = synthesis(cfg, sh_coeffs; real_output=true)
+    # Reshape 1D coeffs to 2D matrix format for synthesis
+    alm = reshape(sh_coeffs, cfg.lmax+1, cfg.mmax+1)
+    spatial_field = synthesis(cfg, alm; real_output=true)
     return sum((spatial_field - target_field).^2)
 end
 
@@ -291,7 +293,7 @@ for i in 1:cfg.nlat, j in 1:cfg.nlon
     θ, φ = cfg.θ[i], cfg.φ[j]
     target[i,j] = sin(θ)^2 * cos(2*φ)
 end
-# Initialize with simple coefficients
+# Initialize with simple coefficients (1D vector for AD)
 sh_coeffs = zeros(ComplexF64, cfg.nlm)
 sh_coeffs[1] = 0.1  # Small initial guess
 
