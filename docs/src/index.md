@@ -57,7 +57,7 @@ destroy_config(cfg)
 using SHTnsKit, MPI, PencilArrays, PencilFFTs
 
 MPI.Init()
-cfg = create_gauss_config(Float64, 20, 16, 48, 64)
+cfg = create_gauss_config(20, 16; mres=48, nlon=64)
 pcfg = create_parallel_config(cfg, COMM_WORLD)
 
 # Parallel operations
